@@ -1,0 +1,160 @@
+# Self-hosting — the "three commands" promise:
+#   git clone https://github.com/Open-Incident/open-incident && cd open-incident
+#   cp .env.example .env        # then fill in the secrets
+#   docker compose up -d
+#
+# The application then answers on http://localhost:3000 and the status pages on
+# http://<page>.status.localhost:3001 — unless BASE_DOMAIN / STATUS_BASE_DOMAIN
+# in .env name your real domains.
+# With SEED_DEMO=true (the .env.example default), the instance starts with the
+# Skylark Systems demo workspace — login amelie@skylark.dev /
+# demo-openincident — to be replaced by your own workspace from the first
+# session on (`docker compose run --rm migrate pnpm workspace:create …`).
+#
+# The internal hosts (postgres, redis) are pinned here and take precedence over
+# .env, written for development on the host machine's ports. Two database
+# roles: the owner runs the migrations, the application role runs the product
+# under row-level security — it must never be the same login.
+
+name: open-incident-prod
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-openincident}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openincident}
+      POSTGRES_DB: ${POSTGRES_DB:-openincident}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-openincident}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: migrate
+    env_file:
+      - .env
+    environment:
+      DATABASE_ADMIN_URL: postgres://${POSTGRES_USER:-openincident}:${POSTGRES_PASSWORD:-openincident}@postgres:5432/${POSTGRES_DB:-openincident}
+      DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-openincident_app}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      BASE_DOMAIN: ${BASE_DOMAIN:-localhost:3000}
+      STATUS_BASE_DOMAIN: ${STATUS_BASE_DOMAIN:-status.localhost:3001}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: web
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
+      REDIS_URL: redis://redis:6379
+      # The public addresses: your domains in .env, the compose ports by default.
+      BASE_DOMAIN: ${BASE_DOMAIN:-localhost:3000}
+      STATUS_BASE_DOMAIN: ${STATUS_BASE_DOMAIN:-status.localhost:3001}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # The public status pages: reads snapshots only, no Redis — stays up when
+  # the product is down. Point status.<your domain> (and customers' CNAMEs) here.
+  status:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: status
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
+      BASE_DOMAIN: ${BASE_DOMAIN:-localhost:3000}
+      STATUS_BASE_DOMAIN: ${STATUS_BASE_DOMAIN:-status.localhost:3001}
+    ports:
+      - "${STATUS_PORT:-3001}:3001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
+      REDIS_URL: redis://redis:6379
+      INTERNAL_WEB_ORIGIN: http://web:3000
+      BASE_DOMAIN: ${BASE_DOMAIN:-localhost:3000}
+      STATUS_BASE_DOMAIN: ${STATUS_BASE_DOMAIN:-status.localhost:3001}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Optional object storage for workspace files (logos). Start it with
+  # `docker compose --profile storage up -d` and set S3_* in .env accordingly,
+  # or point S3_* at any S3-compatible bucket you already run.
+  minio:
+    image: minio/minio:latest
+    profiles: ["storage"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-openincident}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-openincident}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    profiles: ["storage"]
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${S3_ACCESS_KEY_ID:-openincident} ${S3_SECRET_ACCESS_KEY:-openincident} &&
+      mc mb --ignore-existing local/${S3_BUCKET:-openincident} &&
+      echo bucket ready"
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

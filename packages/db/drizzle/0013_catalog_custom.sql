@@ -1,0 +1,2 @@
+ALTER TABLE "app"."catalog_types" ADD COLUMN "locked" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "catalog_entries_type_external" ON "app"."catalog_entries" USING btree ("type_id","external_id");

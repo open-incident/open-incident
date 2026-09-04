@@ -1,0 +1,46 @@
+Open Incident Enterprise Edition (EE) License
+
+Copyright (c) 2026 Yohann Bijaczyk
+
+With regard to the Open Incident software located in this "ee/" directory
+(the "Software"):
+
+This Software and associated documentation files may only be used in
+production if you (and any entity that you represent) have agreed to, and are
+in compliance with, a subscription or other commercial agreement with the
+copyright holder governing the use of the Software, and only for the duration
+and scope of such agreement.
+
+Subject to the foregoing sentence, you are free to modify this Software and
+publish patches to it. You agree that the copyright holder and/or its
+licensors (as applicable) retain all right, title and interest in and to all
+such modifications and/or patches, and all such modifications and/or patches
+may only be used, copied, modified, displayed, distributed, or otherwise
+exploited with a valid subscription or other commercial agreement covering the
+Software. Notwithstanding the foregoing, you may copy and modify the Software
+for development and testing purposes, without requiring such an agreement.
+
+You agree not to:
+* redistribute the Software or any modification of it as a standalone product;
+* sell, resell, sublicense or otherwise commercialize the Software;
+* circumvent or remove any license, subscription or feature-gating mechanism;
+* remove or obscure any licensing, copyright, or other notices.
+
+This license terminates automatically if you breach any of its terms.
+
+Any use of the Software in violation of this license will automatically
+terminate your rights under this license for the current and all other
+versions of the Software.
+
+This license does not grant you any right in any trademark or logo of the
+copyright holder.
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED ON AN
+"AS IS" BASIS. THE COPYRIGHT HOLDER HEREBY DISCLAIMS ALL WARRANTIES AND
+CONDITIONS, EXPRESS OR IMPLIED, INCLUDING (WITHOUT LIMITATION) WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO
+EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE
+OR OTHER DEALINGS IN THE SOFTWARE.
+
+For commercial licensing, contact: license@open-incident.com

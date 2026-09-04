@@ -1,0 +1,1 @@
+ALTER TABLE "app"."schedules" ADD COLUMN "coverage_reminded_at" timestamp with time zone;

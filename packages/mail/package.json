@@ -1,0 +1,27 @@
+{
+  "name": "@openincident/mail",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./provider-meta": "./src/provider-meta.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@openincident/config": "workspace:*",
+    "@openincident/db": "workspace:*",
+    "bullmq": "^5.44.0",
+    "drizzle-orm": "^0.44.0",
+    "ioredis": "^5.6.0",
+    "nodemailer": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^6.4.17",
+    "typescript": "^5.8.0"
+  }
+}

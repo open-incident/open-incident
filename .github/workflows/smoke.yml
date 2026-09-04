@@ -1,0 +1,126 @@
+name: Smoke (end-to-end)
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # nightly
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: cp .env.example .env
+      - run: docker compose -f docker/docker-compose.yml up -d --wait
+      - run: pnpm db:migrate && pnpm db:rls
+      - run: pnpm db:seed && pnpm db:seed:auth
+      - run: pnpm --filter @openincident/web build
+      - run: pnpm --filter @openincident/status build
+      # Outbound emails go through the BullMQ outbox: without the worker the
+      # reset link stays queued forever and the password test cannot pass.
+      - name: Start worker
+        env:
+          SMTP_HOST: localhost
+          SMTP_PORT: "1027"
+          SMTP_SECURE: "false"
+          OI_ENTITLEMENTS: sso,customRoles,auditLogAdvanced
+          SSO_TRUSTED_IDP_ORIGINS: http://127.0.0.1:3195
+          SLACK_CLIENT_ID: smoke-client
+          SLACK_CLIENT_SECRET: smoke-secret
+          SLACK_SIGNING_SECRET: smoke-signing-secret
+          SLACK_API_BASE: http://127.0.0.1:3197
+          AI_API_BASE: http://127.0.0.1:3198/v1
+          AI_API_KEY: smoke
+          AI_MODEL: mock-chat
+          AI_EMBED_MODEL: mock-embed
+          AI_PROVIDER_LABEL: Mock inference (smoke)
+          # Object storage: the MinIO of docker/docker-compose.yml.
+          S3_ENDPOINT: http://127.0.0.1:9100
+          S3_REGION: us-east-1
+          S3_BUCKET: openincident
+          S3_ACCESS_KEY_ID: openincident
+          S3_SECRET_ACCESS_KEY: openincident
+          S3_FORCE_PATH_STYLE: "true"
+          GITHUB_API_BASE: http://127.0.0.1:3199
+          GITLAB_API_BASE: http://127.0.0.1:3199
+          CONFLUENCE_API_BASE: http://127.0.0.1:3199/wiki
+          NOTION_API_BASE: http://127.0.0.1:3199/notion
+          JIRA_API_BASE: http://127.0.0.1:3199
+          LINEAR_API_BASE: http://127.0.0.1:3199
+          TEAMS_APP_ID: smoke-teams-app
+          TEAMS_APP_SECRET: smoke-teams-secret
+          TEAMS_LOGIN_BASE: http://127.0.0.1:3196/login
+          TEAMS_GRAPH_BASE: http://127.0.0.1:3196/graph
+          TEAMS_OPENID_CONFIG: http://127.0.0.1:3196/openid
+          TEAMS_SERVICE_URL_OVERRIDE: http://127.0.0.1:3196/connector
+          INTERNAL_WEB_ORIGIN: http://127.0.0.1:3106
+        run: pnpm --filter @openincident/worker start &
+      - name: Start web
+        env:
+          BASE_DOMAIN: localhost:3106
+          SMTP_HOST: localhost
+          SMTP_PORT: "1027"
+          SMTP_SECURE: "false"
+          # The smoke suite runs a mock Slack API on this port.
+          OI_ENTITLEMENTS: sso,customRoles,auditLogAdvanced
+          SSO_TRUSTED_IDP_ORIGINS: http://127.0.0.1:3195
+          SLACK_CLIENT_ID: smoke-client
+          SLACK_CLIENT_SECRET: smoke-secret
+          SLACK_SIGNING_SECRET: smoke-signing-secret
+          SLACK_API_BASE: http://127.0.0.1:3197
+          AI_API_BASE: http://127.0.0.1:3198/v1
+          AI_API_KEY: smoke
+          AI_MODEL: mock-chat
+          AI_EMBED_MODEL: mock-embed
+          AI_PROVIDER_LABEL: Mock inference (smoke)
+          # Object storage: the MinIO of docker/docker-compose.yml.
+          S3_ENDPOINT: http://127.0.0.1:9100
+          S3_REGION: us-east-1
+          S3_BUCKET: openincident
+          S3_ACCESS_KEY_ID: openincident
+          S3_SECRET_ACCESS_KEY: openincident
+          S3_FORCE_PATH_STYLE: "true"
+          GITHUB_API_BASE: http://127.0.0.1:3199
+          GITLAB_API_BASE: http://127.0.0.1:3199
+          CONFLUENCE_API_BASE: http://127.0.0.1:3199/wiki
+          NOTION_API_BASE: http://127.0.0.1:3199/notion
+          JIRA_API_BASE: http://127.0.0.1:3199
+          LINEAR_API_BASE: http://127.0.0.1:3199
+          TEAMS_APP_ID: smoke-teams-app
+          TEAMS_APP_SECRET: smoke-teams-secret
+          TEAMS_LOGIN_BASE: http://127.0.0.1:3196/login
+          TEAMS_GRAPH_BASE: http://127.0.0.1:3196/graph
+          TEAMS_OPENID_CONFIG: http://127.0.0.1:3196/openid
+          TEAMS_SERVICE_URL_OVERRIDE: http://127.0.0.1:3196/connector
+          INTERNAL_WEB_ORIGIN: http://127.0.0.1:3106
+        run: |
+          pnpm --filter @openincident/web exec next start --port 3106 &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://skylark.localhost:3106/login && break
+            sleep 2
+          done
+      - name: Start status pages
+        env:
+          STATUS_BASE_DOMAIN: status.localhost:3107
+          SMTP_HOST: localhost
+          SMTP_PORT: "1027"
+          SMTP_SECURE: "false"
+        run: |
+          pnpm --filter @openincident/status exec next start --port 3107 &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://skylark.status.localhost:3107/ && break
+            sleep 2
+          done
+      - run: pnpm --filter @openincident/smoke smoke
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: packages/smoke/playwright-report/

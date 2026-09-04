@@ -1,0 +1,36 @@
+{
+  "name": "@openincident/db",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "db:rls": "tsx src/apply-rls.ts",
+    "db:seed": "tsx src/seed/demo.ts",
+    "workspace:create": "tsx src/cli/create-workspace.ts",
+    "workspace:purge": "tsx src/cli/purge-workspace.ts"
+  },
+  "dependencies": {
+    "@openincident/config": "workspace:*",
+    "@openincident/crypto": "workspace:*",
+    "drizzle-orm": "^0.44.0",
+    "postgres": "^3.4.5",
+    "@openincident/storage": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "drizzle-kit": "^0.31.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

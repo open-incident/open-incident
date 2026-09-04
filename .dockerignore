@@ -1,0 +1,18 @@
+# Allow-listed Docker build context: only the product goes into the image.
+*
+!apps
+!packages
+!ee
+!docker
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!turbo.json
+!tsconfig.base.json
+!.env.example
+# … and never the build artefacts, not even under the allowed directories.
+**/node_modules
+**/.next
+**/.turbo
+**/test-results
+**/playwright-report

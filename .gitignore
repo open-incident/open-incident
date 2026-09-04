@@ -1,0 +1,14 @@
+node_modules/
+.next/
+.turbo/
+dist/
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+.DS_Store
+coverage/
+
+# Smoke test — run artefacts
+packages/smoke/test-results/
+packages/smoke/playwright-report/

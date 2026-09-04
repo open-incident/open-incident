@@ -1,0 +1,29 @@
+{
+  "name": "@openincident/catalog",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./spec": "./src/spec.ts",
+    "./sources": "./src/sources/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "import": "tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  },
+  "dependencies": {
+    "@openincident/db": "workspace:*",
+    "drizzle-orm": "^0.44.0",
+    "js-yaml": "^4.1.0"
+  }
+}

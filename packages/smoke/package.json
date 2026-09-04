@@ -1,0 +1,20 @@
+{
+  "name": "@openincident/smoke",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "smoke": "playwright test",
+    "smoke:ui": "playwright test --ui",
+    "smoke:report": "playwright show-report",
+    "typecheck": "tsc --noEmit",
+    "screenshots": "SMOKE_TENANT=skylark tsx src/screenshots.ts",
+    "guide-shots": "SMOKE_TENANT=skylark tsx src/guide-shots.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0",
+    "tsx": "^4.19.0"
+  }
+}

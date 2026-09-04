@@ -1,0 +1,11 @@
+node_modules
+.next
+.turbo
+pnpm-lock.yaml
+packages/db/drizzle
+apps/web/public
+CHANGELOG.md
+specs
+design
+design-notes
+.playwright-mcp

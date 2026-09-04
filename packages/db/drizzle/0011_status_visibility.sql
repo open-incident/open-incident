@@ -1,0 +1,1 @@
+ALTER TABLE "app"."status_pages" ADD COLUMN "visibility" text DEFAULT 'public' NOT NULL;

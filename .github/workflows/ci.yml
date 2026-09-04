@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Re-run on demand: a push event that GitHub drops leaves a commit with no
+  # check at all, and there is otherwise no way to ask for one.
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: openincident
+          POSTGRES_PASSWORD: openincident
+          POSTGRES_DB: openincident
+        ports: ["5441:5432"]
+        options: >-
+          --health-cmd "pg_isready -U openincident"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://openincident_app:openincident_app@localhost:5441/openincident
+      DATABASE_ADMIN_URL: postgres://openincident:openincident@localhost:5441/openincident
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version resolved from packageManager
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format
+      - run: pnpm db:migrate
+      - run: pnpm db:rls
+      - run: pnpm turbo run typecheck build test

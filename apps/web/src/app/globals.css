@@ -1,0 +1,385 @@
+@import "tailwindcss";
+@import "@openincident/ui/tokens.css";
+@import "@openincident/ui/fonts.css";
+
+/* What the design puts on the document — read off design/Open Incident.dc.html. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+::placeholder {
+  color: var(--ink-3);
+  opacity: 1;
+}
+
+/* Text link — brand-2, underlined on hover only. On a class, not the tag: rows
+   and navigation are <a> too, and the design never underlines those. */
+.oi-link {
+  color: var(--brand-2);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.oi-link:hover {
+  text-decoration: underline;
+}
+
+/* Scrollbars — the design's: a brand-b thumb, radius 8, thinned by a
+   transparent 2px border in content-box. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--brand-b);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- Hover: the design's complete vocabulary ----------
+ * `style-hover` in the mockup becomes one of these classes. None is animated —
+ * the design declares no transition on a hover. `!important` because, like
+ * the mockup, the screens are written with inline `style`, and an inline
+ * declaration always beats a stylesheet `:hover`. */
+
+/* Rail item, icon button, ghost button, list row. */
+.oi-hover:hover {
+  background: var(--sunk) !important;
+}
+
+/* Field, search box, view chip: only the hairline reacts. */
+.oi-hover-edge:hover {
+  border-color: var(--brand-b) !important;
+}
+
+/* Bordered secondary button: brand hairline and brand tint. */
+.oi-hover-edge-fill:hover {
+  border-color: var(--brand-b) !important;
+  background: var(--brand-t) !important;
+}
+
+/* Dashed "+ add" box: hairline and ink both go brand. */
+.oi-hover-edge-ink:hover {
+  border-color: var(--brand-b) !important;
+  color: var(--brand) !important;
+}
+
+/* Card (incident, alert, catalog entry): brand hairline and the lifted shadow. */
+.oi-card:hover {
+  border-color: var(--brand-b) !important;
+  box-shadow: var(--shadow-card-hover) !important;
+}
+
+/* Danger ghost: tinted red on hover. */
+.oi-hover-dang:hover {
+  background: var(--dang-t) !important;
+}
+
+/* Keyboard focus ring — 2px brand, offset 2. */
+.oi-focus:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* Field focus — the design's `style-focus`: brand hairline and a 4px halo.
+   On `:focus`, not `:focus-visible`: clicking into a field must look like
+   tabbing into it. */
+.oi-field:focus,
+.oi-field:focus-within {
+  border-color: var(--brand) !important;
+  box-shadow: var(--focus-ring);
+  outline: none;
+}
+
+/* ---------- Animations ---------- */
+@keyframes oi-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes oi-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(192, 52, 43, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(192, 52, 43, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(192, 52, 43, 0);
+  }
+}
+
+/* Screen entrance (.18s), modal (.2s), palette (.16s) — the design's three durations. */
+.oi-rise {
+  animation: oi-rise 0.18s ease both;
+}
+
+.oi-rise-modal {
+  animation: oi-rise 0.2s ease both;
+}
+
+.oi-rise-fast {
+  animation: oi-rise 0.16s ease both;
+}
+
+.oi-pulse {
+  animation: oi-pulse 2s infinite;
+}
+
+/* Keyboard key (⌘K, esc, D) */
+.oi-kbd {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+/* Uppercase section label — 11px 600, .12em, ink-3: "Détails", "Rôles", "Timeline". */
+.oi-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Uppercase field label of the administration — 11px 600, .1em. */
+.oi-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* Screen title — Bricolage 20/600, -.015em. */
+.oi-title {
+  font-family: var(--font-title);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+/* Card — panel, hairline, radius 13/14, the resting shadow. */
+.oi-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+}
+
+/* Tinted note box of the administration screens. */
+.oi-note {
+  background: var(--sunk);
+  border-radius: 14px;
+  padding: 13px 15px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+
+/* Workspace logo variants: one file per theme, the other hidden. */
+.oi-logo-dark {
+  display: none;
+}
+[data-theme="dark"] .oi-logo-light {
+  display: none;
+}
+[data-theme="dark"] .oi-logo-dark {
+  display: block;
+}
+
+/* ---------- User guide prose ---------- */
+.oi-prose {
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--ink);
+  max-width: 820px;
+}
+.oi-prose h1 {
+  font-family: var(--font-title);
+  font-size: 26px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+.oi-prose .oi-prose-lead {
+  font-size: 15.5px;
+  color: var(--ink-2);
+  margin: 0 0 22px;
+}
+.oi-prose h2 {
+  font-family: var(--font-title);
+  font-size: 19px;
+  font-weight: 600;
+  margin: 34px 0 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-2);
+}
+.oi-prose h3 {
+  font-size: 15.5px;
+  font-weight: 650;
+  margin: 24px 0 8px;
+}
+.oi-prose h4 {
+  font-size: 14px;
+  font-weight: 650;
+  margin: 18px 0 6px;
+  color: var(--ink-2);
+}
+.oi-prose p {
+  margin: 0 0 12px;
+}
+.oi-prose ul,
+.oi-prose ol {
+  margin: 0 0 12px;
+  padding-left: 24px;
+}
+.oi-prose ul {
+  list-style: disc;
+}
+.oi-prose ol {
+  list-style: decimal;
+}
+.oi-prose li::marker {
+  color: var(--ink-3);
+}
+.oi-prose li {
+  margin: 3px 0;
+}
+.oi-prose li > ul,
+.oi-prose li > ol {
+  margin: 4px 0 4px;
+}
+.oi-prose a {
+  color: var(--brand);
+  text-decoration: underline;
+  text-decoration-color: var(--brand-b);
+  text-underline-offset: 2px;
+}
+.oi-prose code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: var(--sunk);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.oi-prose pre {
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.oi-prose pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+.oi-prose blockquote {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--brand);
+  background: var(--brand-t);
+  border-radius: 0 10px 10px 0;
+  color: var(--ink-2);
+}
+.oi-prose blockquote p {
+  margin: 0;
+}
+.oi-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 16px;
+  font-size: 13px;
+  display: block;
+  overflow-x: auto;
+}
+.oi-prose th,
+.oi-prose td {
+  text-align: left;
+  vertical-align: top;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-2);
+}
+.oi-prose th {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--line);
+}
+.oi-prose figure {
+  margin: 14px 0 20px;
+}
+.oi-prose figure img {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+  background: var(--panel);
+}
+.oi-prose figcaption {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: center;
+}
+.oi-prose hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 24px 0;
+}
+.oi-prose kbd {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 0 5px;
+  background: var(--panel);
+}
+.oi-prose strong {
+  font-weight: 650;
+}

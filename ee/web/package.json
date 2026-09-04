@@ -1,0 +1,38 @@
+{
+  "name": "@openincident/ee-web",
+  "version": "0.1.0",
+  "private": true,
+  "license": "SEE LICENSE IN ../LICENSE",
+  "type": "module",
+  "exports": {
+    "./auth": "./src/auth/index.ts",
+    "./auth-client": "./src/auth/client.ts",
+    "./sso": "./src/sso/index.ts",
+    "./scim": "./src/scim/index.ts",
+    "./roles": "./src/roles/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@better-auth/sso": "1.7.2",
+    "@openincident/catalog": "workspace:*",
+    "@openincident/config": "workspace:*",
+    "@openincident/crypto": "workspace:*",
+    "@openincident/db": "workspace:*",
+    "better-auth": "^1.7.2",
+    "drizzle-orm": "^0.44.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  },
+  "peerDependencies": {
+    "next": "*",
+    "react": "*"
+  }
+}

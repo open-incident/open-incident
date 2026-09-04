@@ -1,0 +1,84 @@
+name: open-incident
+
+# Development dependencies. Host ports are shifted (5441, 6381, 1027/8027) so
+# the stack coexists with other local projects; override through OI_*_PORT.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: openincident
+      POSTGRES_PASSWORD: openincident
+      POSTGRES_DB: openincident
+    ports:
+      - "${OI_POSTGRES_PORT:-5441}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openincident"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "${OI_REDIS_PORT:-6381}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Development SMTP server: captures every email and displays it on
+  # http://localhost:8027 (no email ever leaves the machine).
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "${OI_MAILPIT_SMTP_PORT:-1027}:1025"
+      - "${OI_MAILPIT_UI_PORT:-8027}:8025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Object storage for workspace files (logos): an S3-compatible bucket. The
+  # product works without it — the logo upload then says so on screen.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "${OI_MINIO_PORT:-9100}:9000"
+      - "${OI_MINIO_CONSOLE_PORT:-9101}:9001"
+    environment:
+      MINIO_ROOT_USER: openincident
+      MINIO_ROOT_PASSWORD: openincident
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Creates the bucket once MinIO answers, then exits.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 openincident openincident &&
+      mc mb --ignore-existing local/openincident &&
+      echo bucket ready"
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "jsx": "preserve",
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src", "test"]
+}

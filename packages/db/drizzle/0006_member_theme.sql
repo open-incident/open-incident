@@ -1,0 +1,1 @@
+ALTER TABLE "app"."members" ADD COLUMN "theme" text;

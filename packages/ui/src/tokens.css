@@ -1,0 +1,95 @@
+/*
+ * Open Incident tokens — read off the design mockup
+ * (design/Open Incident.dc.html, `:root` of every page). The NAMES are the
+ * contract the screens are written against; the light values are the design's,
+ * to the digit.
+ *
+ * Dark theme: stamp [data-theme="dark"] on <html>. The mockup only draws the
+ * light theme; the dark values below keep every name valued so the switch never
+ * loses a colour — they are ours, not the designer's, and say so.
+ */
+
+/* ---------- Product — light (the design) ---------- */
+:root {
+  --brand: #0b4a6f;
+  --brand-2: #0e6b9a;
+  --brand-t: #eaf1f6;
+  --brand-b: #c7d9e4;
+  /* Ink for text sitting ON a --brand fill — white in the design. Split from
+     --brand so a dark theme can lighten the accent without losing the label. */
+  --on-brand: #ffffff;
+  --ink: #0d161c;
+  --ink-2: #515f66;
+  --ink-3: #84939b;
+  --canvas: #f3f5f6;
+  --panel: #ffffff;
+  --sunk: #f0f3f4;
+  --line: #e4e8e9;
+  --line-2: #eef1f2;
+  /* States — one pair each: ink, then the tinted fill. */
+  --ok: #0e7a58;
+  --ok-t: #e5f1ea;
+  --open: #1d4ed8;
+  --open-t: #e9eefc;
+  --wait: #b45309;
+  --wait-t: #fdf2e3;
+  --dang: #c0342b;
+  --dang-t: #fdecea;
+  --viol: #7c3aed;
+  --viol-t: #f3e8fd;
+  /* The pinned note: pale yellow, always. */
+  --note: #fdf6dc;
+  --note-b: #efe3b0;
+  --note-ink: #8a6d1a;
+  /* Code block of the alert payload. */
+  --topbar-dark: #0d1213;
+  --code-blue: #8fb6c4;
+  /* Typography — the faces are shipped by fonts.css, not merely named here. */
+  --font-ui: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-title: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
+  /* Elevation — the design's four shadows and its focus halo. */
+  --shadow-card: 0 1px 2px rgba(13, 22, 28, 0.03);
+  --shadow-card-hover: 0 1px 2px rgba(13, 22, 28, 0.03), 0 8px 20px -12px rgba(13, 22, 28, 0.15);
+  --shadow-modal: 0 32px 80px rgba(0, 0, 0, 0.35);
+  --shadow-login: 0 2px 4px rgba(13, 22, 28, 0.04), 0 24px 48px -20px rgba(11, 74, 111, 0.25);
+  --focus-ring: 0 0 0 4px var(--brand-t);
+  /* Scrims — the design's modal and palette veil. */
+  --scrim: rgba(8, 12, 14, 0.45);
+  --scrim-dialog: rgba(13, 18, 19, 0.52);
+}
+
+/* ---------- Product — dark (ours: not designed, never unvalued) ---------- */
+[data-theme="dark"] {
+  --brand: #7fb6d6;
+  --brand-2: #9cc8e2;
+  --brand-t: #12242f;
+  --brand-b: #1f3c4d;
+  --on-brand: #06131b;
+  --ink: #e6ecef;
+  --ink-2: #a2b0b7;
+  --ink-3: #6f7f87;
+  --canvas: #0b0f11;
+  --panel: #12181b;
+  --sunk: #0d1315;
+  --line: #22303a;
+  --line-2: #182229;
+  --ok: #48d0a0;
+  --ok-t: #122a20;
+  --open: #7ba1f5;
+  --open-t: #141f38;
+  --wait: #e0a85c;
+  --wait-t: #2e2113;
+  --dang: #f0736a;
+  --dang-t: #2e1614;
+  --viol: #a98bf5;
+  --viol-t: #241a3b;
+  --note: #251e0c;
+  --note-b: #5c4a16;
+  --note-ink: #e0c46a;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-card-hover: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px -12px rgba(0, 0, 0, 0.6);
+  --shadow-login: 0 2px 4px rgba(0, 0, 0, 0.4), 0 24px 48px -20px rgba(0, 0, 0, 0.7);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --scrim-dialog: rgba(0, 0, 0, 0.65);
+}
