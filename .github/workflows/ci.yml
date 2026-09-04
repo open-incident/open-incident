@@ -28,9 +28,9 @@ jobs:
       DATABASE_URL: postgres://openincident_app:openincident_app@localhost:5441/openincident
       DATABASE_ADMIN_URL: postgres://openincident:openincident@localhost:5441/openincident
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4 # version resolved from packageManager
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6 # version resolved from packageManager
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
