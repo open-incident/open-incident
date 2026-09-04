@@ -2,6 +2,9 @@ packages:
   - "apps/*"
   - "packages/*"
   - "ee/*"
+# Build scripts pnpm asked about: esbuild installs its platform binary (tsx,
+# vitest, drizzle-kit rely on it); msgpackr-extract is BullMQ's optional native
+# accelerator. Both are allowed; a refusal would fail every install in CI.
 allowBuilds:
-  esbuild: set this to true or false
-  msgpackr-extract: set this to true or false
+  esbuild: true
+  msgpackr-extract: true
