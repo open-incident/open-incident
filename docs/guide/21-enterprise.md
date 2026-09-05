@@ -29,6 +29,8 @@ OI_ENTITLEMENTS=sso,customRoles
 
 and restarts the web and worker services. In a **control-plane deployment** (`OPENINCIDENT_EDITION=cloud`) the entitlements are resolved onto the workspace by the control plane; the product reads them and never computes them.
 
+In that deployment the workspace also gets **Settings → Subscription & invoices**: the plan and its trial, the seats it covers, this month's usage against the plan's ceilings, the offers as the control plane sells them, the invoices it mirrors from the payment provider, and the checkout and customer-portal actions — each one a redirect to a session the control plane opens. The product carries no price and no card. Owners act, other managers read, and a paused workspace keeps this one screen reachable so the owner can subscribe again. A self-hosted instance does not have the screen.
+
 Without the entitlement, the screens in **Settings → Enterprise** say _Unavailable on this instance_ and name the variable; the SCIM endpoint answers 403; custom roles already assigned fall back to their base role. Nothing is simulated.
 
 ## The seam, for the curious

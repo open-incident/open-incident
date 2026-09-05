@@ -6,6 +6,7 @@ import { getT } from "@/i18n/server";
 import { RailNav } from "@/components/shell/rail-nav";
 import { ShellTopBar } from "@/components/shell/shell-top-bar";
 import { ThemeSync } from "@/components/theme-sync";
+import { getEdition } from "@openincident/config";
 
 /**
  * Shared shell of the responder space: the 56 px top bar spans the full width,
@@ -24,7 +25,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (tenant.status === "suspended" || tenant.status === "deleting") {
     const pathname = (await headers()).get("x-pathname") ?? "";
     const unverified = tenant.suspendedReason === "email_unverified";
-    if (!pathname.startsWith("/app/account")) {
+    // In a cloud deployment the way out of a pause is the subscription screen:
+    // it stays reachable for the people who can act on it, and nothing else does.
+    const billingOpen = getEdition() === "cloud" && !unverified && canOpenSettings(member);
+    if (
+      !pathname.startsWith("/app/account") &&
+      !(billingOpen && pathname.startsWith("/app/settings/billing"))
+    ) {
       return (
         <main
           style={{
@@ -50,6 +57,26 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                     : "shell.suspendedText",
               )}
             </p>
+            {billingOpen && (
+              <a
+                href="/app/settings/billing"
+                style={{
+                  display: "inline-grid",
+                  placeItems: "center",
+                  marginTop: 18,
+                  height: 36,
+                  padding: "0 16px",
+                  borderRadius: 9,
+                  background: "var(--brand)",
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  textDecoration: "none",
+                }}
+              >
+                {t("shell.suspendedBillingCta")}
+              </a>
+            )}
           </div>
         </main>
       );

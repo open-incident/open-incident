@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.2-alpha] - 2026-09-05
+
+The seam a control plane plugs into. The product still sells nothing and keeps
+no card: in the cloud edition it asks its control plane what to show.
+
+### Added
+
+- **Settings → Subscription & invoices (cloud edition).** The workspace's plan
+  and trial, the seats it covers, this month's usage against the plan's
+  ceilings, the public offers as the control plane sells them (monthly or
+  yearly, seat stepper), the invoice history it mirrors from the payment
+  provider, and the checkout, customer portal and "re-check now" actions —
+  every one of them a redirect to a session the control plane opens. Owners
+  act; other managers read. A paused workspace keeps this one screen reachable
+  so the owner can subscribe again. Reached through `CLOUD_GATEWAY_URL` and
+  `CLOUD_GATEWAY_SECRET`; without them the screen says the instance has no
+  control plane, and a self-hosted instance does not have the screen at all.
+- **`purgeWorkspace` exported by `@openincident/db`**, so a control plane can
+  run the very same verified purge the `workspace:purge` command runs.
+
 ## [0.0.1-alpha] - 2026-09-05
 
 The first public release: the whole product as it stands after its first

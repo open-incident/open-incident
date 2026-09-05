@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { canOpenSettings, hasPermission, requireMember } from "@/lib/session";
-import type { Permission } from "@openincident/config";
+import { getEdition, type Permission } from "@openincident/config";
 import { getT } from "@/i18n/server";
 
 /**
@@ -53,6 +53,17 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           label: t("settings.nav.workingHours"),
           permission: "settings.workspace",
         },
+        // The subscription lives on the control plane of a cloud deployment;
+        // a self-hosted instance has no such screen (it answers 404).
+        ...(getEdition() === "cloud"
+          ? [
+              {
+                href: "/app/settings/billing",
+                label: t("settings.nav.billing"),
+                permission: "settings.workspace" as Permission,
+              },
+            ]
+          : []),
       ],
     },
     {

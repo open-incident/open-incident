@@ -81,7 +81,8 @@ export function managePermissionForPath(pathname: string): Permission {
   const p = pathname.replace(/\/+$/, "");
   const settings = p.match(/^\/app\/settings\/([^/]+)/)?.[1];
   if (settings) {
-    if (["general", "working-hours", "brand"].includes(settings)) return "settings.workspace";
+    if (["general", "working-hours", "brand", "billing"].includes(settings))
+      return "settings.workspace";
     if (["members", "roles", "sso", "scim"].includes(settings)) return "settings.members";
     if (["types", "fields", "announcements", "post-incident"].includes(settings))
       return "settings.response";
