@@ -36,6 +36,10 @@ jobs:
           # same host and port as the web server below, or the product answers 404.
           BASE_DOMAIN: localhost:3106
           STATUS_BASE_DOMAIN: status.localhost:3107
+          # The runner has no .env: name the queue explicitly, as .env does
+          # locally, so web and worker meet on the same Redis instead of each
+          # falling back to its own degraded path.
+          REDIS_URL: redis://localhost:6381
           SMTP_HOST: localhost
           SMTP_PORT: "1027"
           SMTP_SECURE: "false"
@@ -76,6 +80,7 @@ jobs:
       - name: Start web
         env:
           BASE_DOMAIN: localhost:3106
+          REDIS_URL: redis://localhost:6381
           SMTP_HOST: localhost
           SMTP_PORT: "1027"
           SMTP_SECURE: "false"

@@ -206,9 +206,31 @@ export async function notifyMember(
   // later ones wait for the worker's sweep, which re-reads them from the row.
   for (const { job, delayMs } of jobs) {
     const queued = await enqueueNotification(job, delayMs);
-    if (!queued && delayMs === 0) setTimeout(() => void deliverNotification(job), 0);
+    if (!queued && delayMs === 0) deliverDirectly(job);
   }
   return out;
+}
+
+/**
+ * The no-queue path: deliver from this very process, once the row's transaction
+ * is visible. deliverNotification throws "not committed yet" on purpose so that
+ * BullMQ retries; here nothing retries for us, so this does — and it never
+ * lets a rejection escape: an unhandled one ends the process, and the worker
+ * died exactly that way on a runner without Redis, taking every sweep with it.
+ */
+function deliverDirectly(job: NotifyJob, attempt = 0): void {
+  setTimeout(
+    async () => {
+      try {
+        await deliverNotification(job);
+      } catch (err) {
+        const notYet = err instanceof Error && /not committed yet/.test(err.message);
+        if (notYet && attempt < 20) return deliverDirectly(job, attempt + 1);
+        console.error(`[notify] direct delivery ${job.deliveryId} failed:`, err);
+      }
+    },
+    attempt === 0 ? 0 : 500,
+  );
 }
 
 /** Rebuilds a job from its row — the sweep's path when a queued job was lost. */
