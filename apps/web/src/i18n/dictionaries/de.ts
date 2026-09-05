@@ -1695,6 +1695,9 @@ export const de: Dictionary = {
   "settings.integrations.cat.sso": "SSO",
   "settings.integrations.connected": "Verbunden",
   "settings.integrations.connect": "Verbinden",
+  "settings.integrations.open": "Öffnen",
+  "settings.integrations.notConfigured":
+    "Diese Instanz hat keine Zugangsdaten für diese Integration — der Betreiber hinterlegt sie.",
   "settings.integrations.httpName": "Generisches HTTP",
   "settings.integrations.emailName": "Eingehende E-Mail",
   "settings.integrations.empty":
@@ -2261,6 +2264,29 @@ export const de: Dictionary = {
   "postMortem.exportError.not_found": "Dieser Vorfall hat kein Post-mortem.",
   "postMortem.exportTo": "Nach {tool} exportieren",
   "postMortem.exported": "Exportierte Seite",
+  "settings.integrations.cat.catalog": "Katalog & IaC",
+  "settings.integrations.cat.migration": "Migration & Betrieb",
+  "settings.integrations.importerName": "Katalog-Importer (CLI & API)",
+  "settings.integrations.hrisName": "HR-System (Abwesenheiten)",
+  "settings.integrations.siemName": "Audit → SIEM / S3",
+  "settings.integrations.desc.oauth":
+    "Anmeldung über diesen Anbieter. Verfügbar, sobald die Instanz seine Zugangsdaten hat.",
+  "settings.integrations.desc.scim":
+    "Mitglieder und Teams aus Ihrem Verzeichnis bereitstellen. Enterprise-Edition.",
+  "settings.integrations.desc.backstage":
+    "Servicekatalog aus einer Backstage-Instanz importieren, auf Abruf oder aus der CI.",
+  "settings.integrations.desc.importer":
+    "Der Katalog als Code: eine Datei, eine GitHub-Datei, die Ausgabe eines Befehls oder die Schreib-API.",
+  "settings.integrations.desc.terraform":
+    "Katalog, Eskalationspfade, Dienstpläne und Routen als Ressourcen deklariert.",
+  "settings.integrations.desc.pagerduty":
+    "Parallelbetrieb, dann Migration: Dienstpläne, Richtlinien, Services.",
+  "settings.integrations.desc.opsgenie":
+    "Dienstpläne und Richtlinien importieren, im Parallelbetrieb.",
+  "settings.integrations.desc.statuspage": "Komponenten, Vorfälle und Abonnenten migrieren.",
+  "settings.integrations.desc.hris":
+    "Abwesenheiten aus Ihrem HR-System — eine Lücke in der Bereitschaft sieht man so vor der Nacht.",
+  "settings.integrations.desc.siem": "Laufender Export des Audit-Protokolls.",
   "settings.integrations.cat.docs": "Dokumentation",
   "settings.integrations.desc.confluence":
     "Post-mortems als Seiten in einem Confluence-Bereich exportiert; der Link bleibt am Vorfall.",

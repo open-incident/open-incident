@@ -38,12 +38,15 @@ import {
   type TrackerKind,
 } from "@openincident/trackers";
 import { DOCS_KINDS, docsTarget, type DocsConfig, type DocsKind } from "@openincident/docs";
+import { SOCIAL_PROVIDERS } from "@openincident/auth";
+import { IntegrationIcon } from "./icons";
 
 type Card = {
   id: string;
-  initials: string;
+  /** The glyph to draw; defaults to the card's id (see icons.tsx). */
+  icon?: string;
   name: string;
-  category: "sources" | "trackers" | "docs" | "chat" | "sso";
+  category: "sources" | "trackers" | "docs" | "chat" | "sso" | "catalog" | "migration";
   kind?: string;
   connect?:
     | "slack"
@@ -57,6 +60,12 @@ type Card = {
     | "confluence"
     | "notion";
   soon?: string;
+  /** A screen that configures this integration, when it has one. */
+  href?: string;
+  /** Decided by the card itself: an identity provider the instance carries. */
+  connected?: boolean;
+  /** The instance lacks what this needs — said, never silently disabled. */
+  unavailable?: boolean;
   desc: string;
 };
 
@@ -109,10 +118,11 @@ export default async function IntegrationsPage({
     (TRACKER_KINDS as string[]).includes(v ?? "");
   const slackEnv = slackConfigured();
   const teamsEnv = teamsConfigured();
+  // The identity providers this instance really has credentials for.
+  const socialProviders = SOCIAL_PROVIDERS as string[];
   const CARDS: Card[] = [
     {
       id: "datadog",
-      initials: "DD",
       name: "Datadog",
       category: "sources",
       kind: "datadog",
@@ -120,7 +130,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "prometheus",
-      initials: "PM",
       name: "Prometheus / Alertmanager",
       category: "sources",
       kind: "prometheus",
@@ -128,7 +137,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "grafana",
-      initials: "GF",
       name: "Grafana",
       category: "sources",
       kind: "grafana",
@@ -136,7 +144,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "sentry",
-      initials: "SE",
       name: "Sentry",
       category: "sources",
       kind: "sentry",
@@ -144,7 +151,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "cloudwatch",
-      initials: "CW",
       name: "Amazon CloudWatch",
       category: "sources",
       kind: "cloudwatch",
@@ -152,7 +158,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "uptime_kuma",
-      initials: "UK",
       name: "Uptime Kuma",
       category: "sources",
       kind: "uptime_kuma",
@@ -160,7 +165,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "http",
-      initials: "{ }",
       name: t("settings.integrations.httpName"),
       category: "sources",
       kind: "http",
@@ -168,7 +172,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "email",
-      initials: "@",
       name: t("settings.integrations.emailName"),
       category: "sources",
       soon: "V2",
@@ -176,7 +179,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "slack",
-      initials: "SL",
       name: "Slack",
       category: "chat",
       connect: "slack",
@@ -184,7 +186,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "meet",
-      initials: "GM",
       name: "Google Meet",
       category: "chat",
       connect: "meet",
@@ -192,7 +193,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "zoom",
-      initials: "ZM",
       name: "Zoom",
       category: "chat",
       connect: "zoom",
@@ -200,7 +200,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "teams",
-      initials: "MT",
       name: "Microsoft Teams",
       category: "chat",
       connect: "teams",
@@ -208,7 +207,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "github",
-      initials: "GH",
       name: "GitHub Issues",
       category: "trackers",
       connect: "github",
@@ -216,7 +214,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "gitlab",
-      initials: "GL",
       name: "GitLab Issues",
       category: "trackers",
       connect: "gitlab",
@@ -224,7 +221,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "jira",
-      initials: "JI",
       name: "Jira",
       category: "trackers",
       connect: "jira",
@@ -232,7 +228,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "linear",
-      initials: "LN",
       name: "Linear",
       category: "trackers",
       connect: "linear",
@@ -240,7 +235,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "confluence",
-      initials: "CF",
       name: "Confluence",
       category: "docs",
       connect: "confluence",
@@ -248,22 +242,133 @@ export default async function IntegrationsPage({
     },
     {
       id: "notion",
-      initials: "NO",
       name: "Notion",
       category: "docs",
       connect: "notion",
       desc: t("settings.integrations.desc.notion"),
     },
     {
-      id: "saml",
-      initials: "SSO",
-      name: "SAML / SCIM",
-      category: "sso",
+      id: "newrelic",
+      name: "New Relic",
+      category: "sources",
       soon: "V2",
+      desc: t("settings.integrations.desc.parser"),
+    },
+    {
+      id: "elastic",
+      name: "Elastic",
+      category: "sources",
+      soon: "V2",
+      desc: t("settings.integrations.desc.parser"),
+    },
+    {
+      id: "google",
+      icon: "saml",
+      name: "Google",
+      category: "sso",
+      desc: t("settings.integrations.desc.oauth"),
+      unavailable: !socialProviders.includes("google"),
+      connected: socialProviders.includes("google"),
+    },
+    {
+      id: "microsoft",
+      icon: "saml",
+      name: "Microsoft",
+      category: "sso",
+      desc: t("settings.integrations.desc.oauth"),
+      unavailable: !socialProviders.includes("microsoft"),
+      connected: socialProviders.includes("microsoft"),
+    },
+    {
+      id: "githubsso",
+      icon: "github",
+      name: "GitHub",
+      category: "sso",
+      desc: t("settings.integrations.desc.oauth"),
+      unavailable: !socialProviders.includes("github"),
+      connected: socialProviders.includes("github"),
+    },
+    {
+      id: "scim",
+      name: "SCIM",
+      category: "sso",
+      href: "/app/settings/scim",
+      desc: t("settings.integrations.desc.scim"),
+    },
+    {
+      id: "backstage",
+      name: "Backstage",
+      category: "catalog",
+      href: "/app/settings/api",
+      desc: t("settings.integrations.desc.backstage"),
+    },
+    {
+      id: "cli",
+      name: t("settings.integrations.importerName"),
+      category: "catalog",
+      href: "/app/catalog",
+      desc: t("settings.integrations.desc.importer"),
+    },
+    {
+      id: "terraform",
+      name: "Terraform",
+      category: "catalog",
+      soon: "V2+",
+      desc: t("settings.integrations.desc.terraform"),
+    },
+    {
+      id: "pagerduty",
+      name: "PagerDuty",
+      category: "migration",
+      soon: "V2+",
+      desc: t("settings.integrations.desc.pagerduty"),
+    },
+    {
+      id: "opsgenie",
+      name: "Opsgenie",
+      category: "migration",
+      soon: "V2+",
+      desc: t("settings.integrations.desc.opsgenie"),
+    },
+    {
+      id: "statuspage",
+      name: "Statuspage",
+      category: "migration",
+      soon: "V2+",
+      desc: t("settings.integrations.desc.statuspage"),
+    },
+    {
+      id: "hris",
+      name: t("settings.integrations.hrisName"),
+      category: "migration",
+      soon: "V2+",
+      desc: t("settings.integrations.desc.hris"),
+    },
+    {
+      id: "siem",
+      name: t("settings.integrations.siemName"),
+      category: "migration",
+      soon: "V2+",
+      desc: t("settings.integrations.desc.siem"),
+    },
+    {
+      id: "saml",
+      name: "SAML / OIDC",
+      category: "sso",
+      href: "/app/settings/sso",
       desc: t("settings.integrations.desc.sso"),
     },
   ];
-  const cats = ["all", "sources", "trackers", "docs", "chat", "sso"] as const;
+  const cats = [
+    "all",
+    "sources",
+    "chat",
+    "trackers",
+    "docs",
+    "sso",
+    "catalog",
+    "migration",
+  ] as const;
   const cat = cats.includes(q.cat as (typeof cats)[number])
     ? (q.cat as (typeof cats)[number])
     : "all";
@@ -273,6 +378,15 @@ export default async function IntegrationsPage({
       (cat === "all" || c.category === cat) && (!query || c.name.toLowerCase().includes(query)),
   );
   const stateOf = (c: Card): { connected: boolean; meta: string | null; unavailable?: boolean } => {
+    // A card that knows its own state (an identity provider read from the
+    // instance's configuration) is believed.
+    if (c.connected !== undefined || c.unavailable !== undefined) {
+      return {
+        connected: Boolean(c.connected),
+        meta: null,
+        ...(c.unavailable ? { unavailable: true } : {}),
+      };
+    }
     if (c.kind) {
       const s = data.sources.filter((x) => x.kind === c.kind && x.active);
       return {
@@ -522,11 +636,13 @@ export default async function IntegrationsPage({
       >
         {list.map((c) => {
           const st = stateOf(c);
-          const href = c.kind
-            ? `/app/settings/alert-sources?new=${c.kind}`
-            : c.connect
-              ? `/app/settings/integrations?connect=${c.connect}`
-              : null;
+          const href = c.href
+            ? c.href
+            : c.kind
+              ? `/app/settings/alert-sources?new=${c.kind}`
+              : c.connect
+                ? `/app/settings/integrations?connect=${c.connect}`
+                : null;
           return (
             <div
               key={c.id}
@@ -553,12 +669,10 @@ export default async function IntegrationsPage({
                     background: "var(--sunk)",
                     display: "grid",
                     placeItems: "center",
-                    fontSize: 11,
-                    fontWeight: 700,
                     color: "var(--ink-2)",
                   }}
                 >
-                  {c.initials}
+                  <IntegrationIcon id={c.icon ?? c.id} />
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 600 }}>{c.name}</div>
@@ -582,7 +696,11 @@ export default async function IntegrationsPage({
                   </span>
                 ) : st.unavailable ? (
                   <span
-                    title={t("settings.integrations.slackNotConfigured")}
+                    title={
+                      c.connect === "slack"
+                        ? t("settings.integrations.slackNotConfigured")
+                        : t("settings.integrations.notConfigured")
+                    }
                     style={{
                       padding: "2px 8px",
                       border: "1px solid var(--line)",
@@ -641,7 +759,7 @@ export default async function IntegrationsPage({
                       textDecoration: "none",
                     }}
                   >
-                    {t("settings.integrations.connect")}
+                    {c.href ? t("settings.integrations.open") : t("settings.integrations.connect")}
                   </Link>
                 ) : (
                   chip(t("settings.integrations.notConnected"), "muted")

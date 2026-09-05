@@ -1682,6 +1682,9 @@ export const fr: Dictionary = {
   "settings.integrations.cat.sso": "SSO",
   "settings.integrations.connected": "Connectée",
   "settings.integrations.connect": "Connecter",
+  "settings.integrations.open": "Ouvrir",
+  "settings.integrations.notConfigured":
+    "Cette instance ne porte pas les identifiants de cette intégration — c'est à son exploitant de les poser.",
   "settings.integrations.httpName": "HTTP générique",
   "settings.integrations.emailName": "Email entrant",
   "settings.integrations.empty":
@@ -2241,6 +2244,28 @@ export const fr: Dictionary = {
   "postMortem.exportError.not_found": "Cet incident n'a pas de post-mortem.",
   "postMortem.exportTo": "Exporter vers {tool}",
   "postMortem.exported": "Page exportée",
+  "settings.integrations.cat.catalog": "Catalogue & IaC",
+  "settings.integrations.cat.migration": "Migration & métier",
+  "settings.integrations.importerName": "Importeur de catalogue (CLI & API)",
+  "settings.integrations.hrisName": "SIRH (congés)",
+  "settings.integrations.siemName": "Audit → SIEM / S3",
+  "settings.integrations.desc.oauth":
+    "Connexion avec ce fournisseur. Disponible dès que l'instance porte ses identifiants.",
+  "settings.integrations.desc.scim":
+    "Provisionnez membres et équipes depuis votre annuaire. Édition entreprise.",
+  "settings.integrations.desc.backstage":
+    "Importez votre catalogue de services depuis une instance Backstage, à la demande ou depuis la CI.",
+  "settings.integrations.desc.importer":
+    "Le catalogue comme du code : un fichier, un fichier GitHub, la sortie d'une commande ou l'API d'écriture.",
+  "settings.integrations.desc.terraform":
+    "Catalogue, chemins d'escalade, plannings et routes déclarés comme des ressources.",
+  "settings.integrations.desc.pagerduty":
+    "Coexistence puis migration : plannings, politiques, services.",
+  "settings.integrations.desc.opsgenie": "Import des plannings et des politiques, en coexistence.",
+  "settings.integrations.desc.statuspage": "Migration des composants, incidents et abonnés.",
+  "settings.integrations.desc.hris":
+    "Les congés de votre SIRH, pour voir un trou d'astreinte avant la nuit où il s'ouvre.",
+  "settings.integrations.desc.siem": "Export continu du journal d'audit.",
   "settings.integrations.cat.docs": "Documentation",
   "settings.integrations.desc.confluence":
     "Post-mortems exportés en pages dans un espace Confluence ; le lien reste sur l'incident.",

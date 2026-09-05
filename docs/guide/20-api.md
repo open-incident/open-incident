@@ -5,6 +5,10 @@ order: 20
 summary: Keys and scopes, the endpoints, pagination and errors, outbound webhooks and how to verify them, change events from CI, the OpenAPI contract.
 ---
 
+## Where the contract lives
+
+The instance serves its own OpenAPI 3 document at `/api/v1/openapi.json`, built from `@openincident/api-spec` — the single source the developer site renders its reference from. A test walks the route files of `apps/web/src/app/api/v1` and compares them, method by method, with that document: an endpoint added without documentation fails the build, and so does a documented endpoint the product does not answer.
+
 ## Keys and scopes
 
 Create keys in **Settings → API & webhooks**. A key is `oi_live_` followed by 32 hex characters, shown once; the instance stores its SHA-256. Send it as `Authorization: Bearer oi_live_…` to `https://<workspace host>/api/v1/…` — the key resolves its own workspace, whatever host the request came in on.

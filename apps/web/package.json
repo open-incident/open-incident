@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@openincident/ai": "workspace:*",
+    "@openincident/api-spec": "workspace:*",
     "@openincident/auth": "workspace:*",
     "@openincident/catalog": "workspace:*",
     "@openincident/chat": "workspace:*",
@@ -19,9 +20,9 @@
     "@openincident/db": "workspace:*",
     "@openincident/docs": "workspace:*",
     "@openincident/ee-web": "workspace:*",
-    "@openincident/qa": "workspace:*",
     "@openincident/mail": "workspace:*",
     "@openincident/oncall": "workspace:*",
+    "@openincident/qa": "workspace:*",
     "@openincident/statuspages": "workspace:*",
     "@openincident/storage": "workspace:*",
     "@openincident/trackers": "workspace:*",

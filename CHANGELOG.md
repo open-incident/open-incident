@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Integrations screen: the whole catalog, with marks.** Seven families
+  instead of five — alert sources, chat and video, trackers, documentation,
+  identity, catalog and infrastructure as code, migration and business — and
+  fourteen cards that were missing, including four already shipped and simply
+  not shown: the Google, Microsoft and GitHub sign-in providers, Backstage
+  imports, the catalog importer and SCIM provisioning. Every tile now carries a
+  drawn mark rather than two letters, and enterprise sign-on stopped announcing
+  itself as a future milestone: it ships.
+- **`@openincident/api-spec`,** the OpenAPI document as a package. The route
+  serves it, the developer site renders its reference from it, and a test
+  compares it with the routes `apps/web` really exposes — in both directions.
+  Documentation can no longer drift from the product without failing the build.
+
 ## [0.0.3-alpha] - 2026-09-05
 
 ### Added

@@ -69,6 +69,9 @@ importers:
       '@openincident/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@openincident/api-spec':
+        specifier: workspace:*
+        version: link:../../packages/api-spec
       '@openincident/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -273,6 +276,18 @@ importers:
       drizzle-orm:
         specifier: ^0.44.0
         version: 0.44.7(kysely@0.29.5)(postgres@3.4.9)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@7.2.0)(tsx@4.23.13)
+
+  packages/api-spec:
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

@@ -1653,6 +1653,9 @@ export const en = {
   "settings.integrations.cat.sso": "SSO",
   "settings.integrations.connected": "Connected",
   "settings.integrations.connect": "Connect",
+  "settings.integrations.open": "Open",
+  "settings.integrations.notConfigured":
+    "This instance carries no credentials for this integration — the operator sets them.",
   "settings.integrations.httpName": "Generic HTTP",
   "settings.integrations.emailName": "Inbound email",
   "settings.integrations.empty":
@@ -2202,6 +2205,27 @@ export const en = {
   "postMortem.exportError.not_found": "This incident has no post-mortem.",
   "postMortem.exportTo": "Export to {tool}",
   "postMortem.exported": "Exported page",
+  "settings.integrations.cat.catalog": "Catalog & IaC",
+  "settings.integrations.cat.migration": "Migration & business",
+  "settings.integrations.importerName": "Catalog importer (CLI & API)",
+  "settings.integrations.hrisName": "HR system (leave)",
+  "settings.integrations.siemName": "Audit → SIEM / S3",
+  "settings.integrations.desc.oauth":
+    "Sign in with this provider. Available once the instance carries its credentials.",
+  "settings.integrations.desc.scim":
+    "Provision members and teams from your directory. Enterprise edition.",
+  "settings.integrations.desc.backstage":
+    "Import your service catalog from a Backstage instance, on demand or from CI.",
+  "settings.integrations.desc.importer":
+    "The catalog as code: a file, a GitHub file, a command's output or the write API.",
+  "settings.integrations.desc.terraform":
+    "Catalog, escalation paths, schedules and routes declared as resources.",
+  "settings.integrations.desc.pagerduty": "Dual-run then migrate: schedules, policies, services.",
+  "settings.integrations.desc.opsgenie": "Import schedules and policies, dual-run.",
+  "settings.integrations.desc.statuspage": "Migrate components, incidents and subscribers.",
+  "settings.integrations.desc.hris":
+    "Leave from your HR system, so an on-call gap is seen before the night it opens.",
+  "settings.integrations.desc.siem": "Continuous export of the audit log.",
   "settings.integrations.cat.docs": "Documentation",
   "settings.integrations.desc.confluence":
     "Post-mortems exported as pages in a Confluence space; the link stays on the incident.",
