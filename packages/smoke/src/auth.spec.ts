@@ -60,4 +60,14 @@ test.describe("Authentication", () => {
     await expect(page.locator("form[action]")).toHaveCount(0);
     await signOut(page);
   });
+
+  test("an already signed-in member is sent straight in, not asked again", async ({ page }) => {
+    await signIn(page, MEMBERS.owner);
+    // The real case: landing on the workspace's sign-in with a valid session —
+    // from another workspace, or from a control plane's sign-in page, which sets
+    // the cookie on the parent domain.
+    await page.goto("/login");
+    await page.waitForURL(/\/app\/incidents/);
+    await expect(page.getByRole("button", { name: /sign in|se connecter/i })).toHaveCount(0);
+  });
 });
