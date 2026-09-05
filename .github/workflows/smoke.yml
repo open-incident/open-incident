@@ -31,6 +31,11 @@ jobs:
       # reset link stays queued forever and the password test cannot pass.
       - name: Start worker
         env:
+          # The worker builds every workspace address from BASE_DOMAIN (heartbeat
+          # alerts posted back to the product, links in emails): it must name the
+          # same host and port as the web server below, or the product answers 404.
+          BASE_DOMAIN: localhost:3106
+          STATUS_BASE_DOMAIN: status.localhost:3107
           SMTP_HOST: localhost
           SMTP_PORT: "1027"
           SMTP_SECURE: "false"

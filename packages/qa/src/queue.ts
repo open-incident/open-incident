@@ -4,8 +4,9 @@ export const QA_QUEUE = "qa-run";
 export type QaJob = { tenantId: string; runId: string };
 
 export async function enqueueQaRun(job: QaJob): Promise<boolean> {
-  const url = process.env.REDIS_URL;
-  if (!url) return false;
+  // The same default as the worker's own connection: a process started without
+  // REDIS_URL still reaches the local Redis instead of declaring the queue down.
+  const url = process.env.REDIS_URL ?? "redis://localhost:6381";
   try {
     const [{ Queue }, { default: IORedis }] = await Promise.all([
       import("bullmq"),
