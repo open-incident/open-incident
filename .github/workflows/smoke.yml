@@ -18,7 +18,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: cp .env.example .env
-      - run: docker compose -f docker/docker-compose.yml up -d --wait
+      # `--wait` counts the one-shot bucket initialiser (exited 0) as a failure
+      # once it has finished: bring the long-running services up with it, then
+      # run the initialiser to completion on its own.
+      - run: docker compose -f docker/docker-compose.yml up -d --wait postgres redis mailpit minio
+      - run: docker compose -f docker/docker-compose.yml up minio-init
       - run: pnpm db:migrate && pnpm db:rls
       - run: pnpm db:seed && pnpm db:seed:auth
       - run: pnpm --filter @openincident/web build
