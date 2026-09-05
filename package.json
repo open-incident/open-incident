@@ -1,6 +1,6 @@
 {
   "name": "open-incident",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@11.21.0",

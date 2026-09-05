@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.3-alpha] - 2026-09-05
+
+### Added
+
+- **A certificate gate for custom status-page domains** (`GET /api/tls`). Status
+  pages answer on the customer's own domain, and that domain is only known at
+  the first TLS handshake, so the proxy has to be allowed to request a
+  certificate for a hostname it has never seen. Doing that without a filter
+  lets anyone pointing DNS at the server mint certificates in the instance's
+  name; the endpoint answers 200 only for a domain a published page actually
+  carries, 404 for the rest. `STATUS_TLS_ASK_KEY` restricts who may ask. The
+  install chapter shows how to wire it as a proxy's `ask` URL.
+
+### Changed
+
+- **Sign-in sends an already signed-in member straight in.** The session is
+  global and its cookie can be set on the parent domain, so landing on a
+  workspace's sign-in page with a valid session and a membership is common;
+  the page asked for a password again, which nobody can answer differently.
+
 ## [0.0.2-alpha] - 2026-09-05
 
 The seam a control plane plugs into. The product still sells nothing and keeps

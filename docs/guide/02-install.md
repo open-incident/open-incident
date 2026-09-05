@@ -74,6 +74,26 @@ Terminate TLS in front of `web` and `status` and forward the `Host` header uncha
 
 The status app issues nothing itself: a customer's custom domain is a CNAME to `status.<your domain>`, and your proxy obtains its certificate on first visit (Caddy and Traefik do this on demand).
 
+**Ask before issuing.** On-demand certificates without a filter are an open door: any hostname pointed at your IP would make your proxy request a certificate in your name, until the certificate authority's rate limits stop you. The status app answers that question at `GET /api/tls?domain=<hostname>` — `200` for a domain a published page actually carries (the snapshot records one only after its DNS is verified), `404` for anything else. Wire it as the proxy's gate:
+
+```caddyfile
+{
+	on_demand_tls {
+		ask http://status:3001/api/tls
+	}
+}
+
+# Every host your own certificates do not cover: the customers' domains.
+:443 {
+	tls {
+		on_demand
+	}
+	reverse_proxy status:3001
+}
+```
+
+Set `STATUS_TLS_ASK_KEY` and add `?key=…` to the ask URL when the endpoint is reachable from outside your network; the proxy is the only caller that needs it.
+
 ## Environment reference
 
 Every variable the instance reads, grouped as in `.env.example`. Variables marked _instance-wide_ are set once by the operator; what is _per workspace_ is configured in the product's settings.

@@ -35,7 +35,7 @@ Accent colour, language of the public wording (English, French, German), privacy
 
 ### Domain
 
-Enter the custom domain, point a CNAME at `status.<your domain>`, then **Save & verify DNS**. Once verified, your reverse proxy issues the certificate on first visit. **Indexing** switches from noindex to indexed when you launch.
+Enter the custom domain, point a CNAME at `status.<your domain>`, then **Save & verify DNS**. Once verified, your reverse proxy issues the certificate on first visit — it asks the status app whether the domain is one of yours before doing so (see [install](install)). **Indexing** switches from noindex to indexed when you launch.
 
 ### Templates
 
