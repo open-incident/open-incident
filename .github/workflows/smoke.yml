@@ -70,7 +70,9 @@ jobs:
           TEAMS_OPENID_CONFIG: http://127.0.0.1:3196/openid
           TEAMS_SERVICE_URL_OVERRIDE: http://127.0.0.1:3196/connector
           INTERNAL_WEB_ORIGIN: http://127.0.0.1:3106
-        run: pnpm --filter @openincident/worker start &
+        # Logged to a file: a background process's output is lost once its step
+        # ends, and the log is what explains a failure the runner cannot reproduce.
+        run: pnpm --filter @openincident/worker start > worker.log 2>&1 &
       - name: Start web
         env:
           BASE_DOMAIN: localhost:3106
@@ -110,7 +112,7 @@ jobs:
           TEAMS_SERVICE_URL_OVERRIDE: http://127.0.0.1:3196/connector
           INTERNAL_WEB_ORIGIN: http://127.0.0.1:3106
         run: |
-          pnpm --filter @openincident/web exec next start --port 3106 &
+          pnpm --filter @openincident/web exec next start --port 3106 > web.log 2>&1 &
           for i in $(seq 1 30); do
             curl -sf -o /dev/null http://skylark.localhost:3106/login && break
             sleep 2
@@ -132,4 +134,7 @@ jobs:
         if: failure()
         with:
           name: playwright-report
-          path: packages/smoke/playwright-report/
+          path: |
+            packages/smoke/playwright-report/
+            worker.log
+            web.log
