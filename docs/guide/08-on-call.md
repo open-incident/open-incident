@@ -57,7 +57,7 @@ Editing happens on a **draft**; **Publish v*n*** makes it current. Running escal
 
 ### How a page travels
 
-1. A route matches an alert (or a responder escalates an incident) and names a path — statically, or through the catalog chain service → owner team → path.
+1. A route matches an alert (or a responder escalates an incident) and names a path — one chosen on the route, or the one an alert attribute leads to through the catalog (the entry's, or its owner team's), with a fallback.
 2. The escalation reaches level 1: each target is resolved to people (who is on call on the schedule now), and each person is notified through the channels of their **own** notification rule for that urgency — email, SMS, voice, push, Slack DM, Teams DM.
 3. The acknowledgement clock starts when the escalation reaches the level; retries within the level never extend it.
 4. Nobody acknowledged in time: the next node fires. Someone acknowledged: the timers stop, the timeline and the alert's card say who and how many minutes after the page.

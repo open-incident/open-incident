@@ -22,7 +22,19 @@ const schema = z.object({
     "var(--ok)",
     "var(--ink-3)",
   ]),
+  /** What the tools call it — comma-separated, matched case-insensitively. */
+  aliases: z.string().trim().max(400).optional(),
+  isDefault: z.string().optional(),
 });
+
+const aliasList = (raw: string | undefined) => [
+  ...new Set(
+    (raw ?? "")
+      .split(",")
+      .map((a) => a.trim().toLowerCase())
+      .filter(Boolean),
+  ),
+];
 
 export async function savePriority(formData: FormData) {
   const current = await requireManager();
@@ -30,6 +42,12 @@ export async function savePriority(formData: FormData) {
   if (!parsed.success) redirect(`${PAGE}?error=invalid`);
   const input = parsed.data;
   await withTenant(current.tenant.id, async (tx) => {
+    const makeDefault = input.isDefault === "on";
+    if (makeDefault)
+      await tx
+        .update(alertPriorities)
+        .set({ isDefault: false })
+        .where(eq(alertPriorities.tenantId, current.tenant.id));
     if (input.id) {
       await tx
         .update(alertPriorities)
@@ -38,6 +56,8 @@ export async function savePriority(formData: FormData) {
           description: input.description || null,
           urgency: input.urgency,
           color: input.color,
+          aliases: aliasList(input.aliases),
+          ...(makeDefault ? { isDefault: true } : {}),
         })
         .where(
           and(eq(alertPriorities.tenantId, current.tenant.id), eq(alertPriorities.id, input.id)),
@@ -56,6 +76,8 @@ export async function savePriority(formData: FormData) {
         color: input.color,
         rank,
         position: rank,
+        aliases: aliasList(input.aliases),
+        isDefault: makeDefault,
       });
     }
     await recordAudit(

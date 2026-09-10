@@ -18,11 +18,11 @@ test.describe("On-call & alerting", () => {
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/settings/alert-sources");
     await page.getByTestId("source-open").click();
-    await page.locator('form[data-testid="source-form"] select[name="kind"]').selectOption("http");
+    await page.getByTestId("source-kind-http").click();
     await page
-      .locator('form[data-testid="source-form"] input[name="name"]')
+      .locator('[data-testid="source-form"] input[name="name"]')
       .fill(`Smoke HTTP ${stamp}`);
-    await page.locator('form[data-testid="source-form"] button[type=submit]').click();
+    await page.locator('[data-testid="source-form"] button[type=submit]').click();
     const endpoint = (await page.getByTestId("source-endpoint").textContent())?.trim() ?? "";
     const secret = (await page.getByTestId("source-secret").textContent())?.trim() ?? "";
     expect(endpoint).toMatch(/\/api\/ingest\/alerts\/[0-9a-f-]{36}$/);

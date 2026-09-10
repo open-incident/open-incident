@@ -26,9 +26,9 @@ Four built-in roles:
 
 Underneath, the product asks one question everywhere: _may this member do this here?_ The answer comes from a set of twelve permissions (respond to incidents, manage on-call, manage each settings area, read the audit log…). The four built-in roles are fixed sets of those permissions. The enterprise edition lets you define [custom roles](custom-roles) as any other set.
 
-## The catalog is the spine
+## The catalog is optional
 
-The **catalog** holds what the routing reasons about: **teams**, **services**, **environments**, and any type you add. A service has an owner team; a team has an escalation path. This chain is what makes an alert reach someone without a route naming anyone:
+Routing does not need the catalog. A route says who to page — an escalation path, chosen once — and a fresh workspace pages someone the moment a person clicks **Page me** in **Settings → Alert configuration**. The **catalog** — **teams**, **services**, **environments**, and any type you add — is where the routing grows into: bind the `service` attribute to the service type and a route can page _the path the entry leads to_ — the service's own, or its owner team's — with a fallback when the chain does not resolve:
 
 ```
 alert  →  attribute "service" = checkout-api
@@ -37,7 +37,7 @@ alert  →  attribute "service" = checkout-api
        →  the path pages whoever is on call
 ```
 
-Change the owner of a service in the catalog and every alert about it follows, on the next event. That is why the catalog says "knowledge lives here once — not in every route".
+Change the owner of a service in the catalog and every alert about it follows, on the next event. Knowledge lives there once — when you want it to.
 
 ## Alert, incident, escalation
 

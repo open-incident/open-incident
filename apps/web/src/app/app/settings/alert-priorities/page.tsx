@@ -154,7 +154,33 @@ export default async function AlertPrioritiesPage({
             >
               {p.name}
             </span>
-            <span style={{ flex: 1, fontSize: 12.5, color: "var(--ink-2)" }}>{p.description}</span>
+            <span style={{ flex: 1, fontSize: 12.5, color: "var(--ink-2)", minWidth: 0 }}>
+              {p.description}
+              {(p.aliases.length > 0 || p.isDefault) && (
+                <span
+                  style={{
+                    display: "block",
+                    fontSize: 11.5,
+                    color: "var(--ink-3)",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
+                  {p.isDefault && (
+                    <span
+                      style={{
+                        fontFamily: "inherit",
+                        fontWeight: 700,
+                        color: "var(--brand)",
+                        marginRight: 8,
+                      }}
+                    >
+                      {t("settings.priorities.default")}
+                    </span>
+                  )}
+                  {p.aliases.join(" · ")}
+                </span>
+              )}
+            </span>
             <span
               style={{
                 padding: "2px 9px",
@@ -325,6 +351,24 @@ export default async function AlertPrioritiesPage({
                   </select>
                 </label>
               </div>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span style={label}>{t("settings.priorities.aliases")}</span>
+                <input
+                  name="aliases"
+                  maxLength={400}
+                  defaultValue={r?.aliases.join(", ") ?? ""}
+                  placeholder="critical, sev1, high"
+                  className="oi-field"
+                  style={{ ...control, fontFamily: "var(--font-mono)" }}
+                />
+                <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                  {t("settings.priorities.aliasesHint")}
+                </span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                <input type="checkbox" name="isDefault" defaultChecked={r?.isDefault ?? false} />
+                {t("settings.priorities.isDefault")}
+              </label>
             </div>
             <div
               style={{

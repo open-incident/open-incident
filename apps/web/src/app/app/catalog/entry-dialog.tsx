@@ -39,6 +39,7 @@ export function EntryDialog({
   types,
   entries,
   members,
+  paths = [],
   initialTypeKey,
   entry,
   trigger,
@@ -47,6 +48,8 @@ export function EntryDialog({
   types: TypeOpt[];
   entries: EntryOpt[];
   members: MemberOpt[];
+  /** Escalation paths, for the attribute type that names one. */
+  paths?: Array<{ id: string; name: string }>;
   initialTypeKey: string;
   entry?: EntryValue;
   trigger?: React.CSSProperties;
@@ -118,6 +121,22 @@ export function EntryDialog({
               {o.name}
             </option>
           ))}
+        </select>
+      );
+    }
+    if (def.type === "escalation_path") {
+      const current = initial(def);
+      return (
+        <select name={name} defaultValue={current} className="oi-field" style={s.control}>
+          <option value="">—</option>
+          {paths.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+          {current && !paths.some((p) => p.id === current) && (
+            <option value={current}>{current}</option>
+          )}
         </select>
       );
     }

@@ -1,12 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { withTenant } from "@openincident/db";
+import { alertNotes, withTenant } from "@openincident/db";
+import { desc, eq } from "drizzle-orm";
 import { getT } from "@/i18n/server";
 import { canRespond, requireMember } from "@/lib/session";
 import { getAlert } from "@/lib/alerts";
 import { phaseTone, priorityTone } from "@/lib/tones";
 import { Countdown } from "./countdown";
-import { acknowledgeAlert, resolveAlert, snoozeAlert, unacknowledgeAlert } from "../actions";
+import {
+  addAlertNote,
+  deleteAlertNote,
+  acknowledgeAlert,
+  resolveAlert,
+  snoozeAlert,
+  unacknowledgeAlert,
+} from "../actions";
 
 /**
  * Alert detail: the header with its status, priority and the four actions,
@@ -21,6 +29,13 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
   const alert = await withTenant(tenant.id, (tx) => getAlert(tx, tenant.id, id));
   if (!alert) notFound();
+  const notes = await withTenant(tenant.id, (tx) =>
+    tx
+      .select()
+      .from(alertNotes)
+      .where(eq(alertNotes.alertId, id))
+      .orderBy(desc(alertNotes.createdAt)),
+  );
   const acts = canRespond(member);
   const a = alert.row;
   const firing = a.status === "firing";
@@ -84,10 +99,35 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
     switch (e.kind) {
       case "triggered":
         return t("alerts.event.triggered", { priority: String(p.priority ?? "—") });
-      case "routed":
-        return p.route
-          ? t("alerts.event.routed", { route: String(p.route) })
-          : t("alerts.event.unrouted");
+      case "routed": {
+        if (p.warning === "path_unpublished") return t("alerts.event.pathUnpublished");
+        if (!p.route) return t("alerts.event.unrouted");
+        const esc = Array.isArray(p.escalation)
+          ? (p.escalation as Array<{
+              path: string | null;
+              via: string | null;
+              skipped: string | null;
+            }>)
+          : [];
+        const paged = esc
+          .filter((e) => e.path && !e.skipped)
+          .map((e) => e.path)
+          .join(", ");
+        const skipped = esc.filter((e) => e.skipped).length;
+        const missing = Array.isArray(p.missing) ? (p.missing as string[]) : [];
+        return [
+          t("alerts.event.routed", { route: String(p.route) }),
+          paged
+            ? t("alerts.event.routedPages", { paths: paged })
+            : esc.length
+              ? ""
+              : t("alerts.event.routedNobody"),
+          skipped ? t("alerts.event.routedSkipped", { count: skipped }) : "",
+          missing.length ? t("alerts.event.routedMissing", { keys: missing.join(", ") }) : "",
+        ]
+          .filter(Boolean)
+          .join(" · ");
+      }
       case "escalated":
         return t("alerts.event.escalated", {
           members: Array.isArray(p.members) ? (p.members as string[]).join(", ") : "—",
@@ -668,6 +708,93 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
               </>
             ) : (
               <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("alerts.noIncident")}</div>
+            )}
+          </div>
+          <div style={{ height: 1, background: "var(--line-2)" }} />
+          <div
+            style={{ display: "flex", flexDirection: "column", gap: 8 }}
+            data-testid="alert-notes"
+          >
+            <div className="oi-eyebrow">{t("alerts.notes")}</div>
+            {notes.length === 0 && (
+              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("alerts.notesEmpty")}</div>
+            )}
+            {notes.map((n) => (
+              <div
+                key={n.id}
+                style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5 }}
+                data-testid="alert-note"
+              >
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontWeight: 600 }}>{n.memberName}</span>
+                  <span style={{ color: "var(--ink-3)" }}> · {t.fmt.relative(n.createdAt)}</span>
+                  <span style={{ display: "block", color: "var(--ink-2)", whiteSpace: "pre-wrap" }}>
+                    {n.body}
+                  </span>
+                </span>
+                {n.memberId === member.id && (
+                  <form action={deleteAlertNote}>
+                    <input type="hidden" name="id" value={n.id} />
+                    <input type="hidden" name="alertId" value={a.id} />
+                    <button
+                      type="submit"
+                      aria-label={t("common.delete")}
+                      style={{
+                        background: "none",
+                        border: 0,
+                        cursor: "pointer",
+                        color: "var(--ink-3)",
+                        fontSize: 12,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </form>
+                )}
+              </div>
+            ))}
+            {acts && (
+              <form
+                action={addAlertNote}
+                style={{ display: "flex", gap: 6, alignItems: "flex-start" }}
+                data-testid="alert-note-form"
+              >
+                <input type="hidden" name="id" value={a.id} />
+                <textarea
+                  name="body"
+                  required
+                  rows={2}
+                  maxLength={4000}
+                  placeholder={t("alerts.notePlaceholder")}
+                  className="oi-field"
+                  style={{
+                    flex: 1,
+                    border: "1px solid var(--line)",
+                    borderRadius: 8,
+                    padding: "6px 9px",
+                    fontSize: 12.5,
+                    background: "var(--panel)",
+                    resize: "vertical",
+                    fontFamily: "inherit",
+                    outline: "none",
+                  }}
+                />
+                <button
+                  type="submit"
+                  style={{
+                    height: 30,
+                    padding: "0 10px",
+                    border: "1px solid var(--line)",
+                    borderRadius: 8,
+                    background: "var(--panel)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("alerts.noteAdd")}
+                </button>
+              </form>
             )}
           </div>
           <div style={{ height: 1, background: "var(--line-2)" }} />

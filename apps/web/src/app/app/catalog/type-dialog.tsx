@@ -19,7 +19,14 @@ type Row = {
   existing: boolean;
 };
 
-const KINDS: CatalogAttributeType[] = ["text", "link", "select", "entry", "member_list"];
+const KINDS: CatalogAttributeType[] = [
+  "text",
+  "link",
+  "select",
+  "entry",
+  "member_list",
+  "escalation_path",
+];
 
 function rowsOf(defs: CatalogAttributeDef[]): Row[] {
   return defs.map((d) => ({

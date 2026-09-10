@@ -5,16 +5,29 @@ order: 7
 summary: What your monitoring sent, how the route treated it, who was paged — and the three gestures on an alert.
 ---
 
+## Getting started
+
+**Settings → Alert configuration** takes a workspace from nothing to "an alert paged someone" in four steps, each of them real:
+
+1. **Decide who gets paged.** **Page me** makes a published escalation path that pages you (or a colleague, or whoever is on call on a schedule) and names it on the route that catches every alert. Refine the path later — levels, retries, working hours — in **On-call → Paths**.
+2. **Connect a source.** Pick the tool in a grid, name it, get an endpoint and a secret shown once. HTTP covers any tool not listed.
+3. **Receive a first alert.** Send one from the tool — the source page waits for it live — or press **Test**: a real alert goes through the whole pipeline in test mode and pages nobody.
+4. **Check that an alert paged someone.** Open it: its history says which route caught it, who it paged and why.
+
+No catalog is needed for any of this. The catalog is where the routing grows into, when you want a route to page _the team that owns the service_ rather than a fixed path.
+
 ## From a webhook to an alert
 
-Every monitoring tool posts to its own **alert source**: one endpoint and one secret per source, created in **Settings → Alert sources** (Datadog, Prometheus/Alertmanager, Grafana, Sentry, CloudWatch, Uptime Kuma, generic HTTP, inbound email). The payload is stored raw, parsed by the source's mapping into **attributes** — service, environment, team, priority, region, whatever the mapping extracts — and bound to the catalog: the `service` attribute names a catalog service, the team comes from the service's owner.
+Every monitoring tool posts to its own **alert source**: one endpoint and one secret per source (Datadog, Prometheus/Alertmanager, Grafana, Sentry, CloudWatch, Uptime Kuma, generic HTTP). The payload is stored raw and parsed by the source's **mappings** into the workspace's **attributes** — service, team, environment, region, the tool's own severity, and any you add in **Settings → Attributes**. An attribute bound to a catalog type is canonicalised to the entry it names (the team derived from the service's owner when the payload gives none). The source then decides the **priority** — the same for every alert, or read from a payload field with a value map; a label the tools use (_critical_, _warning_) matches a priority by its aliases — and may **filter** out what it does not want (resolutions always pass).
 
 Two mechanisms keep the noise down before anything else happens:
 
-- **Deduplication by key**: the same key from the same source is one alert with more events, not a new alert.
-- **Grouping**: alerts of the same route within a five-minute window are grouped under the first one.
+- **Deduplication by key**: the same key from the same source is one alert with more events, not a new alert. Repeats merge attributes per the attribute's strategy — first wins, last wins, accumulate, highest priority — until the alert pages or opens an incident, after which the record is locked.
+- **Grouping**: a route groups alerts sharing a key — the attributes it chooses — within a window, fixed or restarting at each alert that joins; joiners are handled with the first one and page again only if the route says so.
 
-Then the **routes** are tried in order; the first whose filters all match decides: which escalation (static path, dynamic through the catalog, or none), whether an incident opens (never, always, conditionally in triage), which priority and urgency, whether the notification is deferred to let grouping absorb a burst. No route matching means: logged, nobody paged.
+Then the **routes** are tried in order; the first whose conditions hold decides: who to page (rules that stack — a path, or the path an attribute leads to through the catalog, with a fallback), whether an incident opens (never, always, or in triage when the priority pages), with what type, phase, severity and custom fields, whether the triage incident is declined when the alert resolves, which Slack channel to post to, and whether the first page waits. No route matching means: logged, nobody paged — and the history says so.
+
+Every source page has a **tester**: paste a payload and read what the pipeline would do with it — attributes, priority, route, who it pages, the incident — before sending it as a test or for real.
 
 ## The alerts list
 
@@ -42,15 +55,15 @@ While an escalation runs, the card shows the current level, who was paged and wh
 
 ### Route, incident, history
 
-The **Route** block names the route that matched and how it escalates: _dynamically — service → owner team → path_, statically through one path, or _no escalation — logged only_; and its incident rule. **Edit the route →** opens it in the settings. The **Incident** block links to the incident the alert created or joined. The **History** is the alert's own log: triggered with its priority, routed by which route (or _no route matched_), level 1 notified and who, incident created in triage, grouped, acknowledged by whom through which channel, snoozed, resolved by whom or at the source, notification deferred, test mode.
+The **Route** block names the route that matched and how it escalates — the paths its rules resolved to, or _no escalation — logged only_ — and its incident rule. **Edit the route →** opens it in the settings. The **Incident** block links to the incident the alert created or joined. The **History** is the alert's own log: triggered with its priority, routed by which route (or _no route matched_) and who it pages — with the rules it skipped and the required attributes it lacked — level 1 notified and who, incident created in triage, grouped, acknowledged by whom through which channel, snoozed, resolved by whom or at the source, notification deferred, test mode. **Notes** under it hold written context — what was checked, why it was resolved, a hand-over — without an incident.
 
 ### Attributes and payload
 
-The extracted attributes with their origin (_service · catalog_, _team · via Service.owner_, _priority · from the payload_, the deduplication key), and the raw payload as it was received — stored as JSON, parsed downstream.
+The extracted attributes with their origin (_service · catalog_, _team · via Service.owner_, _priority · from the payload_, the deduplication key), and the raw payload as it was received — stored as JSON, parsed downstream. The list has a search box over titles and attributes.
 
 ## Test alerts
 
-Every source in **Settings → Alert sources** has a **Test** button that sends a real alert end to end in test mode: logged and routed, nobody paged, no incident. The alert appears in the list with the _test mode_ chip. Routes can also run in test mode as a whole while their filters are verified.
+Every source has a **Test** button that sends a real alert end to end in test mode: logged and routed, nobody paged, no incident. The alert appears in the list with the _test mode_ chip. The source page's tester does the same with any payload you paste, after showing what it would do. Routes can also run in test mode as a whole while their conditions are verified, and are previewed against the last alerts before saving.
 
 ## Heartbeats
 

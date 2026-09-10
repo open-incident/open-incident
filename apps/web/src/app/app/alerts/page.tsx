@@ -13,15 +13,16 @@ import { priorityTone } from "@/lib/tones";
 export default async function AlertsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; source?: string }>;
+  searchParams: Promise<{ view?: string; source?: string; q?: string }>;
 }) {
   const { tenant } = await requireMember();
   const t = await getT();
   const params = await searchParams;
   const view = params.view === "resolved" ? "resolved" : params.view === "all" ? "all" : "firing";
   const sourceId = params.source ?? null;
+  const q = (params.q ?? "").slice(0, 120);
   const data = await withTenant(tenant.id, async (tx) => ({
-    rows: await listAlerts(tx, tenant.id, view, sourceId),
+    rows: await listAlerts(tx, tenant.id, view, sourceId, q),
     counts: await alertCounts(tx, tenant.id),
   }));
   const views = [
@@ -192,6 +193,40 @@ export default async function AlertsPage({
             {data.rows.length}
           </span>
           <span style={{ flex: 1 }} />
+          <form
+            method="get"
+            style={{ display: "flex", gap: 6, alignItems: "center" }}
+            data-testid="alerts-search"
+          >
+            <input type="hidden" name="view" value={view} />
+            {sourceId && <input type="hidden" name="source" value={sourceId} />}
+            <input
+              name="q"
+              defaultValue={q}
+              placeholder={t("alerts.searchPlaceholder")}
+              aria-label={t("alerts.searchPlaceholder")}
+              className="oi-field"
+              style={{
+                height: 32,
+                width: 240,
+                padding: "0 10px",
+                border: "1px solid var(--line)",
+                borderRadius: 8,
+                fontSize: 12.5,
+                background: "var(--panel)",
+                outline: "none",
+              }}
+            />
+            {q && (
+              <Link
+                href={`/app/alerts?view=${view}${sourceId ? `&source=${sourceId}` : ""}`}
+                className="oi-link"
+                style={{ fontSize: 12 }}
+              >
+                {t("alerts.clearSearch")}
+              </Link>
+            )}
+          </form>
           <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("alerts.dedupNote")}</span>
         </div>
         <div

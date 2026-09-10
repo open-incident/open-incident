@@ -361,12 +361,15 @@ export async function planAlert(
   }
 
   // Grouping: the route's rule; legacy routes group by service within five minutes.
+  // A test alert never joins a group nor leads one: it must show what a real
+  // alert would do on its own, and a real alert grouped under a test one would
+  // never page.
   let groupingRule: GroupingRule | null = null;
   let key: string | null = null;
   let leader: AlertPlan["grouping"]["leader"] = null;
   if (route && parsed.status === "firing") {
     groupingRule = route.grouping ?? (attributes.service ? LEGACY_GROUPING : null);
-    if (groupingRule?.enabled) {
+    if (groupingRule?.enabled && !testMode) {
       key = groupingKey(groupingRule, attributes);
       const since = new Date(now.getTime() - groupingRule.windowMinutes * 60_000);
       const [row] = await tx
@@ -382,6 +385,7 @@ export async function planAlert(
           and(
             eq(alerts.routeId, route.id),
             eq(alerts.status, "firing"),
+            eq(alerts.testMode, false),
             isNull(alerts.groupId),
             eq(alerts.groupKey, key),
             groupingRule.extending ? gte(alerts.lastAt, since) : gte(alerts.firstAt, since),

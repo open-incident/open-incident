@@ -1,18 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { useT } from "@/i18n/client";
+import { IntegrationIcon } from "../integrations/icons";
 import { createSource } from "./actions";
 
-const KINDS = [
-  ["datadog", "Datadog"],
-  ["prometheus", "Prometheus / Alertmanager"],
-  ["grafana", "Grafana"],
-  ["sentry", "Sentry"],
-  ["cloudwatch", "Amazon CloudWatch"],
-  ["uptime_kuma", "Uptime Kuma"],
-  ["http", "HTTP"],
-] as const;
+export type KindOption = { kind: string; label: string; icon: string };
+
 const label: React.CSSProperties = {
   fontSize: 11,
   fontWeight: 600,
@@ -30,30 +25,56 @@ const control: React.CSSProperties = {
   background: "var(--panel)",
   width: "100%",
 };
+const mono: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  fontFamily: "var(--font-mono)",
+  fontSize: 11.5,
+  background: "var(--panel)",
+  border: "1px solid var(--brand-b)",
+  borderRadius: 8,
+  padding: "7px 10px",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+const btn: React.CSSProperties = {
+  height: 34,
+  padding: "0 13px",
+  border: "1px solid var(--line)",
+  borderRadius: 9,
+  background: "var(--panel)",
+  fontSize: 12.5,
+  fontWeight: 600,
+  cursor: "pointer",
+  color: "inherit",
+  textDecoration: "none",
+  display: "inline-flex",
+  alignItems: "center",
+};
 
-/** "+ New source": kind and name; then the endpoint and the secret, shown once. */
-export function NewSourceDialog({ initialKind }: { initialKind?: string }) {
+/**
+ * "+ New source", in three steps: the tool (a grid of the ones the product
+ * parses, HTTP for everything else), a name, then the endpoint and the secret
+ * shown once — and the way to the source's page to map its attributes.
+ */
+export function NewSourceDialog({
+  kinds,
+  initialOpen = false,
+}: {
+  kinds: KindOption[];
+  initialOpen?: boolean;
+}) {
   const t = useT();
-  const [open, setOpen] = useState(Boolean(initialKind));
+  const [open, setOpen] = useState(initialOpen);
+  const [kind, setKind] = useState<string | null>(null);
   const [state, action, pending] = useActionState(createSource, {});
   const [copied, setCopied] = useState<"secret" | "endpoint" | null>(null);
   const copy = (what: "secret" | "endpoint", value: string) => {
     navigator.clipboard?.writeText(value).catch(() => {});
     setCopied(what);
   };
-  const mono: React.CSSProperties = {
-    flex: 1,
-    minWidth: 0,
-    fontFamily: "var(--font-mono)",
-    fontSize: 11.5,
-    background: "var(--panel)",
-    border: "1px solid var(--brand-b)",
-    borderRadius: 8,
-    padding: "7px 10px",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  };
+  const chosen = kinds.find((k) => k.kind === kind) ?? null;
   return (
     <>
       <button
@@ -61,251 +82,254 @@ export function NewSourceDialog({ initialKind }: { initialKind?: string }) {
         data-testid="source-open"
         onClick={() => setOpen(true)}
         className="oi-hover-edge-fill"
-        style={{
-          height: 32,
-          padding: "0 13px",
-          border: "1px solid var(--line)",
-          borderRadius: 9,
-          background: "var(--panel)",
-          fontSize: 12.5,
-          fontWeight: 600,
-          color: "var(--brand)",
-          cursor: "pointer",
-        }}
+        style={{ ...btn, height: 32, color: "var(--brand)" }}
       >
         {t("settings.sources.new")}
       </button>
       {open && (
         <div
-          onClick={() => setOpen(false)}
+          onClick={() => !state.secret && setOpen(false)}
           style={{
             position: "fixed",
             inset: 0,
-            background: "var(--scrim-dialog)",
+            background: "rgba(10,16,24,.35)",
             display: "grid",
             placeItems: "center",
-            padding: 24,
-            zIndex: 60,
+            zIndex: 40,
+            padding: 20,
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            className="oi-rise"
+            className="oi-rise-modal"
             style={{
-              width: 560,
+              width: 620,
               maxWidth: "100%",
               background: "var(--panel)",
-              borderRadius: 18,
-              boxShadow: "var(--shadow-modal)",
+              borderRadius: 16,
+              boxShadow: "var(--shadow-modal, 0 20px 60px rgba(0,0,0,.25))",
+              padding: 22,
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
             }}
+            data-testid="source-form"
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "16px 20px",
-                borderBottom: "1px solid var(--line)",
-              }}
-            >
-              <div style={{ fontFamily: "var(--font-title)", fontSize: 16.5, fontWeight: 600 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontFamily: "var(--font-title)", fontSize: 17, fontWeight: 600 }}>
                 {t("settings.sources.newTitle")}
-              </div>
+              </span>
+              <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                {state.secret
+                  ? t("settings.sources.step3")
+                  : chosen
+                    ? t("settings.sources.step2")
+                    : t("settings.sources.step1")}
+              </span>
+              <span style={{ flex: 1 }} />
               <button
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label={t("common.close")}
-                className="oi-hover"
                 style={{
-                  marginLeft: "auto",
-                  width: 30,
-                  height: 30,
-                  borderRadius: 8,
                   border: 0,
-                  background: "transparent",
-                  color: "var(--ink-3)",
+                  background: "none",
+                  fontSize: 16,
                   cursor: "pointer",
-                  fontSize: 14,
+                  color: "var(--ink-3)",
                 }}
               >
                 ✕
               </button>
             </div>
-            <div
-              style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 13 }}
-            >
-              {state.secret ? (
-                <div
-                  data-testid="source-created"
-                  style={{ display: "flex", flexDirection: "column", gap: 10 }}
-                >
-                  <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55 }}>
-                    {t("settings.sources.createdText")}
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <span style={label}>{t("settings.sources.endpoint")}</span>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <code data-testid="source-endpoint" style={mono}>
-                        {state.endpoint}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() => copy("endpoint", state.endpoint!)}
-                        style={{
-                          height: 30,
-                          padding: "0 12px",
-                          borderRadius: 8,
-                          background: "var(--brand)",
-                          color: "#fff",
-                          border: 0,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {copied === "endpoint" ? t("common.copied") : t("common.copy")}
-                      </button>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <span style={label}>{t("settings.sources.secret")}</span>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <code data-testid="source-secret" style={mono}>
-                        {state.secret}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() => copy("secret", state.secret!)}
-                        style={{
-                          height: 30,
-                          padding: "0 12px",
-                          borderRadius: 8,
-                          background: "var(--brand)",
-                          color: "#fff",
-                          border: 0,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {copied === "secret" ? t("common.copied") : t("common.copy")}
-                      </button>
-                    </div>
-                  </div>
-                  <div
-                    className="oi-note"
-                    style={{ borderRadius: 11, padding: "11px 13px", fontSize: 12 }}
+
+            {state.secret && state.endpoint ? (
+              <div
+                data-testid="source-created"
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
+                <p style={{ margin: 0, fontSize: 13, color: "var(--ink-2)", lineHeight: 1.55 }}>
+                  {t("settings.sources.createdText")}
+                </p>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ ...label, width: 70 }}>{t("settings.sources.endpoint")}</span>
+                  <code style={mono} data-testid="source-endpoint">
+                    {state.endpoint}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => copy("endpoint", state.endpoint!)}
+                    style={{ ...btn, height: 30 }}
                   >
-                    {t("settings.sources.secretNote")}
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <button
-                      type="button"
-                      onClick={() => setOpen(false)}
-                      style={{
-                        height: 34,
-                        padding: "0 16px",
-                        borderRadius: 9,
-                        background: "var(--brand)",
-                        color: "#fff",
-                        border: 0,
-                        fontSize: 12.5,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {t("common.close")}
-                    </button>
-                  </div>
+                    {copied === "endpoint" ? t("common.copied") : t("common.copy")}
+                  </button>
                 </div>
-              ) : (
-                <form
-                  action={action}
-                  data-testid="source-form"
-                  style={{ display: "flex", flexDirection: "column", gap: 13 }}
-                >
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <span style={label}>{t("settings.sources.kind")}</span>
-                      <select
-                        name="kind"
-                        defaultValue={KINDS.some(([k]) => k === initialKind) ? initialKind : "http"}
-                        className="oi-field"
-                        style={control}
-                      >
-                        {KINDS.map(([k, l]) => (
-                          <option key={k} value={k}>
-                            {l}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <span style={label}>{t("settings.sources.name")}</span>
-                      <input
-                        name="name"
-                        required
-                        autoFocus
-                        minLength={2}
-                        maxLength={80}
-                        placeholder="Datadog — production"
-                        className="oi-field"
-                        style={control}
-                      />
-                    </label>
-                  </div>
-                  {state.error && (
-                    <p role="alert" style={{ margin: 0, fontSize: 12.5, color: "var(--dang)" }}>
-                      {state.error === "duplicate"
-                        ? t("settings.sources.errorDuplicate")
-                        : t("settings.fields.errorInvalid")}
-                    </p>
-                  )}
-                  <div
-                    className="oi-note"
-                    style={{ borderRadius: 11, padding: "11px 13px", fontSize: 12 }}
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ ...label, width: 70 }}>{t("settings.sources.secret")}</span>
+                  <code style={mono} data-testid="source-secret">
+                    {state.secret}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => copy("secret", state.secret!)}
+                    style={{ ...btn, height: 30 }}
                   >
-                    {t("settings.sources.newNote")}
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                    <button
-                      type="button"
-                      onClick={() => setOpen(false)}
-                      className="oi-hover"
+                    {copied === "secret" ? t("common.copied") : t("common.copy")}
+                  </button>
+                </div>
+                <p style={{ margin: 0, fontSize: 12, color: "var(--wait)", fontWeight: 600 }}>
+                  {t("settings.sources.secretNote")}
+                </p>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button type="button" onClick={() => setOpen(false)} style={btn}>
+                    {t("common.close")}
+                  </button>
+                  {state.id && (
+                    <Link
+                      href={`/app/settings/alert-sources/${state.id}`}
                       style={{
-                        height: 34,
-                        padding: "0 13px",
-                        border: "1px solid var(--line)",
-                        borderRadius: 9,
-                        background: "var(--panel)",
-                        fontSize: 12.5,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {t("common.cancel")}
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={pending}
-                      style={{
-                        height: 34,
-                        padding: "0 16px",
-                        borderRadius: 9,
+                        ...btn,
                         background: "var(--brand)",
+                        borderColor: "var(--brand)",
                         color: "#fff",
-                        border: 0,
-                        fontSize: 12.5,
-                        fontWeight: 600,
-                        cursor: "pointer",
                       }}
+                      data-testid="source-configure"
                     >
-                      {t("common.create")}
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
+                      {t("settings.sources.configure")} →
+                    </Link>
+                  )}
+                </div>
+              </div>
+            ) : !chosen ? (
+              <div
+                style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}
+                data-testid="source-kinds"
+              >
+                {kinds.map((k) => (
+                  <button
+                    key={k.kind}
+                    type="button"
+                    onClick={() => setKind(k.kind)}
+                    className="oi-hover-edge"
+                    data-testid={`source-kind-${k.kind}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "12px 12px",
+                      border: "1px solid var(--line)",
+                      borderRadius: 11,
+                      background: "var(--panel)",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "inherit",
+                    }}
+                  >
+                    <IntegrationIcon id={k.icon} />
+                    <span style={{ minWidth: 0 }}>
+                      {k.label}
+                      <span
+                        style={{
+                          display: "block",
+                          fontSize: 11,
+                          fontWeight: 500,
+                          color: "var(--ink-3)",
+                        }}
+                      >
+                        {k.kind === "http"
+                          ? t("settings.sources.kindHttpNote")
+                          : t("settings.sources.kindParsedNote")}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <form action={action} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <input type="hidden" name="kind" value={chosen.kind} />
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 10px",
+                    background: "var(--sunk)",
+                    borderRadius: 10,
+                  }}
+                >
+                  <IntegrationIcon id={chosen.icon} />
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>{chosen.label}</span>
+                  <span style={{ flex: 1 }} />
+                  <button
+                    type="button"
+                    onClick={() => setKind(null)}
+                    className="oi-link"
+                    style={{
+                      background: "none",
+                      border: 0,
+                      fontSize: 12,
+                      cursor: "pointer",
+                      color: "var(--brand)",
+                    }}
+                  >
+                    {t("settings.sources.changeKind")}
+                  </button>
+                </div>
+                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <span style={label}>{t("settings.sources.name")}</span>
+                  <input
+                    name="name"
+                    required
+                    minLength={2}
+                    maxLength={80}
+                    autoFocus
+                    defaultValue={`${chosen.label}`}
+                    className="oi-field"
+                    style={control}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <span style={label}>{t("settings.sources.description")}</span>
+                  <input
+                    name="description"
+                    maxLength={300}
+                    placeholder={t("settings.sources.descriptionPlaceholder")}
+                    className="oi-field"
+                    style={control}
+                  />
+                </label>
+                <p style={{ margin: 0, fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
+                  {t("settings.sources.newNote")}
+                </p>
+                {state.error && (
+                  <p role="alert" style={{ margin: 0, fontSize: 12.5, color: "var(--dang)" }}>
+                    {state.error === "duplicate"
+                      ? t("settings.sources.errorDuplicate")
+                      : t("settings.fields.errorInvalid")}
+                  </p>
+                )}
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button type="button" onClick={() => setOpen(false)} style={btn}>
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={pending}
+                    style={{
+                      ...btn,
+                      background: "var(--brand)",
+                      borderColor: "var(--brand)",
+                      color: "#fff",
+                    }}
+                    data-testid="source-create"
+                  >
+                    {t("settings.sources.create")}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

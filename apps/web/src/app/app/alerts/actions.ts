@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { alertEvents, alerts, incidentEvents, withTenant } from "@openincident/db";
+import { alertEvents, alertNotes, alerts, incidentEvents, withTenant } from "@openincident/db";
 import {
   acknowledgeEscalation,
   cancelEscalation,
@@ -197,4 +197,45 @@ export async function resolveAlert(formData: FormData) {
     await cancelEscalation(tenantId, alert.escalationId, "alert_resolved", now);
   revalidatePath(`/app/alerts/${id}`);
   revalidatePath("/app/alerts");
+}
+
+/** A note on the alert: what was checked, why it was resolved, a hand-over — without an incident. */
+export async function addAlertNote(formData: FormData) {
+  const current = await requireResponder();
+  const id = idSchema.parse(formData.get("id"));
+  const body = z.string().trim().min(1).max(4000).parse(formData.get("body"));
+  await withTenant(current.tenant.id, async (tx) => {
+    const [a] = await tx
+      .select({ id: alerts.id })
+      .from(alerts)
+      .where(and(eq(alerts.tenantId, current.tenant.id), eq(alerts.id, id)));
+    if (!a) return;
+    await tx.insert(alertNotes).values({
+      tenantId: current.tenant.id,
+      alertId: id,
+      memberId: current.member.id,
+      memberName: current.member.name,
+      body,
+    });
+  });
+  revalidatePath(`/app/alerts/${id}`);
+}
+
+/** Only the author removes a note. */
+export async function deleteAlertNote(formData: FormData) {
+  const current = await requireResponder();
+  const id = idSchema.parse(formData.get("id"));
+  const alertId = idSchema.parse(formData.get("alertId"));
+  await withTenant(current.tenant.id, (tx) =>
+    tx
+      .delete(alertNotes)
+      .where(
+        and(
+          eq(alertNotes.tenantId, current.tenant.id),
+          eq(alertNotes.id, id),
+          eq(alertNotes.memberId, current.member.id),
+        ),
+      ),
+  );
+  revalidatePath(`/app/alerts/${alertId}`);
 }

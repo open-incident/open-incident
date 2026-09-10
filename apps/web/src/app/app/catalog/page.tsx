@@ -1,11 +1,12 @@
 import Link from "next/link";
 import {
-  withTenant,
   catalogEntries,
   catalogTypes,
-  incidents,
+  escalationPaths,
   followUps,
+  incidents,
   members,
+  withTenant,
 } from "@openincident/db";
 import { and, asc, eq, gte, sql } from "drizzle-orm";
 import { CORE_TYPE_KEYS } from "@openincident/catalog";
@@ -46,6 +47,11 @@ export default async function CatalogPage({
       .from(catalogEntries)
       .where(eq(catalogEntries.tenantId, tenant.id))
       .orderBy(asc(catalogEntries.name));
+    const pathRows = await tx
+      .select({ id: escalationPaths.id, name: escalationPaths.name })
+      .from(escalationPaths)
+      .where(eq(escalationPaths.tenantId, tenant.id))
+      .orderBy(asc(escalationPaths.name));
     const since = new Date(Date.now() - 90 * 86_400_000);
     const incCounts = await tx
       .select({
@@ -66,6 +72,7 @@ export default async function CatalogPage({
       .where(eq(members.tenantId, tenant.id))
       .orderBy(asc(members.name));
     return {
+      pathRows,
       types,
       entries,
       members: memberRows,
@@ -130,6 +137,7 @@ export default async function CatalogPage({
     locked: ty.locked,
   }));
   const entryOpts = data.entries.map((e) => ({ id: e.id, typeId: e.typeId, name: e.name }));
+  const pathOpts = data.pathRows;
   const selectedTypeOpt = typeOpts.find((ty) => ty.id === selectedType.id)!;
 
   const meta = (e: Entry): string => {
@@ -252,6 +260,11 @@ export default async function CatalogPage({
         const raw = selected.attributes[def.key];
         let value = "—";
         if (def.type === "entry") value = entryName(raw) ?? "—";
+        else if (def.type === "escalation_path")
+          value =
+            typeof raw === "string" && raw
+              ? (pathOpts.find((p) => p.id === raw)?.name ?? raw)
+              : "—";
         else if (def.type === "member_list")
           value = Array.isArray(raw) ? t("catalog.meta.members", { count: raw.length }) : "—";
         else if (def.type === "select" && def.key === "paging")
@@ -508,6 +521,7 @@ export default async function CatalogPage({
               types={typeOpts}
               entries={entryOpts}
               members={data.members}
+              paths={pathOpts}
               initialTypeKey={selectedType.key}
             />
           )}
@@ -722,6 +736,7 @@ export default async function CatalogPage({
                       types={typeOpts}
                       entries={entryOpts}
                       members={data.members}
+                      paths={pathOpts}
                       initialTypeKey={selectedType.key}
                       entry={{
                         id: selected.id,

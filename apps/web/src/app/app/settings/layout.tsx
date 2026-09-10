@@ -95,8 +95,18 @@ export default async function SettingsLayout({ children }: { children: React.Rea
       title: t("settings.group.alerting"),
       items: [
         {
+          href: "/app/settings/alerting",
+          label: t("settings.nav.alerting"),
+          permission: "settings.alerting",
+        },
+        {
           href: "/app/settings/alert-sources",
           label: t("settings.nav.alertSources"),
+          permission: "settings.alerting",
+        },
+        {
+          href: "/app/settings/alert-attributes",
+          label: t("settings.nav.alertAttributes"),
           permission: "settings.alerting",
         },
         {

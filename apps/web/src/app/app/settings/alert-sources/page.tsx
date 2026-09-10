@@ -1,44 +1,57 @@
 import Link from "next/link";
-import { asc, eq, sql } from "drizzle-orm";
-import { alertSources, alerts, withTenant } from "@openincident/db";
+import { and, eq } from "drizzle-orm";
+import { alertSources, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
-import { requireMember } from "@/lib/session";
+import { isManager, requireMember } from "@/lib/session";
+import { sourceHealth } from "@/lib/alerting-setup";
+import { SOURCE_KINDS, sourceKindMeta } from "@/lib/alert-sources";
+import { IntegrationIcon } from "../integrations/icons";
 import { NewSourceDialog } from "./new-source";
-import { deleteSource, testSource, toggleSource } from "./actions";
-import { requestOrigin } from "@/lib/tenant";
-import { headers } from "next/headers";
+import { testSource, toggleSource } from "./actions";
 
-/** Settings → Alert sources: one row per source with its endpoint, activity, status and a real test button. */
+const btn: React.CSSProperties = {
+  height: 30,
+  padding: "0 11px",
+  border: "1px solid var(--line)",
+  borderRadius: 8,
+  background: "var(--panel)",
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: "pointer",
+  color: "inherit",
+  textDecoration: "none",
+  display: "inline-flex",
+  alignItems: "center",
+};
+
+/**
+ * Alert sources: one row per tool connected — its mark, its name, what it
+ * sent in the last day, when it last spoke — and the way to its page, where
+ * the payload becomes attributes. Creating one takes three steps in a dialog.
+ */
 export default async function AlertSourcesPage({
   searchParams,
 }: {
   searchParams: Promise<{ tested?: string; alert?: string; new?: string }>;
 }) {
-  const { tenant } = await requireMember();
+  const { tenant, member } = await requireMember();
   const t = await getT();
-  const q = await searchParams;
-  const h = await headers();
-  const origin = requestOrigin({
-    headers: h,
-    nextUrl: new URL(`http://${h.get("host") ?? "localhost"}/`),
-  });
-  const rows = await withTenant(tenant.id, (tx) =>
-    tx
-      .select({
-        s: alertSources,
-        count90:
-          sql<number>`(select count(*) from ${alerts} a where a.source_id = ${alertSources.id} and a.first_at > now() - interval '90 days')`.mapWith(
-            Number,
-          ),
-      })
+  const { tested, alert, new: openNew } = await searchParams;
+  const manages = isManager(member);
+  const data = await withTenant(tenant.id, async (tx) => ({
+    sources: await tx
+      .select()
       .from(alertSources)
-      .where(eq(alertSources.tenantId, tenant.id))
-      .orderBy(asc(alertSources.createdAt)),
-  );
+      .where(and(eq(alertSources.tenantId, tenant.id), eq(alertSources.managed, false)))
+      .orderBy(alertSources.name),
+    health: await sourceHealth(tx, tenant.id),
+  }));
+  const kinds = SOURCE_KINDS.map((k) => ({ kind: k.kind, label: k.label, icon: k.icon }));
+
   return (
     <div
       className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 1000 }}
+      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <h1 className="oi-title" style={{ margin: 0 }}>
@@ -48,164 +61,153 @@ export default async function AlertSourcesPage({
           {t("settings.sources.subtitle")}
         </span>
         <span style={{ flex: 1 }} />
-        <NewSourceDialog initialKind={q.new} />
+        <Link href="/app/settings/alerting" className="oi-link" style={{ fontSize: 12.5 }}>
+          {t("settings.nav.alerting")}
+        </Link>
+        {manages && <NewSourceDialog kinds={kinds} initialOpen={openNew === "1"} />}
       </div>
-      {q.tested && (
+      {tested && (
         <div
           role="status"
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
+            padding: "9px 14px",
+            borderRadius: 10,
             background: "var(--ok-t)",
-            border: "1px solid var(--ok)",
-            borderRadius: 12,
-            padding: "10px 14px",
-            fontSize: 13,
-            color: "var(--ink-2)",
+            color: "var(--ok)",
+            fontSize: 12.5,
+            fontWeight: 600,
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
           }}
         >
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--ok)" }} />
           {t("settings.sources.testSent")}
-          {q.alert && (
-            <Link href={`/app/alerts/${q.alert}`} className="oi-link" style={{ fontWeight: 600 }}>
+          {alert && (
+            <Link href={`/app/alerts/${alert}`} className="oi-link" style={{ color: "var(--ok)" }}>
               {t("settings.sources.openTestAlert")}
             </Link>
           )}
         </div>
       )}
       <div className="oi-panel" style={{ overflow: "hidden" }}>
-        {rows.map(({ s, count90 }, i) => (
+        {data.sources.length === 0 && (
           <div
-            key={s.id}
-            data-testid="source-row"
             style={{
+              padding: "28px 20px",
+              textAlign: "center",
+              color: "var(--ink-3)",
+              fontSize: 13.5,
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
-              gap: 12,
-              padding: "11px 16px",
-              borderBottom: i < rows.length - 1 ? "1px solid var(--line-2)" : undefined,
+              gap: 10,
             }}
           >
-            <div style={{ width: 170, flex: "none", fontSize: 13, fontWeight: 600 }}>{s.name}</div>
-            <span
-              style={{
-                flex: 1,
-                minWidth: 0,
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--ink-2)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {origin}/api/ingest/alerts/{s.id}
-            </span>
-            <span style={{ fontSize: 11.5, color: "var(--ink-3)", whiteSpace: "nowrap" }}>
-              {count90 > 0
-                ? t("settings.sources.meta", { count: count90 })
-                : t("settings.sources.noAlerts")}
-            </span>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                padding: "2px 9px 2px 7px",
-                borderRadius: 999,
-                background: s.active ? "var(--ok-t)" : "var(--sunk)",
-                color: s.active ? "var(--ok)" : "var(--ink-2)",
-                fontSize: 10.5,
-                fontWeight: 700,
-              }}
-            >
-              <span
-                style={{ width: 4, height: 4, borderRadius: "50%", background: "currentColor" }}
-              />
-              {s.active ? t("settings.sources.active") : t("settings.sources.configured")}
-            </span>
-            <form action={testSource}>
-              <input type="hidden" name="id" value={s.id} />
-              <button
-                type="submit"
-                data-testid="source-test"
-                disabled={!s.active}
-                className="oi-hover"
-                style={{
-                  height: 28,
-                  padding: "0 11px",
-                  border: `1px solid ${q.tested === s.id ? "var(--ok)" : "var(--line)"}`,
-                  borderRadius: 8,
-                  background: "var(--panel)",
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: q.tested === s.id ? "var(--ok)" : "inherit",
-                  cursor: s.active ? "pointer" : "not-allowed",
-                  opacity: s.active ? 1 : 0.5,
-                }}
-              >
-                {q.tested === s.id ? t("settings.sources.testDone") : t("settings.sources.test")}
-              </button>
-            </form>
-            <form action={toggleSource}>
-              <input type="hidden" name="id" value={s.id} />
-              <button
-                type="submit"
-                className="oi-hover"
-                style={{
-                  height: 28,
-                  padding: "0 11px",
-                  border: "1px solid var(--line)",
-                  borderRadius: 8,
-                  background: "var(--panel)",
-                  fontSize: 11.5,
-                  cursor: "pointer",
-                }}
-              >
-                {s.active ? t("settings.api.disable") : t("settings.api.enable")}
-              </button>
-            </form>
-            <form action={deleteSource}>
-              <input type="hidden" name="id" value={s.id} />
-              <button
-                type="submit"
-                aria-label={t("common.delete")}
-                className="oi-hover-dang"
-                style={{
-                  width: 28,
-                  height: 28,
-                  border: "1px solid var(--line)",
-                  borderRadius: 8,
-                  background: "var(--panel)",
-                  color: "var(--dang)",
-                  cursor: "pointer",
-                  fontSize: 12,
-                }}
-              >
-                ✕
-              </button>
-            </form>
-          </div>
-        ))}
-        {rows.length === 0 && (
-          <div style={{ padding: 16, fontSize: 12.5, color: "var(--ink-3)" }}>
-            {t("settings.sources.empty")}
+            <span>{t("settings.sources.empty")}</span>
+            <span style={{ fontSize: 12.5, maxWidth: 460 }}>{t("settings.sources.emptyNote")}</span>
           </div>
         )}
+        {data.sources.map((s) => {
+          const meta = sourceKindMeta(s.kind);
+          const h = data.health.get(s.id);
+          return (
+            <div
+              key={s.id}
+              data-testid="source-row"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "11px 16px",
+                borderBottom: "1px solid var(--line-2)",
+                fontSize: 13,
+              }}
+            >
+              <IntegrationIcon id={meta.icon} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Link
+                  href={`/app/settings/alert-sources/${s.id}`}
+                  className="oi-link"
+                  style={{ fontWeight: 600, color: "inherit" }}
+                >
+                  {s.name}
+                </Link>
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    color: "var(--ink-3)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {meta.label}
+                  {s.description ? ` · ${s.description}` : ""}
+                  {" · "}
+                  {s.lastAlertAt
+                    ? t("settings.sources.lastAlert", { when: t.fmt.relative(s.lastAlertAt) })
+                    : t("settings.sources.noAlerts")}
+                </div>
+              </div>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11.5,
+                  color: h?.firing ? "var(--dang)" : "var(--ink-3)",
+                  width: 120,
+                  textAlign: "right",
+                }}
+              >
+                {h ? t("setup.health", { day: h.day, firing: h.firing }) : t("setup.healthNone")}
+              </span>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "1px 8px",
+                  borderRadius: 999,
+                  background: s.active ? "var(--ok-t)" : "var(--sunk)",
+                  color: s.active ? "var(--ok)" : "var(--ink-3)",
+                }}
+              >
+                {s.active ? t("settings.sources.active") : t("settings.sources.inactive")}
+              </span>
+              {manages && (
+                <>
+                  <form action={testSource}>
+                    <input type="hidden" name="id" value={s.id} />
+                    <button type="submit" style={btn} data-testid="source-test">
+                      {tested === s.id
+                        ? t("settings.sources.testDone")
+                        : t("settings.sources.test")}
+                    </button>
+                  </form>
+                  <form action={toggleSource}>
+                    <input type="hidden" name="id" value={s.id} />
+                    <button type="submit" style={btn}>
+                      {s.active ? t("settings.sources.disable") : t("settings.sources.enable")}
+                    </button>
+                  </form>
+                </>
+              )}
+              <Link
+                href={`/app/settings/alert-sources/${s.id}`}
+                style={{
+                  ...btn,
+                  background: "var(--brand)",
+                  borderColor: "var(--brand)",
+                  color: "#fff",
+                }}
+              >
+                {t("settings.sources.configure")}
+              </Link>
+            </div>
+          );
+        })}
       </div>
-      <div
-        style={{
-          background: "var(--sunk)",
-          borderRadius: 14,
-          padding: "13px 15px",
-          fontSize: 12.5,
-          color: "var(--ink-2)",
-          lineHeight: 1.55,
-        }}
-      >
+      <p style={{ margin: 0, fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
         {t("settings.sources.note")}
-      </div>
+      </p>
     </div>
   );
 }

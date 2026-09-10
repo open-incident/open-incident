@@ -36,6 +36,7 @@ export async function listAlerts(
   tenantId: string,
   view: "firing" | "resolved" | "all",
   sourceId?: string | null,
+  q?: string | null,
 ): Promise<AlertListRow[]> {
   const rows = await tx
     .select({
@@ -55,6 +56,9 @@ export async function listAlerts(
         isNull(alerts.groupId),
         view === "all" ? undefined : eq(alerts.status, view),
         sourceId ? eq(alerts.sourceId, sourceId) : undefined,
+        q && q.trim()
+          ? sql`(${alerts.title} ilike ${"%" + q.trim() + "%"} or ${alerts.attributes}::text ilike ${"%" + q.trim() + "%"})`
+          : undefined,
       ),
     )
     .orderBy(desc(alerts.lastAt))

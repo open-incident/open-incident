@@ -7,7 +7,7 @@ summary: Teams, services, environments and your own types; entries, references a
 
 ## What the catalog is for
 
-The catalog is the spine of the routing: an alert names a service, the service names its owner team, the team names its escalation path — and nobody is named in a route. It is also what the rest of the product binds to: an incident's affected service, a status page's components, a follow-up's team, a heartbeat's service, the assistant's runbooks.
+The catalog is optional for the routing, and what it grows into: a route pages a path chosen once, or — when an alert attribute is bound to a catalog type — the path the entry leads to (the service's own, or its owner team's), with a fallback. It is also what the rest of the product binds to: an incident's affected service, a status page's components, a follow-up's team, a heartbeat's service, the assistant's runbooks.
 
 ![The catalog](img/catalog.png "Types on the left, one card per entry, the selected entry on the right with its routing chain, attributes and references.")
 
@@ -19,7 +19,7 @@ The catalog is the spine of the routing: an alert names a service, the service n
 | **Service**     | Owner team, repository, tier (tier 1–3), environments | Incidents, alerts, status page components, heartbeats, runbooks, change events |
 | **Environment** | Paging (_pages_ or _silent_)                          | Alert attributes                                                               |
 
-The three are built in: the routing reasons about them, so they can be extended with attributes but never deleted.
+The three are built in: they can be extended with attributes but never deleted. The team's **escalation path** is picked from the paths that exist — no name to type.
 
 ## Entries
 

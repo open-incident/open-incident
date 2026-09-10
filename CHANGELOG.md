@@ -8,6 +8,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Alert configuration, from zero to paged in four steps.** A new screen
+  says where the alerting stands and gets a workspace live: decide who gets
+  paged (one click makes a published path for you, a colleague or a schedule
+  and names it on the route that catches everything), connect a source from a
+  grid of tools, receive a first alert (the source page waits for it live),
+  check that an alert paged someone. Each source has its page: setup steps
+  and a curl command, the secret rotated and shown once, the payload of the
+  last alerts, the attribute mapping edited against a real sample with a
+  value preview and suggestions, the priority rule, the ingest filter, and a
+  tester that says what any payload would do — route, who it pages, the
+  incident — before sending it as a test or for real. An attributes page
+  owns the vocabulary, with a coverage column. Routes are edited on a page of
+  their own — sources, conditions, stackable paging rules with one-click
+  paths, incident template, grouping, Slack channel, options — and previewed
+  against the last alerts before saving; the list shows their order and
+  reorders it. Priorities take aliases and a default. Alerts get a search box
+  and notes; the alert's history names who a route paged and why a rule was
+  skipped. The team's escalation path is picked from a list in the catalog.
 - **The post-mortem is a document now.** Three columns: the contents and the
   checklists on the left, the document in the centre — its own title, the
   incident's metadata and metrics, sections written in Markdown with a toolbar
