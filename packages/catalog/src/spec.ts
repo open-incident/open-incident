@@ -6,7 +6,8 @@
  * here is stored as-is: `apply.ts` reconciles it with the workspace.
  */
 
-export type AttributeKind = "text" | "link" | "member_list" | "entry" | "select";
+export type AttributeKind =
+  "text" | "link" | "member_list" | "entry" | "select" | "escalation_path";
 
 export const ATTRIBUTE_KINDS: readonly AttributeKind[] = [
   "text",
@@ -14,6 +15,7 @@ export const ATTRIBUTE_KINDS: readonly AttributeKind[] = [
   "select",
   "entry",
   "member_list",
+  "escalation_path",
 ];
 
 export type AttributeSpec = {

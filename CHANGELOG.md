@@ -39,6 +39,26 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Routing no longer needs the catalog.** A route names who to page directly —
+  an escalation path, or a path found from an alert attribute through the
+  catalog when a workspace has one, with a fallback — and stacks several rules,
+  each with its own conditions. Conditions replace the three filter lines:
+  groups ORed, conditions ANDed, with contains, matches, one of, missing.
+  Routes choose their sources, carry an incident template (type, start in
+  triage or active, severity from the priority or fixed, private, custom fields
+  from attributes, decline the triage incident when the alert resolves), a
+  grouping rule (attributes, fixed or extending window, page again on every
+  alert or on a priority rise, a grace period) and a Slack channel to notify.
+  Alert attributes are a registry the workspace owns — text, list, priority or
+  a catalog type, required or not, with a merge strategy for repeats — and every
+  source maps its payload onto it, with light transforms and a match guard. A
+  source decides the alert's priority, statically or from a payload field, and
+  filters what it ingests; priorities carry aliases and a default. Every new
+  workspace starts with P1–P3, the five usual attributes and one route that
+  catches everything and opens triage incidents — name who to page and it is
+  live. Existing routes were converted; the team's escalation path became a
+  validated reference; the pipeline now decides first and applies second, so a
+  payload can be previewed without being ingested.
 - **The product now says "root cause analysis (RCA)".** The post-mortem's
   _Root cause_ section is _Root cause analysis (RCA)_ in every language, the
   guide and the glossary explain the term, and the new analysis is named after

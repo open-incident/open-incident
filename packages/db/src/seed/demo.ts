@@ -1570,16 +1570,20 @@ async function ensureApiAndWebhooks(tx: Tx, ctx: Ctx) {
  */
 async function ensureOnCall(tx: Tx, ctx: Ctx) {
   const [present] = await tx
-    .select({ id: alertPriorities.id })
-    .from(alertPriorities)
-    .where(eq(alertPriorities.tenantId, tenantId))
+    .select({ id: alertSources.id })
+    .from(alertSources)
+    .where(eq(alertSources.tenantId, tenantId))
     .limit(1);
   if (present) return;
   const m = ctx.memberId;
   const now = new Date();
 
-  // Priorities
+  // Priorities — the defaults already installed P1–P3; the demo completes them and adds P4.
   const prio: Record<string, string> = {};
+  const existingPrios = await tx
+    .select({ id: alertPriorities.id, name: alertPriorities.name })
+    .from(alertPriorities)
+    .where(eq(alertPriorities.tenantId, tenantId));
   for (const [i, p] of (
     [
       ["P1", "Critique — page immédiatement, de nuit comme de jour", "high", "var(--dang)"],
@@ -1588,6 +1592,15 @@ async function ensureOnCall(tx: Tx, ctx: Ctx) {
       ["P4", "Basse — digest email, jamais de page", "low", "var(--ink-3)"],
     ] as const
   ).entries()) {
+    const found = existingPrios.find((x) => x.name === p[0]);
+    if (found) {
+      await tx
+        .update(alertPriorities)
+        .set({ description: p[1], urgency: p[2], color: p[3], rank: i, position: i })
+        .where(eq(alertPriorities.id, found.id));
+      prio[p[0]] = found.id;
+      continue;
+    }
     const [row] = await tx
       .insert(alertPriorities)
       .values({
@@ -1598,6 +1611,7 @@ async function ensureOnCall(tx: Tx, ctx: Ctx) {
         color: p[3],
         rank: i,
         position: i,
+        aliases: p[0] === "P4" ? ["debug", "trace", "p4"] : [],
       })
       .returning({ id: alertPriorities.id });
     prio[p[0]] = row!.id;
@@ -1961,14 +1975,38 @@ async function ensureOnCall(tx: Tx, ctx: Ctx) {
     await registerApiKeyLookup(`src:${row!.id}`, tenantId);
   }
 
-  // Routes
+  // Routes — the new shape (conditions, escalation rules, incident template, grouping); the
+  // legacy columns mirror them until they are dropped.
+  const triage = (typeId: string | null, always = false) => ({
+    mode: always ? ("always" as const) : ("conditional" as const),
+    typeId,
+    startPhase: always ? ("active" as const) : ("triage" as const),
+    severity: { mode: "priority" as const },
+    visibility: "public" as const,
+    customFields: { region: "region" },
+    declineOnResolve: true,
+  });
+  const groupByService = {
+    enabled: true,
+    by: ["service"],
+    windowMinutes: 5,
+    extending: true,
+    escalate: "never" as const,
+    graceMinutes: 0,
+  };
   const [prodRoute] = await tx
     .insert(alertRoutes)
     .values({
       tenantId,
       name: "Production alerts",
+      description:
+        "Tout ce qui vient de production : l'équipe propriétaire du service est appelée.",
       active: true,
       filters: [{ attribute: "environment", op: "eq", value: "production" }],
+      conditions: [{ all: [{ attribute: "environment", op: "eq", value: "production" }] }],
+      escalations: [{ kind: "attribute", attribute: "service", fallbackPathId: platformPath.id }],
+      incident: triage(null),
+      grouping: groupByService,
       escalationMode: "dynamic",
       escalationPathId: platformPath.id,
       incidentMode: "conditional",
@@ -1980,11 +2018,24 @@ async function ensureOnCall(tx: Tx, ctx: Ctx) {
     {
       tenantId,
       name: "Sécurité — P1 auth",
+      description:
+        "Les P1 du service d'authentification réveillent la sécurité et ouvrent un incident actif.",
       active: true,
       filters: [
         { attribute: "priority", op: "eq", value: "P1" },
         { attribute: "service", op: "eq", value: "auth-service" },
       ],
+      conditions: [
+        {
+          all: [
+            { attribute: "priority", op: "eq", value: "P1" },
+            { attribute: "service", op: "eq", value: "auth-service" },
+          ],
+        },
+      ],
+      escalations: [{ kind: "path", pathId: securityPath.id }],
+      incident: triage(ctx.typeId.security ?? null, true),
+      grouping: { ...groupByService, enabled: false },
       escalationMode: "static",
       escalationPathId: securityPath.id,
       incidentMode: "always",
@@ -1995,8 +2046,13 @@ async function ensureOnCall(tx: Tx, ctx: Ctx) {
     {
       tenantId,
       name: "Staging — silencieux",
+      description: "Staging n'appelle personne et n'ouvre rien ; les alertes restent lisibles.",
       active: true,
       filters: [{ attribute: "environment", op: "eq", value: "staging" }],
+      conditions: [{ all: [{ attribute: "environment", op: "eq", value: "staging" }] }],
+      escalations: [],
+      incident: { ...triage(null), mode: "never" },
+      grouping: groupByService,
       escalationMode: "none",
       urgencyOverride: "low",
       incidentMode: "never",
@@ -2006,9 +2062,15 @@ async function ensureOnCall(tx: Tx, ctx: Ctx) {
     {
       tenantId,
       name: "Nouvelle source Uptime Kuma",
+      description:
+        "En mode test le temps de vérifier les attributs : tout est journalisé, personne n'est appelé.",
       active: true,
       testMode: true,
       filters: [{ attribute: "source", op: "eq", value: "uptime_kuma" }],
+      conditions: [{ all: [{ attribute: "source", op: "eq", value: "uptime_kuma" }] }],
+      escalations: [{ kind: "attribute", attribute: "service", fallbackPathId: null }],
+      incident: triage(null),
+      grouping: groupByService,
       escalationMode: "dynamic",
       incidentMode: "conditional",
       position: 2,

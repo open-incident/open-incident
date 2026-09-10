@@ -196,6 +196,11 @@ function resolveValue(
       if (!hit) return { error: `"${def.key}": no ${refType.key} named "${s}"` };
       return { value: hit.id };
     }
+    case "escalation_path": {
+      // A path id, or a path name the caller resolves later; the importer accepts both.
+      const s = String(raw).trim();
+      return s ? { value: s } : { value: null };
+    }
     case "member_list": {
       const list = Array.isArray(raw)
         ? raw.map(String)

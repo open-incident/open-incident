@@ -11,6 +11,9 @@
 import { eq } from "drizzle-orm";
 import type { Tx } from "../client";
 import {
+  alertAttributes,
+  alertPriorities,
+  alertRoutes,
   catalogTypes,
   followUpPriorities,
   incidentRoles,
@@ -29,6 +32,9 @@ export type InstalledDefaults = {
   commsRoleId: string;
   priorityIds: Record<"P1" | "P2" | "P3", string>;
   catalogTypeIds: Record<"team" | "service" | "environment", string>;
+  alertPriorityIds: Record<"P1" | "P2" | "P3", string>;
+  /** The route every new workspace starts with: catches everything, pages nobody until someone is named. */
+  defaultRouteId: string;
 };
 
 export async function installDefaults(
@@ -136,7 +142,7 @@ export async function installDefaults(
     .returning({ id: followUpPriorities.id, name: followUpPriorities.name });
   const prio = (name: string) => prioRows.find((p) => p.name === name)!.id;
 
-  /* ---------- Catalog types — the spine of the routing ---------- */
+  /* ---------- Catalog types — an option the routing grows into, never a prerequisite ---------- */
   const catRows = await tx
     .insert(catalogTypes)
     .values([
@@ -148,7 +154,7 @@ export async function installDefaults(
         position: 0,
         attributes: [
           { key: "members", label: T("attr.members"), type: "member_list" },
-          { key: "escalation_path", label: T("attr.escalationPath"), type: "text" },
+          { key: "escalation_path", label: T("attr.escalationPath"), type: "escalation_path" },
           { key: "chat_channel", label: T("attr.chatChannel"), type: "text" },
         ],
       },
@@ -183,6 +189,126 @@ export async function installDefaults(
     ])
     .returning({ id: catalogTypes.id, key: catalogTypes.key });
   const cat = (key: string) => catRows.find((c) => c.key === key)!.id;
+
+  /* ---------- Alerting — three priorities, the attribute vocabulary, one route ---------- */
+  const aprioRows = await tx
+    .insert(alertPriorities)
+    .values([
+      {
+        tenantId,
+        name: "P1",
+        rank: 0,
+        position: 0,
+        urgency: "high",
+        color: "var(--dang)",
+        description: T("aprio.p1.desc"),
+        aliases: ["critical", "sev1", "p1", "high", "fatal", "emergency", "page"],
+      },
+      {
+        tenantId,
+        name: "P2",
+        rank: 1,
+        position: 1,
+        urgency: "high",
+        color: "var(--wait)",
+        description: T("aprio.p2.desc"),
+        aliases: ["warning", "major", "medium", "p2", "error", "sev2"],
+        isDefault: true,
+      },
+      {
+        tenantId,
+        name: "P3",
+        rank: 2,
+        position: 2,
+        urgency: "low",
+        color: "var(--ink-3)",
+        description: T("aprio.p3.desc"),
+        aliases: ["info", "low", "minor", "p3", "notice", "sev3", "sev4"],
+      },
+    ])
+    .returning({ id: alertPriorities.id, name: alertPriorities.name });
+  const aprio = (name: string) => aprioRows.find((p) => p.name === name)!.id;
+
+  await tx.insert(alertAttributes).values([
+    {
+      tenantId,
+      key: "service",
+      label: T("aattr.service"),
+      description: T("aattr.service.desc"),
+      type: "catalog",
+      catalogTypeKey: "service",
+      position: 0,
+    },
+    {
+      tenantId,
+      key: "team",
+      label: T("aattr.team"),
+      description: T("aattr.team.desc"),
+      type: "catalog",
+      catalogTypeKey: "team",
+      position: 1,
+    },
+    {
+      tenantId,
+      key: "environment",
+      label: T("aattr.environment"),
+      description: T("aattr.environment.desc"),
+      type: "text",
+      position: 2,
+    },
+    {
+      tenantId,
+      key: "region",
+      label: T("aattr.region"),
+      description: T("aattr.region.desc"),
+      type: "text",
+      position: 3,
+    },
+    {
+      tenantId,
+      key: "severity",
+      label: T("aattr.severity"),
+      description: T("aattr.severity.desc"),
+      type: "text",
+      position: 4,
+    },
+  ]);
+
+  const [defaultRoute] = await tx
+    .insert(alertRoutes)
+    .values({
+      tenantId,
+      name: T("route.default"),
+      description: T("route.default.desc"),
+      active: true,
+      sourceIds: [],
+      conditions: [],
+      escalations: [],
+      incident: {
+        mode: "conditional",
+        typeId: type!.id,
+        startPhase: "triage",
+        severity: { mode: "priority" },
+        visibility: "public",
+        customFields: {},
+        declineOnResolve: true,
+      },
+      grouping: {
+        enabled: true,
+        by: ["service"],
+        windowMinutes: 5,
+        extending: true,
+        escalate: "never",
+        graceMinutes: 0,
+      },
+      notify: null,
+      escalationMode: "none",
+      incidentMode: "conditional",
+      incidentTypeId: type!.id,
+      // Last on purpose: the routes a workspace adds come before the one that catches everything.
+      position: 1000,
+    })
+    .returning({ id: alertRoutes.id });
 
   /* ---------- Post-incident flow — two phases, six tasks ---------- */
   await tx.insert(postIncidentTaskDefs).values([
@@ -244,5 +370,7 @@ export async function installDefaults(
     commsRoleId: roleRows.find((r) => !r.isLead)!.id,
     priorityIds: { P1: prio("P1"), P2: prio("P2"), P3: prio("P3") },
     catalogTypeIds: { team: cat("team"), service: cat("service"), environment: cat("environment") },
+    alertPriorityIds: { P1: aprio("P1"), P2: aprio("P2"), P3: aprio("P3") },
+    defaultRouteId: defaultRoute!.id,
   };
 }

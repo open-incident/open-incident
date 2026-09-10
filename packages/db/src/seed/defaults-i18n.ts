@@ -6,6 +6,57 @@
 type Lang = "en" | "fr" | "de";
 
 const TEXT: Record<string, Record<Lang, string>> = {
+  "aprio.p1.desc": {
+    en: "Page now — the on-call responder is woken up.",
+    fr: "Réveiller maintenant — la personne d'astreinte est appelée.",
+    de: "Jetzt alarmieren – die Person im Bereitschaftsdienst wird geweckt.",
+  },
+  "aprio.p2.desc": {
+    en: "Page — during the day, by the responder's own channels.",
+    fr: "Appeler — en journée, par les canaux choisis par la personne.",
+    de: "Alarmieren – tagsüber, über die eigenen Kanäle der Person.",
+  },
+  "aprio.p3.desc": {
+    en: "Notify quietly — no page; looked at during working hours.",
+    fr: "Prévenir sans réveiller — traité aux heures de travail.",
+    de: "Leise benachrichtigen – kein Alarm; wird in der Arbeitszeit angesehen.",
+  },
+  "aattr.service": { en: "Service", fr: "Service", de: "Dienst" },
+  "aattr.service.desc": {
+    en: "The service the alert is about — a catalog entry when one matches.",
+    fr: "Le service concerné — une entrée du catalogue quand elle existe.",
+    de: "Der betroffene Dienst – ein Katalogeintrag, wenn einer passt.",
+  },
+  "aattr.team": { en: "Team", fr: "Équipe", de: "Team" },
+  "aattr.team.desc": {
+    en: "The team that owns it — read from the payload, or derived from the service's owner.",
+    fr: "L'équipe responsable — lue dans le payload, ou déduite du propriétaire du service.",
+    de: "Das verantwortliche Team – aus dem Payload gelesen oder vom Besitzer des Dienstes abgeleitet.",
+  },
+  "aattr.environment": { en: "Environment", fr: "Environnement", de: "Umgebung" },
+  "aattr.environment.desc": {
+    en: "production, staging… what most routes filter on first.",
+    fr: "production, staging… ce que la plupart des routes filtrent en premier.",
+    de: "production, staging… wonach die meisten Routen zuerst filtern.",
+  },
+  "aattr.region": { en: "Region", fr: "Région", de: "Region" },
+  "aattr.region.desc": {
+    en: "Where it happens: a cloud region, a datacenter, a zone.",
+    fr: "Où cela se passe : une région cloud, un datacenter, une zone.",
+    de: "Wo es passiert: eine Cloud-Region, ein Rechenzentrum, eine Zone.",
+  },
+  "aattr.severity": { en: "Tool severity", fr: "Sévérité de l'outil", de: "Schwere des Tools" },
+  "aattr.severity.desc": {
+    en: "The monitoring tool's own level, kept as it was sent; the priority is the product's reading of it.",
+    fr: "Le niveau de l'outil de supervision, tel qu'envoyé ; la priorité est la lecture qu'en fait le produit.",
+    de: "Die Stufe des Monitoring-Tools, wie gesendet; die Priorität ist die Lesart des Produkts.",
+  },
+  "route.default": { en: "Every alert", fr: "Toutes les alertes", de: "Jeder Alarm" },
+  "route.default.desc": {
+    en: "Catches every alert from every source and opens a triage incident when the priority pages. Name who to page and you are live.",
+    fr: "Attrape chaque alerte de chaque source et ouvre un incident en triage quand la priorité appelle. Nommez qui appeler et c'est en service.",
+    de: "Fängt jeden Alarm jeder Quelle und öffnet einen Triage-Vorfall, wenn die Priorität alarmiert. Benennen Sie, wer alarmiert wird, und es läuft.",
+  },
   "type.default": { en: "Default", fr: "Défaut", de: "Standard" },
   "type.default.desc": {
     en: "The generic type — every operational incident goes through it.",

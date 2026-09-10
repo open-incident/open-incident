@@ -266,7 +266,8 @@ export function defaultMappings(kind: AlertSourceKind): AttributeMapping[] {
         { attribute: "region", path: "labels.region" },
       ];
     case "sentry":
-      return [{ attribute: "service", path: "data.event.tags.service", catalogTypeKey: "service" }];
+      // The parser already flattens the event's tag pairs into attributes.
+      return [{ attribute: "environment", path: "data.event.environment" }];
     case "cloudwatch":
       return [{ attribute: "environment", path: "", value: "production" }];
     case "uptime_kuma":

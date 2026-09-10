@@ -298,7 +298,9 @@ export const qaRuns = app.table(
 
 /* ---------- Catalog ---------- */
 
-export type CatalogAttributeType = "text" | "link" | "member_list" | "entry" | "select";
+/** `escalation_path` holds an escalation path id — the link the dynamic routing follows, validated. */
+export type CatalogAttributeType =
+  "text" | "link" | "member_list" | "entry" | "select" | "escalation_path";
 
 /** Schema of one attribute a catalog type declares. */
 export type CatalogAttributeDef = {
@@ -1084,9 +1086,68 @@ export type AttributeMapping = {
   path: string;
   /** Static value when no path applies. */
   value?: string;
-  /** Catalog type whose entry names the value must match (e.g. "service"). */
+  /** Catalog type whose entry names the value must match (e.g. "service"). Legacy: the registry decides now. */
   catalogTypeKey?: string;
+  /** A light reshaping of the extracted string — what a JavaScript one-liner would do. */
+  transform?: MappingTransform;
+  /** Keep the value only when it matches this regular expression; a capture group replaces it. */
+  match?: string;
 };
+
+export type MappingTransform =
+  "lower" | "upper" | "after_colon" | "before_colon" | "first_word" | "trim";
+
+/* ---------- Alert attributes — the registry every source maps onto ---------- */
+
+export type AlertAttributeType = "text" | "list" | "priority" | "catalog";
+/** What happens to an attribute when the same alert fires again with a new value. */
+export type MergeStrategy = "first" | "last" | "accumulate" | "max";
+
+/**
+ * The workspace's alert attributes: one consistent vocabulary every source maps
+ * its payload onto, so routes never care where an alert came from. A catalog
+ * type is an option on an attribute, not a prerequisite for routing.
+ */
+export const alertAttributes = app.table(
+  "alert_attributes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    key: text("key").notNull(),
+    label: text("label").notNull(),
+    description: text("description"),
+    type: text("type").$type<AlertAttributeType>().notNull().default("text"),
+    /** For `catalog`: the type whose entries the value names (canonicalised at ingest). */
+    catalogTypeKey: text("catalog_type_key"),
+    /** Required: every alert should carry it; sources missing it are flagged, alerts without it counted. */
+    required: boolean("required").notNull().default(false),
+    mergeStrategy: text("merge_strategy").$type<MergeStrategy>().notNull().default("last"),
+    position: integer("position").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("alert_attributes_tenant_key").on(t.tenantId, t.key)],
+);
+
+/** How a source sets the alert's priority: the same for every alert, or read from a payload field. */
+export type PriorityRule =
+  | { mode: "static"; priorityId: string }
+  | {
+      mode: "field";
+      path: string;
+      /** Lower-cased payload value → priority id. Priority aliases apply when a value is not listed. */
+      map: Record<string, string>;
+      fallbackPriorityId: string | null;
+    };
+
+/* ---------- Conditions — shared by source filters, routes and escalation rules ---------- */
+
+export type ConditionOp =
+  "eq" | "neq" | "in" | "not_in" | "contains" | "matches" | "exists" | "missing";
+/** `attribute` names an alert attribute, or one of `source`, `source_name`, `priority`, `title`. */
+export type Condition = { attribute: string; op: ConditionOp; value?: string };
+/** Groups are ORed; the conditions inside a group are ANDed. An empty list matches everything. */
+export type ConditionGroup = { all: Condition[] };
 
 export type AlertSourceKind =
   "http" | "prometheus" | "grafana" | "datadog" | "sentry" | "cloudwatch" | "uptime_kuma" | "email";
@@ -1107,6 +1168,11 @@ export const alertSources = app.table(
     encryptedSecret: text("encrypted_secret"),
     managed: boolean("managed").notNull().default(false),
     mappings: jsonb("mappings").$type<AttributeMapping[]>().notNull().default([]),
+    description: text("description"),
+    /** The alert's priority, decided at the source — static, or from a payload field. */
+    priorityRule: jsonb("priority_rule").$type<PriorityRule | null>(),
+    /** Only alerts matching these conditions are ingested; resolutions always pass. */
+    filter: jsonb("filter").$type<ConditionGroup[]>().notNull().default([]),
     active: boolean("active").notNull().default(true),
     lastAlertAt: timestamp("last_alert_at", { withTimezone: true }),
     createdByMemberId: uuid("created_by_member_id").references(() => members.id, {
@@ -1130,6 +1196,10 @@ export const alertPriorities = app.table(
     /** 0 = most important. */
     rank: integer("rank").notNull(),
     position: integer("position").notNull().default(0),
+    /** What the tools call it — "critical", "sev1", "high" — matched case-insensitively. */
+    aliases: jsonb("aliases").$type<string[]>().notNull().default([]),
+    /** The priority an alert gets when nothing names one. */
+    isDefault: boolean("is_default").notNull().default(false),
   },
   (t) => [uniqueIndex("alert_priorities_tenant_name").on(t.tenantId, t.name)],
 );
@@ -1247,15 +1317,65 @@ export const escalationPathVersions = app.table(
  */
 export type RouteFilter = { attribute: string; op: "eq" | "neq" | "in" | "exists"; value?: string };
 
+/**
+ * Who a route pages. A path, chosen once; or a path found from an alert
+ * attribute bound to a catalog type — the entry's escalation path, or its
+ * owner team's — with a fallback when the chain does not resolve. Rules stack;
+ * each may carry its own conditions.
+ */
+export type EscalationRule = (
+  | { kind: "path"; pathId: string }
+  | { kind: "attribute"; attribute: string; fallbackPathId: string | null }
+) & { when?: ConditionGroup[] };
+
+/** How an alert becomes an incident, when the route says so. */
+export type IncidentTemplate = {
+  /** never · always · conditional (only when the urgency is high). */
+  mode: "never" | "always" | "conditional";
+  typeId: string | null;
+  startPhase: "triage" | "active";
+  severity: { mode: "priority" } | { mode: "static"; severityId: string | null } | { mode: "none" };
+  visibility: "public" | "private";
+  /** Incident custom field key → alert attribute key. */
+  customFields: Record<string, string>;
+  /** A triage incident is declined when the alert that opened it resolves. */
+  declineOnResolve: boolean;
+};
+
+/** Related alerts handled as one: the same key within the window join the first. */
+export type GroupingRule = {
+  enabled: boolean;
+  /** Attributes the key is built from; empty groups every alert of the route. */
+  by: string[];
+  windowMinutes: number;
+  /** Extending: the window restarts at each alert that joins; otherwise it counts from the first. */
+  extending: boolean;
+  /** What a joining alert does to paging: nothing, page again, page when the priority rises. */
+  escalate: "never" | "every" | "increase";
+  /** Minutes to wait before the first page, giving the group time to form. */
+  graceMinutes: number;
+};
+
+export type NotifyRule = { slackChannelId: string | null; slackChannelName: string | null };
+
 export const alertRoutes = app.table(
   "alert_routes",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: tenantId(),
     name: text("name").notNull(),
+    description: text("description"),
     active: boolean("active").notNull().default(true),
     testMode: boolean("test_mode").notNull().default(false),
+    /** Legacy filters (AND only); `conditions` replaces them and wins when set. */
     filters: jsonb("filters").$type<RouteFilter[]>().notNull().default([]),
+    /** The sources this route reads; empty = every source. */
+    sourceIds: jsonb("source_ids").$type<string[]>().notNull().default([]),
+    conditions: jsonb("conditions").$type<ConditionGroup[]>().notNull().default([]),
+    escalations: jsonb("escalations").$type<EscalationRule[]>().notNull().default([]),
+    incident: jsonb("incident").$type<IncidentTemplate | null>(),
+    grouping: jsonb("grouping").$type<GroupingRule | null>(),
+    notify: jsonb("notify").$type<NotifyRule | null>(),
     escalationMode: text("escalation_mode")
       .$type<"static" | "dynamic" | "none">()
       .notNull()
@@ -1409,6 +1529,8 @@ export const alerts = app.table(
     urgency: alertUrgency("urgency"),
     /** The alert this one was grouped under (the leader has null). */
     groupId: uuid("group_id"),
+    /** The route's grouping key this alert carries — what a later alert must share to join. */
+    groupKey: text("group_key"),
     groupCount: integer("group_count").notNull().default(1),
     incidentId: uuid("incident_id").references(() => incidents.id, { onDelete: "set null" }),
     escalationId: uuid("escalation_id"),
@@ -2176,6 +2298,24 @@ export const investigations = app.table(
     updatedAt: updatedAt(),
   },
   (t) => [index("investigations_tenant_status").on(t.tenantId, t.status)],
+);
+
+/** Written context on an alert — what was checked, why it was resolved, a hand-over — without an incident. */
+export const alertNotes = app.table(
+  "alert_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    alertId: uuid("alert_id")
+      .notNull()
+      .references(() => alerts.id, { onDelete: "cascade" }),
+    memberId: uuid("member_id").references(() => members.id, { onDelete: "set null" }),
+    memberName: text("member_name").notNull(),
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("alert_notes_alert").on(t.alertId)],
 );
 
 /* ---------- Heartbeats — a cron that stops pinging is an alert ---------- */

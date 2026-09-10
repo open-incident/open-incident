@@ -698,6 +698,7 @@ export const en = {
   "catalog.attr.kind.select": "Choice",
   "catalog.attr.kind.entry": "Catalog entry",
   "catalog.attr.kind.member_list": "Members",
+  "catalog.attr.kind.escalation_path": "Escalation path",
   "catalog.createType": "Create the type",
   "catalog.saveType": "Save the type",
   "catalog.deleteType": "Delete the type",

@@ -395,3 +395,56 @@ export function investigationText(v: InvestigationView): string {
     .filter(Boolean)
     .join("\n");
 }
+
+/** An alert posted to a channel by a route: what fired, where, how urgent, and the way in. */
+export type AlertChannelView = {
+  title: string;
+  description: string | null;
+  status: "firing" | "resolved";
+  sourceName: string;
+  priority: string | null;
+  attributes: Record<string, string>;
+  url: string;
+  externalUrl: string | null;
+  incidentReference: string | null;
+  incidentUrl: string | null;
+  testMode: boolean;
+};
+
+export function alertChannelBlocks(v: AlertChannelView): unknown[] {
+  const head = `${v.status === "resolved" ? ":white_check_mark:" : ":rotating_light:"} *${v.title.slice(0, 150)}*${v.priority ? ` · ${v.priority}` : ""}${v.testMode ? " · _test_" : ""}`;
+  const facts = Object.entries(v.attributes)
+    .filter(([k, val]) => val && !k.endsWith("_id") && k !== "source" && k !== "source_name")
+    .slice(0, 8)
+    .map(([k, val]) => `*${k}*: ${val.slice(0, 80)}`)
+    .join(" · ");
+  const blocks: unknown[] = [md(head)];
+  if (v.description) blocks.push(md(v.description.slice(0, 1200)));
+  if (facts) blocks.push(ctx(facts));
+  const actions: unknown[] = [
+    {
+      type: "button",
+      text: { type: "plain_text", text: "Open the alert" },
+      url: v.url,
+      action_id: "oi_open_alert",
+    },
+  ];
+  if (v.externalUrl)
+    actions.push({
+      type: "button",
+      text: { type: "plain_text", text: "Go to the source" },
+      url: v.externalUrl,
+      action_id: "oi_alert_source",
+    });
+  if (v.incidentUrl && v.incidentReference)
+    actions.push({
+      type: "button",
+      text: { type: "plain_text", text: `Open ${v.incidentReference}` },
+      url: v.incidentUrl,
+      action_id: "oi_open",
+      style: "primary",
+    });
+  blocks.push({ type: "actions", elements: actions });
+  blocks.push(ctx(`Source: ${v.sourceName}`));
+  return blocks;
+}

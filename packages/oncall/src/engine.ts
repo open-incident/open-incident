@@ -998,37 +998,77 @@ export async function sweepEscalations(tenantIds: string[], now = new Date()): P
   return advanced;
 }
 
-/** Dynamic resolution: service → owner team → the team's escalation path (by name). */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The escalation path a catalog entry names — by id (the `escalation_path` attribute) or, legacy, by name. */
+async function pathOfEntry(
+  tx: Tx,
+  tenantId: string,
+  entry: { attributes: Record<string, unknown> },
+): Promise<{ id: string; name: string } | null> {
+  const ref = entry.attributes?.escalation_path;
+  if (typeof ref !== "string" || !ref.trim()) return null;
+  const [path] = await tx
+    .select({ id: escalationPaths.id, name: escalationPaths.name })
+    .from(escalationPaths)
+    .where(
+      and(
+        eq(escalationPaths.tenantId, tenantId),
+        UUID.test(ref) ? eq(escalationPaths.id, ref) : eq(escalationPaths.name, ref),
+      ),
+    );
+  return path ?? null;
+}
+
+/**
+ * Dynamic resolution from any catalog type: the entry named by the alert
+ * attribute carries an escalation path, or its owner team does. Nothing is
+ * required of the catalog for a route to page someone — this is the option a
+ * workspace grows into.
+ */
+export async function resolvePathFromCatalog(
+  tx: Tx,
+  tenantId: string,
+  typeKey: string,
+  value: string | null | undefined,
+): Promise<{ pathId: string; via: string } | null> {
+  if (!value) return null;
+  const [type] = await tx
+    .select({ id: catalogTypes.id })
+    .from(catalogTypes)
+    .where(and(eq(catalogTypes.tenantId, tenantId), eq(catalogTypes.key, typeKey)));
+  if (!type) return null;
+  const [entry] = await tx
+    .select()
+    .from(catalogEntries)
+    .where(
+      and(
+        eq(catalogEntries.typeId, type.id),
+        UUID.test(value)
+          ? eq(catalogEntries.id, value)
+          : sql`lower(${catalogEntries.name}) = lower(${value})`,
+      ),
+    );
+  if (!entry) return null;
+  const own = await pathOfEntry(tx, tenantId, entry);
+  if (own) return { pathId: own.id, via: `${entry.name} → ${own.name}` };
+  const ownerId = entry.attributes?.owner;
+  if (typeof ownerId !== "string") return null;
+  const [owner] = await tx.select().from(catalogEntries).where(eq(catalogEntries.id, ownerId));
+  if (!owner) return null;
+  const theirs = await pathOfEntry(tx, tenantId, owner);
+  return theirs
+    ? { pathId: theirs.id, via: `${entry.name} → ${owner.name} → ${theirs.name}` }
+    : null;
+}
+
+/** Legacy entry point: service → owner team → the team's escalation path. */
 export async function resolveDynamicPath(
   tx: Tx,
   tenantId: string,
   serviceName: string | null | undefined,
 ): Promise<{ pathId: string; via: string } | null> {
-  if (!serviceName) return null;
-  const [svcType] = await tx
-    .select({ id: catalogTypes.id })
-    .from(catalogTypes)
-    .where(and(eq(catalogTypes.tenantId, tenantId), eq(catalogTypes.key, "service")));
-  if (!svcType) return null;
-  const [service] = await tx
-    .select()
-    .from(catalogEntries)
-    .where(
-      and(
-        eq(catalogEntries.typeId, svcType.id),
-        sql`lower(${catalogEntries.name}) = lower(${serviceName})`,
-      ),
-    );
-  const ownerId = service?.attributes?.owner;
-  if (typeof ownerId !== "string") return null;
-  const [team] = await tx.select().from(catalogEntries).where(eq(catalogEntries.id, ownerId));
-  const pathName = team?.attributes?.escalation_path;
-  if (typeof pathName !== "string") return null;
-  const [path] = await tx
-    .select({ id: escalationPaths.id })
-    .from(escalationPaths)
-    .where(and(eq(escalationPaths.tenantId, tenantId), eq(escalationPaths.name, pathName)));
-  return path ? { pathId: path.id, via: `${service!.name} → ${team!.name} → ${pathName}` } : null;
+  return resolvePathFromCatalog(tx, tenantId, "service", serviceName);
 }
 
 /* ---------- Shift reminders ---------- */

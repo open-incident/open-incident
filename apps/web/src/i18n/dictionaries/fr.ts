@@ -702,6 +702,7 @@ export const fr: Dictionary = {
   "catalog.attr.kind.select": "Choix",
   "catalog.attr.kind.entry": "Entrée du catalogue",
   "catalog.attr.kind.member_list": "Membres",
+  "catalog.attr.kind.escalation_path": "Chemin d'escalade",
   "catalog.createType": "Créer le type",
   "catalog.saveType": "Enregistrer le type",
   "catalog.deleteType": "Supprimer le type",

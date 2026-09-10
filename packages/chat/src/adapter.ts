@@ -25,15 +25,17 @@ import {
 } from "@openincident/db";
 import { slack, type SlackClient } from "./slack/client";
 import {
-  type IncidentCard,
-  type InvestigationView,
   acknowledgedBlocks,
+  alertChannelBlocks,
+  type AlertChannelView,
   announcementBlocks,
   escalationDmBlocks,
+  type IncidentCard,
   incidentHeaderBlocks,
   incidentUpdateBlocks,
   investigationBlocks,
   investigationText,
+  type InvestigationView,
 } from "./slack/blocks";
 
 export const DEFAULT_SLACK_CONFIG: SlackConfig = {
@@ -524,5 +526,23 @@ export async function postInvestigation(
     }
     const r = await api.postMessage(ch.channelId, text, blocks);
     return r.ok ? { channelId: r.channel, ts: r.ts } : null;
+  });
+}
+
+/** An alert in the channel a route names — one message, nothing kept. */
+export async function postAlertToChannel(
+  tenantId: string,
+  channelId: string,
+  view: AlertChannelView,
+): Promise<boolean> {
+  return withTenant(tenantId, async (tx) => {
+    const install = await getSlackInstall(tx, tenantId);
+    if (!install) return false;
+    const r = await slack(install.token).postMessage(
+      channelId,
+      `${view.status === "resolved" ? "Resolved" : "Alert"}: ${view.title}`,
+      alertChannelBlocks(view),
+    );
+    return r.ok;
   });
 }
