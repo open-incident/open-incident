@@ -478,7 +478,11 @@ export async function draftPostMortem(
   tenantId: string,
   actor: Actor,
   number: number,
-  opts: { sectionKey?: string; titles?: Record<string, string> } = {},
+  opts: {
+    sectionKey?: string;
+    titles?: Record<string, string>;
+    hints?: Record<string, string>;
+  } = {},
 ): Promise<AiOutcome<PmSection[]>> {
   return guarded(tenantId, "post_mortem", async () => {
     const d = await withTenant(tenantId, (tx) => dossier(tx, tenantId, number));
@@ -493,7 +497,7 @@ export async function draftPostMortem(
     if (wanted.length === 0) throw new Error("unknown_section");
     const sections = await runCapability(tenantId, "post_mortem", actor, d.id, async () => {
       const c = await ask(
-        `TASK: post_mortem. Draft the post-mortem sections listed below from the incident material. Answer with a JSON object {"sections": [{"key": string, "body": string}]} — one entry per requested key, in order. Bodies in plain prose or "- " bullet lines, 2–6 sentences each; timelines as bullet lines with times from the material only. Where the material does not say, write what is unknown rather than guessing.\nRequested sections: ${wanted.map((s) => `${s.key} (${s.title})`).join(", ")}`,
+        `TASK: post_mortem. Draft the post-mortem sections listed below from the incident material. Answer with a JSON object {"sections": [{"key": string, "body": string}]} — one entry per requested key, in order. Bodies in plain prose or "- " bullet lines, 2–6 sentences each; timelines as bullet lines with times from the material only. Where the material does not say, write what is unknown rather than guessing.\nRequested sections: ${wanted.map((s) => `${s.key} (${s.title})${opts.hints?.[s.key] ? ` — ${opts.hints[s.key]}` : ""}`).join("; ")}`,
         d.text,
         { json: true, maxTokens: 1400 },
       );
@@ -538,5 +542,118 @@ export async function draftPostMortem(
       ).catch(() => {});
     }
     return sections;
+  });
+}
+
+export type RefineMode = "tighten" | "enrich" | "rewrite";
+
+const REFINE_TASK: Record<RefineMode, string> = {
+  tighten:
+    "Tighten the section below: keep every fact, drop repetition and filler, aim for half the length. Same language, same structure (prose stays prose, bullets stay bullets). Answer with the new body only, no preamble.",
+  enrich:
+    "Enrich the section below with facts the incident material holds and the section lacks — times, actors, numbers, what was tried. Never add what the material does not say. Same language, same structure. Answer with the new body only, no preamble.",
+  rewrite:
+    "Rewrite the section below for a reader who was not there: clear, chronological, neutral, every fact kept, nothing added. Same language. Answer with the new body only, no preamble.",
+};
+
+/**
+ * One section, reworked by the assistant in one of three ways — and only that
+ * section, so a person pays for what they asked. Tightening needs no material;
+ * enriching and rewriting read the incident. The result replaces the body and
+ * is labelled as a draft like any other.
+ */
+export async function refinePostMortemSection(
+  tenantId: string,
+  actor: Actor,
+  number: number,
+  key: string,
+  mode: RefineMode,
+): Promise<AiOutcome<string>> {
+  return guarded(tenantId, "post_mortem", async () => {
+    const d = await withTenant(tenantId, (tx) => dossier(tx, tenantId, number));
+    if (!d) throw new Error("incident_not_found");
+    const [pm] = await withTenant(tenantId, (tx) =>
+      tx.select().from(postMortems).where(eq(postMortems.incidentId, d.id)),
+    );
+    const section = pm?.sections.find((s) => s.key === key);
+    if (!pm || !section) throw new Error("unknown_section");
+    if (!section.body.trim()) throw new Error("empty_section");
+    const body = await runCapability(tenantId, "post_mortem", actor, d.id, async () => {
+      const c = await ask(
+        `TASK: post_mortem_refine. ${REFINE_TASK[mode]}`,
+        `Section: ${section.title}\n\n${section.body}${mode === "tighten" ? "" : `\n\n---\nIncident material:\n${d.text}`}`,
+        { maxTokens: 900 },
+      );
+      return {
+        result: c.text.trim(),
+        model: c.model,
+        inputTokens: c.inputTokens,
+        outputTokens: c.outputTokens,
+      };
+    });
+    if (!body) throw new Error("empty_answer");
+    await withTenant(tenantId, (tx) =>
+      tx
+        .update(postMortems)
+        .set({
+          sections: pm.sections.map((s) => (s.key === key ? { ...s, body } : s)),
+          aiDrafted: true,
+        })
+        .where(eq(postMortems.id, pm.id)),
+    );
+    return body;
+  });
+}
+
+export type ReviewNote = {
+  key: string;
+  verdict: "supported" | "gap" | "contradiction";
+  note: string;
+};
+
+/**
+ * The draft checked against the facts: for each section, does the material
+ * support it, contradict it, or hold something it should say? One call for
+ * the whole document; the notes are kept on the post-mortem until the next
+ * review, so a reviewer sees where to look.
+ */
+export async function reviewPostMortem(
+  tenantId: string,
+  actor: Actor,
+  number: number,
+): Promise<AiOutcome<ReviewNote[]>> {
+  return guarded(tenantId, "post_mortem", async () => {
+    const d = await withTenant(tenantId, (tx) => dossier(tx, tenantId, number));
+    if (!d) throw new Error("incident_not_found");
+    const [pm] = await withTenant(tenantId, (tx) =>
+      tx.select().from(postMortems).where(eq(postMortems.incidentId, d.id)),
+    );
+    if (!pm) throw new Error("no_post_mortem");
+    const notes = await runCapability(tenantId, "post_mortem", actor, d.id, async () => {
+      const c = await ask(
+        'TASK: post_mortem_review. Check each section of the post-mortem against the incident material. Answer with JSON {"notes": [{"key": string, "verdict": "supported"|"gap"|"contradiction", "note": string}]} — one entry per section, in order. "contradiction" when the section states something the material contradicts (say what, with the time or actor from the material); "gap" when the material holds a fact the section should state and does not (name it), or when the section is empty (say what it should contain); "supported" otherwise, with an empty note. One or two sentences per note, in the language of the document.',
+        `Post-mortem sections:\n${pm.sections.map((s) => `[${s.key}] ${s.title}\n${s.body.trim() || "(empty)"}`).join("\n\n")}\n\n---\nIncident material:\n${d.text}`,
+        { json: true, maxTokens: 1200 },
+      );
+      const parsed = parseJson<{
+        notes?: Array<{ key?: string; verdict?: string; note?: string }>;
+      }>(c.text);
+      const known = new Set(pm.sections.map((s) => s.key));
+      const result: ReviewNote[] = (parsed?.notes ?? [])
+        .filter((n) => typeof n.key === "string" && known.has(n.key))
+        .map((n) => ({
+          key: n.key!,
+          verdict: n.verdict === "gap" || n.verdict === "contradiction" ? n.verdict : "supported",
+          note: (n.note ?? "").trim().slice(0, 600),
+        }));
+      return { result, model: c.model, inputTokens: c.inputTokens, outputTokens: c.outputTokens };
+    });
+    await withTenant(tenantId, (tx) =>
+      tx
+        .update(postMortems)
+        .set({ reviewNotes: notes, reviewedAt: new Date() })
+        .where(eq(postMortems.id, pm.id)),
+    );
+    return notes;
   });
 }

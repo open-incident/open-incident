@@ -35,7 +35,7 @@ summary: The product's words, in one place.
 | **Outbox**                    | Where every email, SMS, push and chat message is written with an honest status before it leaves.                                                                            |
 | **Override**                  | A slot of a schedule given to someone else (or to nobody) without touching the rotation.                                                                                    |
 | **Phase**                     | Triage, active, post-incident, closed — the fixed lifecycle every incident follows.                                                                                         |
-| **Post-mortem**               | The document written after an incident; the workspace picks its own word for it.                                                                                            |
+| **Post-mortem**               | The document written after an incident, from the workspace's template, edited in place with comments and history; the workspace picks its own word for it.                  |
 | **Priority**                  | Qualifies an alert (P1, P2…); carries an urgency.                                                                                                                           |
 | **Private incident**          | Visible to role holders and explicit guests only.                                                                                                                           |
 | **Root cause analysis (RCA)** | The incident's analysis of what broke and why — evidence, findings, hypotheses with confidence, an adversarial pass — and the post-mortem section that documents the cause. |

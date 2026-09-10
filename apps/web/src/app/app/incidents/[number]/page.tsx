@@ -22,6 +22,7 @@ import { AiPanel } from "./ai-panel";
 import { SuggestFollowUps } from "./suggest-follow-ups";
 import { aiAllowance } from "@/lib/ai-capabilities";
 import { investigationAccess } from "@/lib/investigations";
+import { templateFor } from "@/lib/post-mortem";
 import { Investigation } from "./investigation";
 import { connectedTrackers } from "@/lib/trackers";
 import { connectedDocs } from "@/lib/docs";
@@ -469,10 +470,13 @@ export default async function IncidentPage({
               inc={inc}
               number={number}
               canAct={canRespond(member)}
+              tenantId={tenant.id}
               postMortemTerm={workspace.postMortemTerm}
+              template={templateFor(workspace, t)}
               aiAllowed={aiPostMortem}
               docs={docs}
               exportError={exportError ?? null}
+              slackChannel={slackChannel?.name ?? null}
             />
           )}
         </div>

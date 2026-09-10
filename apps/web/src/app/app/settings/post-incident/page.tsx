@@ -5,6 +5,9 @@ import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
 import { NewTaskDialog } from "./new-task";
 import { deleteTask, savePostMortemTerm } from "./actions";
+import { TemplateEditor } from "./template-editor";
+import { templateFor } from "@/lib/post-mortem";
+import { isManager } from "@/lib/session";
 
 /**
  * Settings → Post-incident flow: the two phases and their tasks, the automatic
@@ -16,7 +19,7 @@ export default async function PostIncidentSettingsPage({
 }: {
   searchParams: Promise<{ saved?: string; error?: string }>;
 }) {
-  const { tenant, workspace } = await requireMember();
+  const { tenant, workspace, member } = await requireMember();
   const t = await getT();
   const { saved, error } = await searchParams;
   const data = await withTenant(tenant.id, async (tx) => ({
@@ -244,6 +247,13 @@ export default async function PostIncidentSettingsPage({
             {t("common.save")}
           </button>
         </form>
+      </div>
+      <div className="oi-panel" style={{ padding: "15px 18px" }}>
+        <TemplateEditor
+          sections={templateFor(workspace, t)}
+          isDefault={!workspace.postMortemTemplate || workspace.postMortemTemplate.length === 0}
+          canManage={isManager(member)}
+        />
       </div>
     </div>
   );

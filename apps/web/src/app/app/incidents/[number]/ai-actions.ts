@@ -6,6 +6,7 @@ import { z } from "zod";
 import { incidents, postMortems, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { requireResponder } from "@/lib/session";
+import { ensurePostMortem, recordRevision, templateFor } from "@/lib/post-mortem";
 import {
   draftPostMortem,
   draftUpdate,
@@ -58,40 +59,62 @@ export async function suggestFollowUpsFor(
   );
 }
 
-/** Post-incident — the whole draft, or one section regenerated. */
+/**
+ * Post-incident — the whole draft, or one section regenerated. The document is
+ * created from the workspace's template first, so custom sections are drafted
+ * too; the history records the assistant's pass like any other change.
+ */
 export async function draftPostMortemAction(formData: FormData) {
   const current = await requireResponder();
   const number = numberSchema.parse(formData.get("number"));
   const sectionKey = String(formData.get("section") ?? "") || undefined;
   const t = await getT();
-  const keys = ["summary", "impact", "timeline", "root_cause", "went_well", "improve"] as const;
-  const titles = Object.fromEntries(keys.map((k) => [k, t(`postMortem.section.${k}`)]));
-  await draftPostMortem(current.tenant.id, actorOf(current), number, { sectionKey, titles });
-  revalidatePath(`/app/incidents/${number}`);
-}
-
-/** Post-incident — a section edited by hand; the AI banner stays, the words are now the person's. */
-export async function savePostMortemSection(formData: FormData) {
-  const current = await requireResponder();
-  const number = numberSchema.parse(formData.get("number"));
-  const key = z.string().min(1).max(40).parse(formData.get("section"));
-  const body = z
-    .string()
-    .max(20_000)
-    .parse(formData.get("body") ?? "");
+  const template = templateFor(current.workspace, t);
+  const titles = Object.fromEntries(template.map((s) => [s.key, s.title]));
+  const hints = Object.fromEntries(template.map((s) => [s.key, s.hint]));
   const tenantId = current.tenant.id;
   await withTenant(tenantId, async (tx) => {
     const [inc] = await tx
       .select({ id: incidents.id })
       .from(incidents)
       .where(and(eq(incidents.tenantId, tenantId), eq(incidents.number, number)));
-    if (!inc) return;
-    const [pm] = await tx.select().from(postMortems).where(eq(postMortems.incidentId, inc.id));
-    if (!pm) return;
-    const sections = pm.sections.map((s) => (s.key === key ? { ...s, body: body.trim() } : s));
-    await tx.update(postMortems).set({ sections }).where(eq(postMortems.id, pm.id));
+    if (inc)
+      await ensurePostMortem(tx, tenantId, inc.id, template, {
+        memberId: current.member.id,
+        name: current.member.name,
+      });
   });
+  const out = await draftPostMortem(tenantId, actorOf(current), number, {
+    sectionKey,
+    titles,
+    hints,
+  });
+  if (out.ok)
+    await withTenant(tenantId, async (tx) => {
+      const [inc] = await tx
+        .select({ id: incidents.id })
+        .from(incidents)
+        .where(and(eq(incidents.tenantId, tenantId), eq(incidents.number, number)));
+      const [pm] = inc
+        ? await tx.select().from(postMortems).where(eq(postMortems.incidentId, inc.id))
+        : [];
+      if (pm)
+        await recordRevision(
+          tx,
+          tenantId,
+          pm,
+          sectionKey ? "ai_section" : "ai_draft",
+          { memberId: current.member.id, name: current.member.name },
+          sectionKey ?? null,
+        );
+    });
   revalidatePath(`/app/incidents/${number}`);
+}
+
+/** Post-incident — a section edited by hand; kept for the smoke suite, the editor calls pm-actions. */
+export async function savePostMortemSection(formData: FormData) {
+  const { savePostMortemBody } = await import("./pm-actions");
+  await savePostMortemBody(formData);
 }
 
 /** Post-incident — the status step: in progress → in review → completed. */

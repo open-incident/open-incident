@@ -329,6 +329,19 @@ export function openApiDocument(origin: string): OpenApiDocument {
           },
         },
       },
+      "/incidents/{number}/post-mortem": {
+        get: {
+          summary: "The post-mortem of an incident, as sections and as markdown",
+          description:
+            "The document a workspace writes after an incident: its title, status (in_progress, in_review, completed), owner, whether the assistant drafted it, every section with its key, title and markdown body, and the whole rendered as one markdown document — for a knowledge base, a wiki or a tool of your own. `404 no_post_mortem` until it exists.",
+          parameters: [numberParam],
+          responses: {
+            "200": { description: "The post-mortem" },
+            "404": { description: "No such incident, or no post-mortem yet (`no_post_mortem`)" },
+            ...errors,
+          },
+        },
+      },
       "/incidents/{number}/investigation": {
         get: {
           summary: "The root cause analysis (RCA) of an incident",

@@ -106,9 +106,14 @@ export const workspaces = app.table("workspaces", {
     .default({}),
   /** What this workspace calls its post-mortem — "retrospective", "REX"… Null: the product's word. */
   postMortemTerm: text("post_mortem_term"),
+  /** The sections a new post-mortem starts with; null: the product's six. */
+  postMortemTemplate: jsonb("post_mortem_template").$type<PostMortemTemplateSection[] | null>(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+/** One section of the workspace's post-mortem template: what it is called, what it should hold. */
+export type PostMortemTemplateSection = { key: string; title: string; hint: string };
 
 /* ---------- People ---------- */
 
@@ -786,12 +791,77 @@ export const postMortems = app.table("post_mortems", {
     .default([]),
   /** True when the first draft was produced by the assistant — shown as a banner. */
   aiDrafted: boolean("ai_drafted").notNull().default(false),
+  /** The document's own title; null reads "INC-n — name". */
+  title: text("title"),
+  /** The assistant's check of each section against the incident's facts, and when it ran. */
+  reviewNotes: jsonb("review_notes").$type<ReviewNote[] | null>(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  updatedByMemberId: uuid("updated_by_member_id").references(() => members.id, {
+    onDelete: "set null",
+  }),
+  updatedByName: text("updated_by_name"),
   externalUrl: text("external_url"),
   ownerMemberId: uuid("owner_member_id").references(() => members.id, { onDelete: "set null" }),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+/** One line of the assistant's review: does the section hold against the material? */
+export type ReviewNote = {
+  key: string;
+  verdict: "supported" | "gap" | "contradiction";
+  note: string;
+};
+
+export type PostMortemRevisionKind =
+  "edit" | "ai_draft" | "ai_section" | "ai_refine" | "structure" | "restore" | "title";
+
+/**
+ * The document's history: one snapshot per change, who made it and how — a
+ * person's edit, the assistant's draft, a section added or moved, a restore.
+ */
+export const postMortemRevisions = app.table(
+  "post_mortem_revisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    postMortemId: uuid("post_mortem_id")
+      .notNull()
+      .references(() => postMortems.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<PostMortemRevisionKind>().notNull(),
+    sectionKey: text("section_key"),
+    title: text("title"),
+    sections: jsonb("sections")
+      .$type<Array<{ key: string; title: string; body: string }>>()
+      .notNull()
+      .default([]),
+    actorMemberId: uuid("actor_member_id").references(() => members.id, { onDelete: "set null" }),
+    actorName: text("actor_name"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("post_mortem_revisions_pm_created").on(t.postMortemId, t.createdAt)],
+);
+
+/** Comments on a section (or on the document when the section is null), resolvable. */
+export const postMortemComments = app.table(
+  "post_mortem_comments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    postMortemId: uuid("post_mortem_id")
+      .notNull()
+      .references(() => postMortems.id, { onDelete: "cascade" }),
+    sectionKey: text("section_key"),
+    body: text("body").notNull(),
+    memberId: uuid("member_id").references(() => members.id, { onDelete: "set null" }),
+    memberName: text("member_name").notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedByName: text("resolved_by_name"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("post_mortem_comments_pm").on(t.postMortemId)],
+);
 
 export const debriefs = app.table("debriefs", {
   id: uuid("id").primaryKey().defaultRandom(),

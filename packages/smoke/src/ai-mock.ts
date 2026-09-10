@@ -66,6 +66,22 @@ export function startAiMock(
             { title: "Mock follow-up: add alerting on connection pool saturation", priority: "P1" },
             { title: "Mock follow-up: document the rollback procedure", priority: "P2" },
           ]);
+        else if (/TASK: post_mortem_review/.test(prompt)) {
+          const keys = [...prompt.matchAll(/^\[([a-z0-9_]+)\] /gm)].map((m) => m[1]!);
+          content = JSON.stringify({
+            notes: keys.map((key, i) => ({
+              key,
+              verdict: i === 0 ? "gap" : i === 1 ? "contradiction" : "supported",
+              note:
+                i === 0
+                  ? "Mock review: the material says the alert fired at 14:02; the section does not mention detection."
+                  : i === 1
+                    ? "Mock review: the section says 15:20 but the timeline records resolution at 15:24."
+                    : "",
+            })),
+          });
+        } else if (/TASK: post_mortem_refine/.test(prompt))
+          content = "Mock refined body: shorter, every fact kept, nothing added.";
         else if (/TASK: post_mortem/.test(prompt))
           content = JSON.stringify({
             sections: [

@@ -8,6 +8,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The post-mortem is a document now.** Three columns: the contents and the
+  checklists on the left, the document in the centre — its own title, the
+  incident's metadata and metrics, sections written in Markdown with a toolbar
+  and a live preview, blocks that insert the timeline, the follow-ups or the
+  impact metrics where the cursor is, comments under each section — and on the
+  right the history of every change, with restore. Sections are renamed,
+  reordered, added and removed; a workspace edits its template in the
+  post-incident settings, hints included. The assistant still works one section
+  at a time — regenerate, tighten, enrich with facts, rewrite — and a new
+  **Check against the facts** reads the whole document once and marks where a
+  section misses a fact or contradicts the timeline, without touching a word.
+  Export as Markdown (file or clipboard), open as a printable page, read it
+  through `GET /api/v1/incidents/{ref}/post-mortem`; a **Post-mortems** page
+  lists every document with its status, owner and what is still open under it.
 - **Root cause analysis (RCA), the agentic way.** A live incident now gets an
   assessment the moment it is declared: the assistant gathers the evidence —
   timeline, linked alerts, changes recorded around it, similar past incidents

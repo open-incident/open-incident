@@ -37,6 +37,14 @@ export function RailNav() {
       icon: svg("M13 2 3 14h9l-1 8 10-12h-9l1-8z"),
     },
     {
+      key: "post-mortems",
+      href: "/app/post-mortems",
+      label: t("nav.postMortems"),
+      icon: svg(
+        "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8",
+      ),
+    },
+    {
       key: "alerts",
       href: "/app/alerts",
       label: t("nav.alerts"),
