@@ -74,7 +74,7 @@ A **status update** is the unit of communication: a message, optionally a new st
 
 ## The assistant proposes, never publishes
 
-When an inference provider is configured, an assistant drafts titles, summaries, status updates, follow-ups and post-mortem sections from the incident's own timeline. Every output is labelled **AI DRAFT** and a person reads it before anything is shared. Emails, phone numbers, IPs, hostnames and secrets are redacted before a prompt leaves the instance. What it may do, and which sources it may read, is decided per workspace in **Settings → AI governance**.
+When an inference provider is configured, an assistant drafts titles, summaries, status updates, follow-ups and post-mortem sections from the incident's own timeline. Every output is labelled **AI DRAFT** and a person reads it before anything is shared. Emails, phone numbers, IPs, hostnames and secrets are redacted before a prompt leaves the instance. What it may do, and which sources it may read, is decided per workspace in **Settings → AI governance**. In the enterprise edition, the **root cause analysis (RCA)** goes further: at declaration it gathers the evidence, states findings that cite it and proposes hypotheses with their confidence, challenged before you read them.
 
 ## Where the truth lives
 

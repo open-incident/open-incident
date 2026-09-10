@@ -33,6 +33,7 @@ export const AI_CAPABILITIES: AiCapability[] = [
   "update_draft",
   "follow_ups",
   "post_mortem",
+  "investigate",
 ];
 
 export type AiSettingsView = {

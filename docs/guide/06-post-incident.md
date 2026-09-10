@@ -25,7 +25,7 @@ Scheduling a debrief from the tab sets a date and a slot and sends an invitation
 
 ## The post-mortem
 
-The workspace calls it what it likes — the term is configured in **Settings → Post-incident flow** and used everywhere. It has six sections: **Summary**, **Timeline**, **Impact**, **Root cause**, **What went well**, **What to improve**. Each is edited in place.
+The workspace calls it what it likes — the term is configured in **Settings → Post-incident flow** and used everywhere. It has six sections: **Summary**, **Timeline**, **Impact**, **Root cause analysis (RCA)**, **What went well**, **What to improve**. Each is edited in place. When the incident's [root cause analysis](ai#root-cause-analysis-rca) has a surviving hypothesis, the RCA tab can write it into the RCA section as an AI draft while that section is still empty.
 
 Its status moves by hand: **In progress** → **Send to review** → **In review** → **Mark completed**. Publication is an event in the timeline.
 

@@ -440,6 +440,19 @@ export async function handleInteraction(
   }
   if (payload.type === "block_actions") {
     for (const action of payload.actions) {
+      // "Re-assess" under the root cause analysis: the person's request, attributed.
+      if (action.action_id === "oi_investigate_rerun" && action.value) {
+        const tenant = await getTenantById(ctx.tenantId);
+        const actor = await withTenant(ctx.tenantId, (tx) => actorFor(tx, ctx, payload.user.id));
+        if (tenant && actor) {
+          const { requestAssessment } = await import("@/lib/investigations");
+          await requestAssessment(tenant, action.value, "manual", {
+            kind: "member",
+            memberId: actor.memberId,
+            name: actor.name,
+          }).catch((e) => console.error("[slack] investigate", e));
+        }
+      }
       if (action.action_id === "oi_ack" && action.value) {
         const r = await ackByToken(ctx.tenantId, action.value, "slack");
         if (r.ok && payload.channel && payload.message)

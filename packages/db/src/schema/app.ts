@@ -573,7 +573,8 @@ export type IncidentEventKind =
   | "custom_field_changed"
   | "visibility_changed"
   | "renamed"
-  | "announcement_published";
+  | "announcement_published"
+  | "investigation";
 
 /**
  * The timeline — append-only, and the ONE source of the live views (SSE reads
@@ -1890,7 +1891,13 @@ export const statusPageTemplates = app.table(
 /* ---------- AI — governance, log, knowledge ---------- */
 
 export type AiCapability =
-  "declare_suggest" | "summary" | "related" | "update_draft" | "follow_ups" | "post_mortem";
+  | "declare_suggest"
+  | "summary"
+  | "related"
+  | "update_draft"
+  | "follow_ups"
+  | "post_mortem"
+  | "investigate";
 
 /** What the workspace lets the assistant do, and read. One row per tenant. */
 export const aiSettings = app.table(
@@ -1979,6 +1986,126 @@ export const changeEvents = app.table(
     createdAt: createdAt(),
   },
   (t) => [index("change_events_tenant_occurred").on(t.tenantId, t.occurredAt)],
+);
+
+/* ---------- Investigations — root cause analysis (RCA) ---------- */
+
+export type InvestigationStatus = "queued" | "running" | "completed" | "failed";
+export type InvestigationTrigger = "declaration" | "manual" | "signal" | "note" | "api";
+/** Five levels, from a guess to a cause the material itself confirms. */
+export type Confidence = "speculation" | "plausible" | "likely" | "strong" | "validated";
+export type InvestigationCheckKind =
+  "timeline" | "alerts" | "changes" | "similar_incidents" | "runbooks" | "ownership" | "notes";
+/** One piece of evidence the analysis may cite — `E3`, `A1`, `C2`… — with where it leads. */
+export type Citation = {
+  id: string;
+  kind: "event" | "alert" | "change" | "incident" | "runbook" | "owner" | "note";
+  label: string;
+  url: string | null;
+};
+/** One fact, established from cited evidence. */
+export type Finding = {
+  id: string;
+  check: InvestigationCheckKind;
+  statement: string;
+  citations: string[];
+};
+/** What broke and why, with the confidence the evidence allows; contradicted ones stay visible. */
+export type Hypothesis = {
+  id: string;
+  whatBroke: string;
+  why: string;
+  confidence: Confidence;
+  state: "open" | "flagged" | "contradicted";
+  findings: string[];
+  nextSteps: string[];
+  /** The adversarial reviewer's note, when it had one. */
+  challenge: string | null;
+  challengeCitations: string[];
+};
+export type InvestigationCheck = {
+  kind: InvestigationCheckKind;
+  status: "done" | "skipped" | "failed";
+  count: number;
+  ms: number;
+  note: string | null;
+};
+export type InvestigationTriage = {
+  severityHint: string | null;
+  scope: string;
+  escalate: boolean;
+  rationale: string;
+};
+/** The single synthesis a responder reads first: what is going on, what caused it, what to do. */
+export type InvestigationSummary = {
+  whatsGoingOn: string;
+  whatCaused: string | null;
+  topHypothesisId: string | null;
+  nextSteps: string[];
+};
+export type InvestigationNote = {
+  id: string;
+  memberId: string | null;
+  memberName: string;
+  body: string;
+  at: string;
+};
+/** How close the analysis came to the cause the post-mortem documented — graded by a person. */
+export type InvestigationGrade = "bullseye" | "on_target" | "miss" | "nowhere_near";
+
+/**
+ * The root cause analysis of one incident: re-assessed as signals land, one
+ * row per incident, every assessment overwriting the last. Findings cite the
+ * evidence index; hypotheses rest on findings; a person grades the result.
+ */
+export const investigations = app.table(
+  "investigations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    incidentId: uuid("incident_id")
+      .notNull()
+      .unique()
+      .references(() => incidents.id, { onDelete: "cascade" }),
+    status: text("status").$type<InvestigationStatus>().notNull().default("queued"),
+    trigger: text("trigger").$type<InvestigationTrigger>().notNull().default("declaration"),
+    /** Paused: signals no longer re-assess; a person can still ask for one. */
+    paused: boolean("paused").notNull().default(false),
+    /** A trigger that arrived while an assessment was running — served right after it. */
+    pendingTrigger: text("pending_trigger").$type<InvestigationTrigger | null>(),
+    runs: integer("runs").notNull().default(0),
+    triage: jsonb("triage").$type<InvestigationTriage | null>(),
+    summary: jsonb("summary").$type<InvestigationSummary | null>(),
+    hypotheses: jsonb("hypotheses").$type<Hypothesis[]>().notNull().default([]),
+    findings: jsonb("findings").$type<Finding[]>().notNull().default([]),
+    /** The evidence index the findings point to, as it was when assessed. */
+    citations: jsonb("citations").$type<Citation[]>().notNull().default([]),
+    checks: jsonb("checks").$type<InvestigationCheck[]>().notNull().default([]),
+    blastRadius: text("blast_radius"),
+    /** What responders told the analysis — attributed, and cited like any evidence. */
+    notes: jsonb("notes").$type<InvestigationNote[]>().notNull().default([]),
+    model: text("model"),
+    provider: text("provider"),
+    /** The synthesis message in the incident channel, updated in place. */
+    chatRef: jsonb("chat_ref").$type<{
+      channelId?: string;
+      ts?: string;
+      teamsPosted?: boolean;
+    } | null>(),
+    grade: text("grade").$type<InvestigationGrade | null>(),
+    gradeNote: text("grade_note"),
+    gradedByMemberId: uuid("graded_by_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    gradedAt: timestamp("graded_at", { withTimezone: true }),
+    /** The last assessment's error, if it failed; earlier results stay. */
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("investigations_tenant_status").on(t.tenantId, t.status)],
 );
 
 /* ---------- Heartbeats — a cron that stops pinging is an alert ---------- */

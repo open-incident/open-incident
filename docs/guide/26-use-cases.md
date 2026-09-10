@@ -82,7 +82,7 @@ Enterprise edition, `OI_ENTITLEMENTS=sso,customRoles`.
 ## Case 7 — Post-incident: follow-ups to Jira, post-mortem to Confluence
 
 1. INC-231 is resolved (Case 1); the **Post-incident** tab shows phase **Document** with its tasks assigned to the lead, due in 3 days.
-2. **Draft with AI** fills the six sections from the timeline, each labelled **AI DRAFT**. The lead edits _Root cause_ and _What to improve_; **Regenerate this section** redoes _Timeline_ alone.
+2. **Draft with AI** fills the six sections from the timeline, each labelled **AI DRAFT**. The lead edits _Root cause analysis (RCA)_ and _What to improve_; **Regenerate this section** redoes _Timeline_ alone.
 3. **Suggest follow-ups** proposes three actions; the lead creates two: _Add a latency SLO alert on checkout-api_ (P1) and _Document the rollback procedure_ (P2), assigned to team Payments.
 4. On each follow-up's row, **Export → Jira**: issues `PAY-412` and `PAY-413` are created with links back. When `PAY-413` moves to _Done_ in Jira, the follow-up is marked done here within five minutes, with a line in the timeline.
 5. The debrief is scheduled from the tab; the invitations go to the role holders and active participants.

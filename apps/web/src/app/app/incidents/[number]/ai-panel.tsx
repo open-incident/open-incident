@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { and, eq } from "drizzle-orm";
-import { incidents, withTenant } from "@openincident/db";
+import { incidents, investigations, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import type { IncidentDetail } from "@/lib/incidents";
 import { aiAllowance, recentChanges, relatedIncidents } from "@/lib/ai-capabilities";
 import { runbooksForService } from "@openincident/ai";
 import { AiBadge } from "@/components/ai-badge";
 import { regenerateSummary } from "./ai-actions";
+import type { InvestigationAccess } from "@/lib/investigations";
 
 /**
  * The side panel's three assistant sections, in the design's idiom: an AI
@@ -18,13 +19,29 @@ export async function AiPanel({
   tenantId,
   number,
   canAct,
+  rca,
 }: {
   inc: IncidentDetail;
   tenantId: string;
   number: number;
   canAct: boolean;
+  rca: InvestigationAccess;
 }) {
   const t = await getT();
+  const [investigation] = await withTenant(tenantId, (tx) =>
+    tx
+      .select({
+        status: investigations.status,
+        runs: investigations.runs,
+        summary: investigations.summary,
+        hypotheses: investigations.hypotheses,
+        completedAt: investigations.completedAt,
+      })
+      .from(investigations)
+      .where(and(eq(investigations.tenantId, tenantId), eq(investigations.incidentId, inc.row.id))),
+  );
+  const topHypothesis =
+    investigation?.hypotheses.find((h) => h.id === investigation.summary?.topHypothesisId) ?? null;
   const [summaryRow] = await withTenant(tenantId, (tx) =>
     tx
       .select({
@@ -76,6 +93,56 @@ export async function AiPanel({
   };
   return (
     <>
+      <div style={section} data-testid="ai-rca">
+        <div style={head}>
+          {t("ai.investigation.title")}
+          <AiBadge />
+          <span style={{ flex: 1 }} />
+          <Link
+            href={`/app/incidents/${number}?tab=investigation`}
+            className="oi-link"
+            style={{ fontSize: 11.5, fontWeight: 600, color: "var(--brand)" }}
+          >
+            {t("ai.investigation.open")}
+          </Link>
+        </div>
+        {!rca.ok ? (
+          <div style={muted}>
+            {rca.reason === "edition"
+              ? t("ai.investigation.unavailableEdition")
+              : t(`ai.refusal.${rca.reason}`)}
+          </div>
+        ) : !investigation || investigation.runs === 0 ? (
+          <div style={muted}>
+            {investigation &&
+            (investigation.status === "queued" || investigation.status === "running")
+              ? t("ai.investigation.status.running")
+              : t("ai.investigation.empty")}
+          </div>
+        ) : (
+          <>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12.5,
+                lineHeight: 1.55,
+                color: "var(--ink-2)",
+                textWrap: "pretty",
+              }}
+            >
+              {investigation.summary?.whatCaused ?? t("ai.investigation.noCause")}
+            </p>
+            <div style={muted}>
+              {topHypothesis
+                ? `${t("ai.investigation.confidenceLabel")}: ${t(`ai.investigation.confidence.${topHypothesis.confidence}`)}`
+                : ""}
+              {investigation.completedAt
+                ? `${topHypothesis ? " · " : ""}${t("ai.investigation.updatedAt", { when: t.fmt.relative(investigation.completedAt) })}`
+                : ""}
+            </div>
+          </>
+        )}
+      </div>
       <div style={section} data-testid="ai-summary">
         <div style={head}>
           {t("ai.summary.title")}

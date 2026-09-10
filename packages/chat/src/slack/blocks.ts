@@ -333,3 +333,65 @@ export const HELP_TEXT = [
   "`/incident status` — where the incident stands",
   "React with :pushpin: to add a message to the timeline, :white_check_mark: to turn it into a follow-up.",
 ].join("\n");
+
+/** The root cause analysis, as one message the channel keeps seeing updated. */
+export type InvestigationView = {
+  reference: string;
+  url: string;
+  incidentId: string;
+  whatsGoingOn: string;
+  whatCaused: string | null;
+  confidence: string | null;
+  nextSteps: string[];
+  findings: number;
+  hypotheses: number;
+  runs: number;
+};
+
+export function investigationBlocks(v: InvestigationView): unknown[] {
+  const cause = v.whatCaused
+    ? `${v.whatCaused.slice(0, 1200)}${v.confidence ? `\n_confidence: ${v.confidence}_` : ""}`
+    : "_No hypothesis survives the evidence yet._";
+  const steps = v.nextSteps.length
+    ? v.nextSteps.map((s) => `• ${s.slice(0, 300)}`).join("\n")
+    : "_Nothing to suggest yet._";
+  return [
+    md(`:mag: *Root cause analysis — ${v.reference}* · _AI draft, a person decides_`),
+    md(`*What's going on*\n${(v.whatsGoingOn || "—").slice(0, 1500)}`),
+    md(`*What caused it*\n${cause}`),
+    md(`*What you can do next*\n${steps}`),
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Open the analysis" },
+          url: v.url,
+          action_id: "oi_open_investigation",
+        },
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Re-assess" },
+          value: v.incidentId,
+          action_id: "oi_investigate_rerun",
+        },
+      ],
+    },
+    ctx(
+      `Assessment #${v.runs} · ${v.findings} finding${v.findings === 1 ? "" : "s"} · ${v.hypotheses} hypothes${v.hypotheses === 1 ? "is" : "es"} · nothing here was executed.`,
+    ),
+  ];
+}
+
+/** The same synthesis as plain text — for Teams, and as Slack's fallback text. */
+export function investigationText(v: InvestigationView): string {
+  return [
+    `Root cause analysis — ${v.reference} (AI draft, a person decides)`,
+    `What's going on: ${v.whatsGoingOn || "—"}`,
+    `What caused it: ${v.whatCaused ? `${v.whatCaused}${v.confidence ? ` (confidence: ${v.confidence})` : ""}` : "no hypothesis survives the evidence yet"}`,
+    v.nextSteps.length ? `Next: ${v.nextSteps.join(" · ")}` : "",
+    `Assessment #${v.runs} · ${v.url}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}

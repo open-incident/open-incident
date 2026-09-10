@@ -21,6 +21,7 @@
     "@openincident/chat": "workspace:*",
     "@openincident/statuspages": "workspace:*",
     "@openincident/ai": "workspace:*",
+    "@openincident/investigations": "workspace:*",
     "@openincident/storage": "workspace:*",
     "@openincident/trackers": "workspace:*",
     "@openincident/qa": "workspace:*"

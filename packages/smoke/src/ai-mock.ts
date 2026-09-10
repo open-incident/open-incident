@@ -81,13 +81,104 @@ export function startAiMock(
               },
               {
                 key: "root_cause",
-                title: "Cause racine",
+                title: "Analyse de cause racine (RCA)",
                 body: "Mock: connection pool exhausted after the deploy.",
               },
               { key: "actions", title: "Actions", body: "- Add pool saturation alert" },
             ],
           });
-        else if (/TASK: summary/.test(prompt))
+        else if (/TASK: investigate_challenge/.test(prompt)) {
+          const ids = [
+            ...new Set(prompt.match(/^\[([A-Z]\d+)\]/gm)?.map((x) => x.slice(1, -1)) ?? []),
+          ];
+          content = JSON.stringify({
+            verdicts: [
+              {
+                id: "H1",
+                verdict: "holds",
+                note: "Mock review: the deploy precedes the first symptom; nothing in the material contradicts it.",
+                citations: ids.slice(0, 1),
+              },
+              {
+                id: "H2",
+                verdict: "weakened",
+                note: "Mock review: an alternative remains unexcluded — a flag change in the same window.",
+                citations: [],
+              },
+            ],
+          });
+        } else if (/TASK: investigate\b/.test(prompt)) {
+          // Cite what the material really contains: the ids of its evidence lines.
+          const ids = [
+            ...new Set(prompt.match(/^\[([A-Z]\d+)\]/gm)?.map((x) => x.slice(1, -1)) ?? []),
+          ];
+          const e = ids.filter((i) => i.startsWith("E"));
+          const c = ids.filter((i) => i.startsWith("C"));
+          const a = ids.filter((i) => i.startsWith("A"));
+          const n = ids.filter((i) => i.startsWith("N"));
+          content = JSON.stringify({
+            triage: {
+              severityHint: "SEV2",
+              scope: "Mock: checkout in eu-west-1",
+              escalate: false,
+              rationale: "Mock: one service, a lead is assigned.",
+            },
+            findings: [
+              {
+                id: "F1",
+                check: "timeline",
+                statement: "Mock finding: the incident was declared after checkout latency rose.",
+                citations: e.slice(0, 2),
+              },
+              {
+                id: "F2",
+                check: c.length ? "changes" : "timeline",
+                statement: "Mock finding: a deploy preceded the first symptom.",
+                citations: c.length ? c.slice(0, 1) : e.slice(0, 1),
+              },
+              ...(a.length
+                ? [
+                    {
+                      id: "F3",
+                      check: "alerts",
+                      statement: "Mock finding: the alert fired on the affected service.",
+                      citations: a.slice(0, 1),
+                    },
+                  ]
+                : []),
+              ...(n.length
+                ? [
+                    {
+                      id: "F4",
+                      check: "notes",
+                      statement: "Mock finding: a responder reported the rollback did not help.",
+                      citations: n.slice(0, 1),
+                    },
+                  ]
+                : []),
+            ],
+            hypotheses: [
+              {
+                id: "H1",
+                whatBroke: "Mock hypothesis: the connection pool of checkout-api",
+                why: "exhausted after the 13:55 deploy doubled the worker's connections",
+                confidence: "likely",
+                findings: ["F1", "F2"],
+                nextSteps: ["Mock: roll back the deploy", "Mock: check pool saturation"],
+              },
+              {
+                id: "H2",
+                whatBroke: "Mock hypothesis: a feature flag",
+                why: "a flag changed in the same window",
+                confidence: "plausible",
+                findings: ["F1"],
+                nextSteps: ["Mock: list the flag changes"],
+              },
+            ],
+            blastRadius: "Mock: checkout in eu-west-1.",
+            whatsGoingOn: "Mock: checkout latency degraded; responders are on it.",
+          });
+        } else if (/TASK: summary/.test(prompt))
           content =
             "Mock summary of the timeline: the incident was acknowledged in 3 minutes and is under monitoring.";
         else if (/TASK: update_draft/.test(prompt))

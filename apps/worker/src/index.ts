@@ -28,6 +28,7 @@ import { notificationDeliveries } from "@openincident/db";
 import { sweepMaintenances } from "@openincident/statuspages";
 import { assertStorageConfig } from "@openincident/storage";
 import { sweepRunbooks } from "@openincident/ai";
+import { runInvestigation, type InvestigationJob } from "@openincident/investigations";
 import { syncTrackerStatuses } from "@openincident/trackers";
 import { QA_QUEUE, type QaJob } from "@openincident/qa";
 import { runQaJob } from "@openincident/qa/runner";
@@ -141,6 +142,11 @@ const processors: Record<QueueName, Processor> = {
     const tenants = (await listLiveTenants()).map((t) => t.id);
     const n = await sweepMaintenances(tenants);
     if (n) console.log(`[status-sweep] ${n} maintenance transition(s)`);
+  },
+  investigation: async (job) => {
+    // One assessment; the engine writes its own outcome, so nothing here is retried.
+    const data = job.data as InvestigationJob;
+    await runInvestigation(data);
   },
   "runbook-sync": async () => {
     const tenants = (await listLiveTenants()).map((t) => t.id);

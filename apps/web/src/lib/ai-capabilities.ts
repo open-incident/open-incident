@@ -464,7 +464,7 @@ const PM_KEYS: Array<{ key: string; title: string }> = [
   { key: "summary", title: "Summary" },
   { key: "impact", title: "Impact" },
   { key: "timeline", title: "Timeline" },
-  { key: "root_cause", title: "Root cause" },
+  { key: "root_cause", title: "Root cause analysis (RCA)" },
   { key: "went_well", title: "What went well" },
   { key: "improve", title: "What to improve" },
 ];

@@ -20,6 +20,12 @@ export function SectionEditor({
   aiAllowed: boolean;
 }) {
   const t = useT();
+  // The six built-in sections take their name from the dictionary, so a workspace
+  // that created its post-mortem before a wording change reads the current words.
+  const known = ["summary", "impact", "timeline", "root_cause", "went_well", "improve"] as const;
+  const sectionTitle = (known as readonly string[]).includes(section.key)
+    ? t(`postMortem.section.${section.key as (typeof known)[number]}`)
+    : section.title;
   const [editing, setEditing] = useState(false);
   const small: React.CSSProperties = {
     background: "none",
@@ -33,7 +39,7 @@ export function SectionEditor({
   return (
     <div data-testid={`pm-section-${section.key}`} style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 5 }}>
-        <span style={{ fontSize: 14, fontWeight: 600 }}>{section.title}</span>
+        <span style={{ fontSize: 14, fontWeight: 600 }}>{sectionTitle}</span>
         <span style={{ flex: 1 }} />
         {canAct && !editing && (
           <>

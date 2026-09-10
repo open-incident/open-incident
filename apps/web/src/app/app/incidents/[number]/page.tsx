@@ -21,10 +21,12 @@ import { AddFollowUp } from "./add-follow-up";
 import { AiPanel } from "./ai-panel";
 import { SuggestFollowUps } from "./suggest-follow-ups";
 import { aiAllowance } from "@/lib/ai-capabilities";
+import { investigationAccess } from "@/lib/investigations";
+import { Investigation } from "./investigation";
 import { connectedTrackers } from "@/lib/trackers";
 import { connectedDocs } from "@/lib/docs";
 
-type Tab = "timeline" | "follow-ups" | "post-incident";
+type Tab = "timeline" | "investigation" | "follow-ups" | "post-incident";
 
 /**
  * IN-02 — the incident. Header (status pill, severity in mono, title, the
@@ -48,7 +50,10 @@ export default async function IncidentPage({
   const { tab: rawTab, update, publish, exportError } = await searchParams;
   const number = Number(raw);
   if (!Number.isInteger(number) || number <= 0) notFound();
-  const tab: Tab = rawTab === "follow-ups" || rawTab === "post-incident" ? rawTab : "timeline";
+  const tab: Tab =
+    rawTab === "follow-ups" || rawTab === "post-incident" || rawTab === "investigation"
+      ? rawTab
+      : "timeline";
   if (rawTab && rawTab !== tab) redirect(`/app/incidents/${number}`);
 
   const inc = await withTenant(tenant.id, (tx) => getIncident(tx, tenant.id, number));
@@ -82,6 +87,7 @@ export default async function IncidentPage({
   const aiUpdate = inc ? (await aiAllowance(tenant.id, "update_draft")).ok : false;
   const aiFollowUps = inc ? (await aiAllowance(tenant.id, "follow_ups")).ok : false;
   const aiPostMortem = inc ? (await aiAllowance(tenant.id, "post_mortem")).ok : false;
+  const rca = inc ? await investigationAccess(tenant) : ({ ok: false, reason: "edition" } as const);
   const slackChannel = inc
     ? (
         await withTenant(tenant.id, (tx) =>
@@ -144,6 +150,7 @@ export default async function IncidentPage({
     tb === "timeline" ? `/app/incidents/${number}` : `/app/incidents/${number}?tab=${tb}`;
   const tabs: Array<[Tab, string]> = [
     ["timeline", t("incident.tab.timeline")],
+    ["investigation", t("incident.tab.investigation")],
     [
       "follow-ups",
       inc.followUps.length
@@ -416,6 +423,15 @@ export default async function IncidentPage({
               />
             </div>
           )}
+          {tab === "investigation" && (
+            <Investigation
+              tenantId={tenant.id}
+              inc={inc}
+              number={number}
+              canAct={canRespond(member) && inc.row.phase !== "closed"}
+              access={rca}
+            />
+          )}
           {tab === "follow-ups" && (
             <div
               className="oi-rise"
@@ -476,7 +492,7 @@ export default async function IncidentPage({
                 />
                 <IncidentChat incidentId={inc.row.id} number={number} canAct={acts} />
                 <IncidentAlerts incidentId={inc.row.id} />
-                <AiPanel inc={inc} tenantId={tenant.id} number={number} canAct={acts} />
+                <AiPanel inc={inc} tenantId={tenant.id} number={number} canAct={acts} rca={rca} />
               </>
             }
           />

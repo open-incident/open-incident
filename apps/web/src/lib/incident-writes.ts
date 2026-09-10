@@ -535,6 +535,20 @@ export async function afterIncidentChange(
       console.error("[ai] knowledge indexing failed:", err),
     );
   }
+  // The root cause analysis starts the moment a live incident is declared; a
+  // workspace that may not have it simply gets nothing — the tab says why.
+  if (events.includes("incident.created")) {
+    const tenant = await getTenantById(tenantId);
+    const [inc] = await withTenant(tenantId, (tx) =>
+      tx.select({ mode: incidents.mode }).from(incidents).where(eq(incidents.id, incidentId)),
+    );
+    if (tenant && inc && inc.mode === "live") {
+      const { requestAssessment } = await import("./investigations");
+      await requestAssessment(tenant, incidentId, "declaration").catch((err) =>
+        console.error("[investigation] start failed:", err),
+      );
+    }
+  }
 }
 
 /**

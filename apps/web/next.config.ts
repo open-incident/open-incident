@@ -32,6 +32,7 @@ const nextConfig: NextConfig = {
     "@openincident/catalog",
     "@openincident/ee-web",
     "@openincident/qa",
+    "@openincident/investigations",
   ],
   // postgres.js, nodemailer and BullMQ stay on the Node side.
   serverExternalPackages: ["postgres", "nodemailer", "bullmq", "ioredis"],

@@ -329,6 +329,34 @@ export function openApiDocument(origin: string): OpenApiDocument {
           },
         },
       },
+      "/incidents/{number}/investigation": {
+        get: {
+          summary: "The root cause analysis (RCA) of an incident",
+          description:
+            "What the assistant established from the incident's evidence: the triage, the synthesis (what is going on, what caused it, what to do next), the hypotheses with their confidence — speculation, plausible, likely, strong, validated — and the reviewer's objections, the findings with the evidence ids they cite, the evidence index, the checks that ran, and the grade a person gave against the documented cause. `404 no_analysis` until the first assessment.",
+          parameters: [numberParam],
+          responses: {
+            "200": { description: "The analysis" },
+            "404": { description: "No such incident, or no analysis yet (`no_analysis`)" },
+            ...errors,
+          },
+        },
+        post: {
+          summary: "Ask for a new assessment (scope write)",
+          description:
+            "Queues one assessment; a running one is not interrupted, the request is served right after it. The result lands in the incident's timeline and channel, and is read back with GET.",
+          parameters: [numberParam],
+          responses: {
+            "202": { description: 'Queued (`{ status: "queued" | "running" }`)' },
+            "404": { description: "No such incident" },
+            "409": {
+              description:
+                "Root cause analysis is not available on this workspace (edition, provider or AI governance)",
+            },
+            ...errors,
+          },
+        },
+      },
       "/incidents/{number}/follow-ups": {
         post: {
           summary: "Create a follow-up (scope write)",

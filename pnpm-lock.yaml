@@ -96,6 +96,9 @@ importers:
       '@openincident/ee-web':
         specifier: workspace:*
         version: link:../../ee/web
+      '@openincident/investigations':
+        specifier: workspace:*
+        version: link:../../packages/investigations
       '@openincident/mail':
         specifier: workspace:*
         version: link:../../packages/mail
@@ -178,6 +181,9 @@ importers:
       '@openincident/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@openincident/investigations':
+        specifier: workspace:*
+        version: link:../../packages/investigations
       '@openincident/mail':
         specifier: workspace:*
         version: link:../../packages/mail
@@ -431,6 +437,37 @@ importers:
         version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@7.2.0)(tsx@4.23.13)
 
   packages/docs:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@7.2.0)(tsx@4.23.13)
+
+  packages/investigations:
+    dependencies:
+      '@openincident/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@openincident/chat':
+        specifier: workspace:*
+        version: link:../chat
+      '@openincident/db':
+        specifier: workspace:*
+        version: link:../db
+      bullmq:
+        specifier: ^5.44.0
+        version: 5.81.4(supports-color@7.2.0)
+      drizzle-orm:
+        specifier: ^0.44.0
+        version: 0.44.7(kysely@0.29.5)(postgres@3.4.9)
+      ioredis:
+        specifier: ^5.6.0
+        version: 5.11.1(supports-color@7.2.0)
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

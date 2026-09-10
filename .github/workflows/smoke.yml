@@ -43,7 +43,7 @@ jobs:
           SMTP_HOST: localhost
           SMTP_PORT: "1027"
           SMTP_SECURE: "false"
-          OI_ENTITLEMENTS: sso,customRoles,auditLogAdvanced
+          OI_ENTITLEMENTS: sso,customRoles,auditLogAdvanced,aiInvestigations
           SSO_TRUSTED_IDP_ORIGINS: http://127.0.0.1:3195
           SLACK_CLIENT_ID: smoke-client
           SLACK_CLIENT_SECRET: smoke-secret
@@ -85,7 +85,7 @@ jobs:
           SMTP_PORT: "1027"
           SMTP_SECURE: "false"
           # The smoke suite runs a mock Slack API on this port.
-          OI_ENTITLEMENTS: sso,customRoles,auditLogAdvanced
+          OI_ENTITLEMENTS: sso,customRoles,auditLogAdvanced,aiInvestigations
           SSO_TRUSTED_IDP_ORIGINS: http://127.0.0.1:3195
           SLACK_CLIENT_ID: smoke-client
           SLACK_CLIENT_SECRET: smoke-secret

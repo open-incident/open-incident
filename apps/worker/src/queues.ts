@@ -9,6 +9,7 @@
  * - notify-send      : notifications to responders (email, SMS, voice, web push)
  * - oncall-sweep     : reconciler — due ticks, lost deliveries, shift reminders
  * - status-sweep     : maintenance windows on the clock, status page snapshots
+ * - investigation    : one root cause assessment of an incident (declaration, signal, request)
  */
 export const QUEUE_NAMES = [
   "mail-send",
@@ -23,6 +24,7 @@ export const QUEUE_NAMES = [
   "heartbeat-sweep",
   "coverage-sweep",
   "runbook-sync",
+  "investigation",
 ] as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[number];

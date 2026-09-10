@@ -8,6 +8,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Root cause analysis (RCA), the agentic way.** A live incident now gets an
+  assessment the moment it is declared: the assistant gathers the evidence —
+  timeline, linked alerts, changes recorded around it, similar past incidents
+  with the cause their post-mortem documented, runbooks, ownership, what
+  responders said — states findings that must cite it, proposes hypotheses of
+  what broke and why with an explicit confidence on five levels, and has a
+  second, adversarial pass try to break them before anyone reads them. One
+  synthesis (what is going on, what caused it, what to do next) lands in the
+  incident's Slack channel and is updated in place; the timeline records each
+  assessment. A person steers it with notes, pauses it, grades it against the
+  documented cause, and sends the surviving hypothesis into the post-mortem's
+  RCA section as a draft. It re-assesses when a new signal lands and never
+  executes anything. Enterprise edition (`aiInvestigations`), its own switch in
+  AI governance, `GET`/`POST /api/v1/incidents/{ref}/investigation`.
+
+### Changed
+
+- **The product now says "root cause analysis (RCA)".** The post-mortem's
+  _Root cause_ section is _Root cause analysis (RCA)_ in every language, the
+  guide and the glossary explain the term, and the new analysis is named after
+  it — the words the rest of the industry uses.
+
 - **Integrations screen: the whole catalog, with marks.** Seven families
   instead of five — alert sources, chat and video, trackers, documentation,
   identity, catalog and infrastructure as code, migration and business — and

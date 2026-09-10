@@ -6,9 +6,11 @@ import {
   ensureIncidentChannel,
   postIncidentNote,
   postIncidentUpdate,
+  postInvestigation,
   refreshIncidentHeader,
   syncAnnouncement,
 } from "./adapter";
+import { investigationText, type InvestigationView } from "./slack/blocks";
 import {
   ensureIncidentChannelTeams,
   postIncidentNoteTeams,
@@ -81,4 +83,32 @@ export async function syncAnnouncementAll(
     quiet(syncAnnouncement(tenantId, announcementId, origin), "slack announcement", undefined),
     quiet(syncAnnouncementTeams(tenantId, announcementId, origin), "teams announcement", undefined),
   ]);
+}
+
+/**
+ * The root cause analysis in every connected chat: Slack keeps one message
+ * updated in place; Teams gets the synthesis once, as a note, the first time.
+ * Returns the reference to keep on the investigation row.
+ */
+export async function postInvestigationAll(
+  tenantId: string,
+  incidentId: string,
+  view: InvestigationView,
+  ref: { channelId?: string; ts?: string; teamsPosted?: boolean } | null,
+): Promise<{ channelId?: string; ts?: string; teamsPosted?: boolean } | null> {
+  const [slackRef, teams] = await Promise.all([
+    quiet(postInvestigation(tenantId, incidentId, view, ref), "slack investigation", null),
+    ref?.teamsPosted
+      ? Promise.resolve(true)
+      : quiet(
+          postIncidentNoteTeams(tenantId, incidentId, investigationText(view)),
+          "teams investigation",
+          false,
+        ),
+  ]);
+  const next = {
+    ...(slackRef ?? (ref?.ts ? { channelId: ref.channelId, ts: ref.ts } : {})),
+    ...(teams ? { teamsPosted: true } : {}),
+  };
+  return Object.keys(next).length > 0 ? next : null;
 }

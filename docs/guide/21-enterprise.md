@@ -11,11 +11,12 @@ Everything outside the `ee/` directory is AGPL-3.0. The `ee/` directory carries 
 
 Today the enterprise edition carries:
 
-| Capability                                                                                        | Entitlement   | Chapter                      |
-| ------------------------------------------------------------------------------------------------- | ------------- | ---------------------------- |
-| **Single sign-on** — OpenID Connect and SAML 2.0 connections, just-in-time membership, "SSO only" | `sso`         | [Single sign-on](sso)        |
-| **SCIM 2.0 provisioning** — members and teams kept in step with the identity provider             | `sso`         | [Provisioning (SCIM)](scim)  |
-| **Custom roles** — permission sets beyond the four built-in roles                                 | `customRoles` | [Custom roles](custom-roles) |
+| Capability                                                                                        | Entitlement        | Chapter                                     |
+| ------------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------- |
+| **Single sign-on** — OpenID Connect and SAML 2.0 connections, just-in-time membership, "SSO only" | `sso`              | [Single sign-on](sso)                       |
+| **SCIM 2.0 provisioning** — members and teams kept in step with the identity provider             | `sso`              | [Provisioning (SCIM)](scim)                 |
+| **Custom roles** — permission sets beyond the four built-in roles                                 | `customRoles`      | [Custom roles](custom-roles)                |
+| **Root cause analysis (RCA)** — agentic evidence, findings, hypotheses with confidence            | `aiInvestigations` | [The assistant](ai#root-cause-analysis-rca) |
 
 Planned in the same directory: the advanced audit log (export, retention, SIEM forwarding), customer status pages and sub-pages.
 

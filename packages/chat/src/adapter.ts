@@ -25,12 +25,15 @@ import {
 } from "@openincident/db";
 import { slack, type SlackClient } from "./slack/client";
 import {
+  type IncidentCard,
+  type InvestigationView,
   acknowledgedBlocks,
   announcementBlocks,
   escalationDmBlocks,
   incidentHeaderBlocks,
   incidentUpdateBlocks,
-  type IncidentCard,
+  investigationBlocks,
+  investigationText,
 } from "./slack/blocks";
 
 export const DEFAULT_SLACK_CONFIG: SlackConfig = {
@@ -491,4 +494,35 @@ export async function incidentForChannel(
     .innerJoin(incidents, eq(incidents.id, incidentChannels.incidentId))
     .where(and(eq(incidentChannels.tenantId, tenantId), eq(incidentChannels.channelId, channelId)));
   return row ?? null;
+}
+
+/**
+ * The root cause analysis in the incident channel: posted once, then updated
+ * in place at every assessment. Returns where the message is, or null when the
+ * incident has no Slack channel.
+ */
+export async function postInvestigation(
+  tenantId: string,
+  incidentId: string,
+  view: InvestigationView,
+  ref: { channelId?: string; ts?: string } | null,
+): Promise<{ channelId: string; ts: string } | null> {
+  return withTenant(tenantId, async (tx) => {
+    const [ch] = await tx
+      .select()
+      .from(incidentChannels)
+      .where(and(eq(incidentChannels.incidentId, incidentId), eq(incidentChannels.kind, "slack")));
+    if (!ch) return null;
+    const install = await getSlackInstall(tx, tenantId);
+    if (!install) return null;
+    const api = slack(install.token);
+    const text = investigationText(view);
+    const blocks = investigationBlocks(view);
+    if (ref?.channelId && ref.ts) {
+      const r = await api.updateMessage(ref.channelId, ref.ts, text, blocks);
+      if (r.ok) return { channelId: ref.channelId, ts: ref.ts };
+    }
+    const r = await api.postMessage(ch.channelId, text, blocks);
+    return r.ok ? { channelId: r.channel, ts: r.ts } : null;
+  });
 }

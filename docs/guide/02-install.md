@@ -100,19 +100,19 @@ Every variable the instance reads, grouped as in `.env.example`. Variables marke
 
 ### Core
 
-| Variable                  | Meaning                                                                                                                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SEED_DEMO`               | `true` installs the demo workspace on the first start. Set to `false` once yours exists.                                                                                                          |
-| `OPENINCIDENT_EDITION`    | `self-hosted` (default) or `cloud`. Read server-side only.                                                                                                                                        |
-| `OI_ENTITLEMENTS`         | Enterprise capabilities switched on for a standalone install, comma-separated: `sso`, `customRoles`, `auditLogAdvanced`, `customerStatusPages`. See [Enterprise edition](enterprise).             |
-| `SSO_TRUSTED_IDP_ORIGINS` | Origins of identity providers on private addresses (an internal Keycloak). The SSO plugin refuses non-public hosts otherwise.                                                                     |
-| `DATABASE_URL`            | The application role's connection string.                                                                                                                                                         |
-| `DATABASE_ADMIN_URL`      | The owner's connection string, for migrations, `db:rls`, seeds and the purge.                                                                                                                     |
-| `APP_DB_PASSWORD`         | The password `db:rls` gives the application role when it creates it.                                                                                                                              |
-| `REDIS_URL`               | The queues.                                                                                                                                                                                       |
-| `BASE_DOMAIN`             | `{slug}.$BASE_DOMAIN` → workspace; every link the product writes is built from it. Unset: `localhost:3100` in development, `localhost:3000` in the compose stack. Your real domain in production. |
-| `DEFAULT_TENANT_SLUG`     | The workspace served on the bare domain.                                                                                                                                                          |
-| `INTERNAL_WEB_ORIGIN`     | Where the worker reaches the web app to post heartbeat alerts (`http://web:3000` in the compose stack).                                                                                           |
+| Variable                  | Meaning                                                                                                                                                                                                   |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SEED_DEMO`               | `true` installs the demo workspace on the first start. Set to `false` once yours exists.                                                                                                                  |
+| `OPENINCIDENT_EDITION`    | `self-hosted` (default) or `cloud`. Read server-side only.                                                                                                                                                |
+| `OI_ENTITLEMENTS`         | Enterprise capabilities switched on for a standalone install, comma-separated: `sso`, `customRoles`, `auditLogAdvanced`, `customerStatusPages`, `aiInvestigations`. See [Enterprise edition](enterprise). |
+| `SSO_TRUSTED_IDP_ORIGINS` | Origins of identity providers on private addresses (an internal Keycloak). The SSO plugin refuses non-public hosts otherwise.                                                                             |
+| `DATABASE_URL`            | The application role's connection string.                                                                                                                                                                 |
+| `DATABASE_ADMIN_URL`      | The owner's connection string, for migrations, `db:rls`, seeds and the purge.                                                                                                                             |
+| `APP_DB_PASSWORD`         | The password `db:rls` gives the application role when it creates it.                                                                                                                                      |
+| `REDIS_URL`               | The queues.                                                                                                                                                                                               |
+| `BASE_DOMAIN`             | `{slug}.$BASE_DOMAIN` → workspace; every link the product writes is built from it. Unset: `localhost:3100` in development, `localhost:3000` in the compose stack. Your real domain in production.         |
+| `DEFAULT_TENANT_SLUG`     | The workspace served on the bare domain.                                                                                                                                                                  |
+| `INTERNAL_WEB_ORIGIN`     | Where the worker reaches the web app to post heartbeat alerts (`http://web:3000` in the compose stack).                                                                                                   |
 
 ### Authentication
 

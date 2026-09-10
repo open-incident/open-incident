@@ -19,6 +19,7 @@
     "@openincident/crypto": "workspace:*",
     "@openincident/db": "workspace:*",
     "@openincident/docs": "workspace:*",
+    "@openincident/investigations": "workspace:*",
     "@openincident/ee-web": "workspace:*",
     "@openincident/mail": "workspace:*",
     "@openincident/oncall": "workspace:*",

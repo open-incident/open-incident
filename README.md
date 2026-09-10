@@ -1,7 +1,7 @@
 # Open Incident
 
 **The open-source, European software reliability platform.** Incident response,
-on-call, status pages and AI-assisted investigations — web-first, hosted in
+on-call, status pages and AI root cause analysis (RCA) — web-first, hosted in
 Europe or on your own servers, with the whole core under AGPL.
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)

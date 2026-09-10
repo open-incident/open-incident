@@ -371,6 +371,34 @@ export function renderEvent(ev: Ev, t: T): TimelineItem {
         title: t("timeline.merged", { target: s(p.into) }),
         description: t("timeline.byActor", { actor }),
       };
+    case "investigation": {
+      if (s(p.status) === "failed")
+        return {
+          ...base,
+          dot: "var(--dang)",
+          title: t("timeline.investigationFailed"),
+          description: s(p.error),
+        };
+      const conf = s(p.confidence);
+      const known = ["speculation", "plausible", "likely", "strong", "validated"];
+      return {
+        ...base,
+        dot: "var(--viol)",
+        card: true,
+        tag: { label: t("ai.badge"), bg: "var(--viol-t)", ink: "var(--viol)" },
+        title: p.headline
+          ? t("timeline.investigation", { headline: s(p.headline) })
+          : t("timeline.investigationNoCause"),
+        description: t("timeline.investigationDetail", {
+          runs: s(p.runs, "1"),
+          findings: s(p.findings, "0"),
+          hypotheses: s(p.hypotheses, "0"),
+          confidence: known.includes(conf)
+            ? t(`ai.investigation.confidence.${conf as "likely"}`)
+            : "—",
+        }),
+      };
+    }
     default:
       return { ...base, dot: "var(--ink-3)", title: ev.kind, description: "" };
   }

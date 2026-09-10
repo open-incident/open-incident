@@ -4,6 +4,7 @@ import { changeEvents, withTenant } from "@openincident/db";
 import { apiAuth, apiError, apiJson, readJson } from "@/lib/api";
 import { resolveService } from "@/lib/api-resolve";
 import { indexChangeEvent } from "@/lib/ai-capabilities";
+import { signalOpenIncidents } from "@/lib/investigations";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
   });
   if ("error" in created) return created.error;
   void indexChangeEvent(tenantId, created.row.id).catch(() => {});
+  void signalOpenIncidents(auth.ctx.tenant, created.row.serviceEntryId).catch(() => {});
   return apiJson(
     {
       id: created.row.id,

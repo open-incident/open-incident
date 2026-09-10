@@ -1288,7 +1288,7 @@ async function ensurePostIncident(tx: Tx, ctx: Ctx) {
         },
         {
           key: "root_cause",
-          title: "Cause racine",
+          title: "Analyse de cause racine (RCA)",
           body: "Le déploiement payments-worker de 13:55 a doublé son nombre de connexions à la base, épuisant le pool partagé utilisé par checkout-api. Les requêtes checkout ont fait la queue à l'acquisition de connexion, gonflant la latence de queue.",
         },
         {
