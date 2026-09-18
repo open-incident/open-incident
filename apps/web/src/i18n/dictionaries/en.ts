@@ -12,8 +12,10 @@
  */
 
 import type { Message } from "../dictionary";
+import { partsEn } from "./parts";
 
 export const en = {
+  ...partsEn,
   /* ---------- Common ---------- */
   "common.cancel": "Cancel",
   "common.close": "Close",

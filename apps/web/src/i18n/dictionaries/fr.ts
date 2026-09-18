@@ -4,8 +4,10 @@
  */
 
 import type { Dictionary } from "./en";
+import { partsFr } from "./parts";
 
 export const fr: Dictionary = {
+  ...partsFr,
   /* ---------- Common ---------- */
   "common.cancel": "Annuler",
   "common.close": "Fermer",

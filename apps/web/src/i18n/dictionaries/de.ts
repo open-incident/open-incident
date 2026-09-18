@@ -3,8 +3,10 @@
  */
 
 import type { Dictionary } from "./en";
+import { partsDe } from "./parts";
 
 export const de: Dictionary = {
+  ...partsDe,
   /* ---------- Common ---------- */
   "common.cancel": "Abbrechen",
   "common.close": "Schließen",
