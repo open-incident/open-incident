@@ -1,35 +1,57 @@
 "use server";
 
+/**
+ * Everything that writes an alert source.
+ *
+ * The screens moved under /app/alerts/sources; this module stayed where it
+ * was because the alerting settings and the shared editors under
+ * `components/alerting` import it by path, and a server action keeps its
+ * identity from the file it lives in.
+ */
+
 import { createHash, randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
+  alertRoutes,
   alertSources,
   forgetApiKeyLookup,
   registerApiKeyLookup,
+  schedules,
+  teams,
   withTenant,
   type AlertSourceKind,
   type AttributeMapping,
   type ConditionGroup,
+  type EscalationRule,
+  type IncidentTemplate,
   type PriorityRule,
+  type Tx,
 } from "@openincident/db";
 import { defaultMappings } from "@openincident/oncall";
+import { getT } from "@/i18n/server";
 import { recordAudit } from "@/lib/audit";
 import { ingestPayload, simulateIngest, type AlertPlan } from "@/lib/alert-ingest";
 import { SOURCE_KINDS } from "@/lib/alert-sources";
+import { ensureQuickPath } from "@/lib/alerting-setup";
 import { requireManager } from "@/lib/session";
 import { requestOrigin } from "@/lib/tenant";
+import { governingRoute, type IncidentChoice } from "@/app/app/alerts/sources/choices";
 import { headers } from "next/headers";
 
 const KINDS = SOURCE_KINDS.map((k) => k.kind) as [AlertSourceKind, ...AlertSourceKind[]];
-const PAGE = "/app/settings/alert-sources";
+const PAGE = "/app/alerts/sources";
 const uuid = z.string().uuid();
 
 async function currentOrigin(): Promise<string> {
   const h = await headers();
   return requestOrigin({ headers: h, nextUrl: new URL(`http://${h.get("host") ?? "localhost"}/`) });
+}
+
+function endpointOf(origin: string, id: string): string {
+  return `${origin}/api/ingest/alerts/${id}`;
 }
 
 async function loadSource(tenantId: string, id: string) {
@@ -42,6 +64,189 @@ async function loadSource(tenantId: string, id: string) {
   });
 }
 
+function revalidateSources(id?: string) {
+  revalidatePath(PAGE);
+  if (id) revalidatePath(`${PAGE}/${id}`);
+  revalidatePath("/app/alerts");
+  revalidatePath("/app/settings/alerting");
+}
+
+/* ---------- The three choices ---------- */
+
+const pageChoice = z.object({
+  kind: z.enum(["owner", "me", "team", "schedule", "nobody"]),
+  teamId: uuid.optional(),
+  scheduleId: uuid.optional(),
+});
+type PageInput = z.infer<typeof pageChoice>;
+
+const DEFAULT_TEMPLATE: IncidentTemplate = {
+  mode: "conditional",
+  typeId: null,
+  startPhase: "triage",
+  severity: { mode: "priority" },
+  visibility: "public",
+  customFields: {},
+  declineOnResolve: true,
+};
+
+/** The escalation rules that express one answer to "who to page". */
+async function rulesFor(
+  tx: Tx,
+  tenantId: string,
+  actor: { memberId: string; name: string },
+  choice: PageInput,
+): Promise<{ rules: EscalationRule[]; pathId: string | null }> {
+  const t = await getT();
+  if (choice.kind === "nobody") return { rules: [], pathId: null };
+  if (choice.kind === "owner")
+    return {
+      rules: [{ kind: "attribute", attribute: "service", fallbackPathId: null }],
+      pathId: null,
+    };
+  if (choice.kind === "team") {
+    const [team] = choice.teamId
+      ? await tx
+          .select({ pathId: teams.policyPathId })
+          .from(teams)
+          .where(and(eq(teams.tenantId, tenantId), eq(teams.id, choice.teamId)))
+      : [];
+    if (!team?.pathId) return { rules: [], pathId: null };
+    return { rules: [{ kind: "path", pathId: team.pathId }], pathId: team.pathId };
+  }
+  if (choice.kind === "schedule") {
+    if (!choice.scheduleId) return { rules: [], pathId: null };
+    const [sched] = await tx
+      .select({ id: schedules.id, name: schedules.name })
+      .from(schedules)
+      .where(and(eq(schedules.tenantId, tenantId), eq(schedules.id, choice.scheduleId)));
+    if (!sched) return { rules: [], pathId: null };
+    const path = await ensureQuickPath(
+      tx,
+      tenantId,
+      { memberId: actor.memberId },
+      { kind: "schedule", scheduleId: sched.id },
+      t("setup.quickPath.schedule", { name: sched.name }),
+    );
+    return { rules: [{ kind: "path", pathId: path.id }], pathId: path.id };
+  }
+  const path = await ensureQuickPath(
+    tx,
+    tenantId,
+    { memberId: actor.memberId },
+    { kind: "member", memberId: actor.memberId },
+    t("setup.quickPath.member", { name: actor.name }),
+  );
+  return { rules: [{ kind: "path", pathId: path.id }], pathId: path.id };
+}
+
+/**
+ * Writes one of the three choices onto the route that governs the source.
+ *
+ * A source still governed by the shared catch-all gets a route of its own on
+ * the first change — cloned from the shared one, scoped to this source, and
+ * placed just before it so every rule keeps winning.
+ */
+async function applyChoices(
+  tx: Tx,
+  tenantId: string,
+  actor: { memberId: string; name: string },
+  source: { id: string; name: string },
+  patch: { page?: PageInput; incident?: IncidentChoice; autoResolve?: boolean },
+): Promise<void> {
+  const t = await getT();
+  const { route, own, catchAll } = await governingRoute(tx, tenantId, source.id);
+  let target = own ? route : null;
+  if (!target) {
+    const name = t("alt2.sources.routeName", { name: source.name }).slice(0, 80);
+    const [created] = await tx
+      .insert(alertRoutes)
+      .values({
+        tenantId,
+        name,
+        description: t("alt2.sources.routeDesc", { name: source.name }).slice(0, 300),
+        active: true,
+        sourceIds: [source.id],
+        conditions: [],
+        escalations: route?.escalations ?? [],
+        incident: route?.incident ?? DEFAULT_TEMPLATE,
+        grouping: route?.grouping ?? null,
+        escalationMode: route?.escalationMode ?? "none",
+        escalationPathId: route?.escalationPathId ?? null,
+        incidentMode: route?.incidentMode ?? "conditional",
+        resolveClosesEscalation: route?.resolveClosesEscalation ?? true,
+        position: catchAll ? catchAll.position - 1 : 900,
+      })
+      .returning();
+    target = created!;
+  }
+  const next: Partial<typeof alertRoutes.$inferInsert> = { updatedAt: new Date() };
+  const template: IncidentTemplate = target.incident ?? {
+    ...DEFAULT_TEMPLATE,
+    mode: target.incidentMode,
+  };
+  if (patch.page) {
+    const { rules, pathId } = await rulesFor(tx, tenantId, actor, patch.page);
+    next.escalations = rules;
+    next.escalationMode =
+      rules.length === 0 ? "none" : patch.page.kind === "owner" ? "dynamic" : "static";
+    next.escalationPathId = pathId;
+  }
+  if (patch.incident) {
+    const mode =
+      patch.incident === "never" ? "never" : patch.incident === "triage" ? "always" : "conditional";
+    next.incident = { ...template, mode, startPhase: "triage" };
+    next.incidentMode = mode;
+  }
+  if (patch.autoResolve !== undefined) {
+    next.incident = {
+      ...(next.incident ?? template),
+      declineOnResolve: patch.autoResolve,
+    };
+    next.resolveClosesEscalation = patch.autoResolve;
+  }
+  await tx.update(alertRoutes).set(next).where(eq(alertRoutes.id, target.id));
+}
+
+/** One chip on the source page: the choice is written and the next alert follows it. */
+export async function saveSourceChoices(formData: FormData) {
+  const current = await requireManager();
+  const input = z
+    .object({
+      id: uuid,
+      field: z.enum(["page", "incident", "autoResolve"]),
+      value: z.string().max(80),
+      teamId: z.string().max(60).optional(),
+      scheduleId: z.string().max(60).optional(),
+    })
+    .parse(Object.fromEntries(formData.entries()));
+  const source = await loadSource(current.tenant.id, input.id);
+  if (!source) return;
+  const actor = { memberId: current.member.id, name: current.member.name };
+  const patch: { page?: PageInput; incident?: IncidentChoice; autoResolve?: boolean } = {};
+  if (input.field === "page")
+    patch.page = pageChoice.parse({
+      kind: input.value,
+      teamId: input.teamId || undefined,
+      scheduleId: input.scheduleId || undefined,
+    });
+  if (input.field === "incident")
+    patch.incident = z.enum(["triage", "urgent", "never"]).parse(input.value);
+  if (input.field === "autoResolve") patch.autoResolve = input.value === "on";
+  await withTenant(current.tenant.id, async (tx) => {
+    await applyChoices(tx, current.tenant.id, actor, source, patch);
+    await recordAudit(tx, current, "config", "alert_source.choices", {
+      name: source.name,
+      field: input.field,
+      value: input.value,
+    });
+  });
+  revalidateSources(input.id);
+  revalidatePath("/app/settings/alert-routes");
+}
+
+/* ---------- Creating, rotating, deleting ---------- */
+
 /** Creates a source and returns its secret ONCE, with the endpoint to paste into the tool. */
 export async function createSource(
   _prev: unknown,
@@ -53,10 +258,16 @@ export async function createSource(
       kind: z.enum(KINDS),
       name: z.string().trim().min(2).max(80),
       description: z.string().trim().max(300).optional(),
+      page: z.enum(["owner", "me", "team", "schedule", "nobody"]).optional(),
+      teamId: z.string().max(60).optional(),
+      scheduleId: z.string().max(60).optional(),
+      incident: z.enum(["triage", "urgent", "never"]).optional(),
+      autoResolve: z.enum(["on", "off"]).optional(),
     })
     .safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: "invalid" };
   const secret = `oisrc_${randomBytes(20).toString("hex")}`;
+  const actor = { memberId: current.member.id, name: current.member.name };
   const id = await withTenant(current.tenant.id, async (tx) => {
     const [dup] = await tx
       .select({ id: alertSources.id })
@@ -85,33 +296,56 @@ export async function createSource(
   });
   if (!id) return { error: "duplicate" };
   await registerApiKeyLookup(`src:${id}`, current.tenant.id);
-  revalidatePath(PAGE);
-  revalidatePath("/app/settings/alerting");
-  return { secret, endpoint: `${await currentOrigin()}/api/ingest/alerts/${id}`, id };
+  if (parsed.data.page || parsed.data.incident || parsed.data.autoResolve) {
+    await withTenant(current.tenant.id, (tx) =>
+      applyChoices(
+        tx,
+        current.tenant.id,
+        actor,
+        { id, name: parsed.data.name },
+        {
+          page: parsed.data.page
+            ? {
+                kind: parsed.data.page,
+                teamId: parsed.data.teamId || undefined,
+                scheduleId: parsed.data.scheduleId || undefined,
+              }
+            : undefined,
+          incident: parsed.data.incident,
+          autoResolve: parsed.data.autoResolve ? parsed.data.autoResolve === "on" : undefined,
+        },
+      ),
+    );
+    revalidatePath("/app/settings/alert-routes");
+  }
+  revalidateSources(id);
+  return { secret, endpoint: endpointOf(await currentOrigin(), id), id };
 }
 
 /** A new secret, shown once; the old one stops working immediately. */
 export async function rotateSecret(
   _prev: unknown,
   formData: FormData,
-): Promise<{ secret?: string; error?: string }> {
+): Promise<{ secret?: string; endpoint?: string; name?: string; error?: string }> {
   const current = await requireManager();
   const id = uuid.parse(formData.get("id"));
   const secret = `oisrc_${randomBytes(20).toString("hex")}`;
-  const ok = await withTenant(current.tenant.id, async (tx) => {
+  const name = await withTenant(current.tenant.id, async (tx) => {
     const [s] = await tx
       .select({ name: alertSources.name })
       .from(alertSources)
       .where(and(eq(alertSources.tenantId, current.tenant.id), eq(alertSources.id, id)));
-    if (!s) return false;
+    if (!s) return null;
     await tx
       .update(alertSources)
       .set({ secretHash: createHash("sha256").update(secret).digest("hex") })
       .where(eq(alertSources.id, id));
     await recordAudit(tx, current, "config", "alert_source.secret_rotated", { name: s.name });
-    return true;
+    return s.name;
   });
-  return ok ? { secret } : { error: "not_found" };
+  return name
+    ? { secret, endpoint: endpointOf(await currentOrigin(), id), name }
+    : { error: "not_found" };
 }
 
 export async function saveSourceMeta(formData: FormData) {
@@ -129,7 +363,7 @@ export async function saveSourceMeta(formData: FormData) {
       .set({ name: input.name, description: input.description || null })
       .where(and(eq(alertSources.tenantId, current.tenant.id), eq(alertSources.id, input.id))),
   );
-  revalidatePath(PAGE);
+  revalidateSources(input.id);
   redirect(`${PAGE}/${input.id}?saved=1`);
 }
 
@@ -173,7 +407,7 @@ export async function saveSourceMappings(formData: FormData) {
       .where(and(eq(alertSources.tenantId, current.tenant.id), eq(alertSources.id, id)));
     await recordAudit(tx, current, "config", "alert_source.mappings", { count: mappings.length });
   });
-  revalidatePath(PAGE);
+  revalidateSources(id);
   redirect(`${PAGE}/${id}?saved=mappings`);
 }
 
@@ -207,7 +441,7 @@ export async function saveSourcePriorityRule(formData: FormData) {
       .set({ priorityRule: rule })
       .where(and(eq(alertSources.tenantId, current.tenant.id), eq(alertSources.id, id))),
   );
-  revalidatePath(PAGE);
+  revalidateSources(id);
   redirect(`${PAGE}/${id}?saved=priority`);
 }
 
@@ -242,7 +476,7 @@ export async function saveSourceFilter(formData: FormData) {
       .set({ filter })
       .where(and(eq(alertSources.tenantId, current.tenant.id), eq(alertSources.id, id))),
   );
-  revalidatePath(PAGE);
+  revalidateSources(id);
   redirect(`${PAGE}/${id}?saved=filter`);
 }
 
@@ -266,7 +500,7 @@ export async function toggleSource(formData: FormData) {
       },
     );
   });
-  revalidatePath(PAGE);
+  revalidateSources(id);
 }
 
 export async function deleteSource(formData: FormData) {
@@ -282,7 +516,7 @@ export async function deleteSource(formData: FormData) {
     await recordAudit(tx, current, "config", "alert_source.deleted", { name: s.name });
   });
   await forgetApiKeyLookup(`src:${id}`);
-  revalidatePath(PAGE);
+  revalidateSources();
   redirect(PAGE);
 }
 
@@ -301,9 +535,7 @@ export async function testSource(formData: FormData) {
     meta.sample(source.name, new Date().toISOString()),
     { test: true, actorName: current.member.name },
   );
-  revalidatePath(PAGE);
-  revalidatePath("/app/alerts");
-  revalidatePath("/app/settings/alerting");
+  revalidateSources(id);
   const alertId = outcomes[0]?.alertId ?? "";
   if (back === "alerting") redirect(`/app/settings/alerting?saved=test`);
   if (back === "detail") redirect(`${PAGE}/${id}?tested=${alertId}`);
@@ -401,9 +633,7 @@ export async function sendPayload(
     test,
     actorName: current.member.name,
   });
-  revalidatePath(PAGE);
-  revalidatePath("/app/alerts");
-  revalidatePath("/app/settings/alerting");
+  revalidateSources(id);
   return outcomes.map((o) => ({
     alertId: o.alertId,
     action: o.action,

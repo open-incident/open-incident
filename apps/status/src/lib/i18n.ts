@@ -44,6 +44,7 @@ const M = {
     statePartial: "Partial outage",
     stateMajor: "Major outage",
     stateMaintenance: "Maintenance",
+    stateUnknown: "Waiting for first check",
   },
   fr: {
     subscribe: "S'abonner aux mises à jour",
@@ -89,6 +90,7 @@ const M = {
     statePartial: "Panne partielle",
     stateMajor: "Panne majeure",
     stateMaintenance: "Maintenance",
+    stateUnknown: "En attente du premier contrôle",
   },
   de: {
     subscribe: "Updates abonnieren",
@@ -134,6 +136,7 @@ const M = {
     statePartial: "Teilausfall",
     stateMajor: "Größerer Ausfall",
     stateMaintenance: "Wartung",
+    stateUnknown: "Warten auf die erste Prüfung",
   },
 } as const;
 

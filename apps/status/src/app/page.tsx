@@ -11,6 +11,9 @@ const TICK: Record<string, string> = {
   degraded: "var(--wait)",
   partial_outage: "var(--wait)",
   major_outage: "var(--dang)",
+  // Nothing measured: a grey bar, never a green one.
+  unknown: "var(--line)",
+  none: "var(--line)",
 };
 const STATUS_INK: Record<string, string> = {
   investigating: "var(--accent)",
@@ -68,7 +71,9 @@ export default async function StatusPage({
           ? t("statePartial")
           : s === "major_outage"
             ? t("stateMajor")
-            : t("stateMaintenance");
+            : s === "unknown"
+              ? t("stateUnknown")
+              : t("stateMaintenance");
   const open = snap.incidents.filter((i) => i.status !== "resolved");
   const past = snap.incidents.filter((i) => i.status === "resolved");
   const incidentCard = (i: (typeof snap.incidents)[number]) => (
@@ -347,20 +352,23 @@ export default async function StatusPage({
                 style={{
                   fontWeight: 700,
                   color:
-                    c.uptime90 >= 99.9
-                      ? "var(--ok)"
-                      : c.uptime90 >= 99
-                        ? "var(--wait)"
-                        : "var(--dang)",
+                    c.uptime90 === null
+                      ? "var(--ink-3)"
+                      : c.uptime90 >= 99.9
+                        ? "var(--ok)"
+                        : c.uptime90 >= 99
+                          ? "var(--wait)"
+                          : "var(--dang)",
                 }}
               >
-                {c.uptime90.toLocaleString(L === "fr" ? "fr-FR" : L === "de" ? "de-DE" : "en-GB", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}{" "}
-                %
+                {c.uptime90 === null
+                  ? "—"
+                  : `${c.uptime90.toLocaleString(
+                      L === "fr" ? "fr-FR" : L === "de" ? "de-DE" : "en-GB",
+                      { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+                    )} %`}
               </span>
-              {t("days90")}
+              {c.uptime90 === null ? t("stateUnknown") : t("days90")}
               <span
                 title={stateLabel(c.state)}
                 style={{

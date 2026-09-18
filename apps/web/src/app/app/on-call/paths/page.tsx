@@ -1,11 +1,11 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { withTenant, type EscalationGraph, type EscalationNode } from "@openincident/db";
 import { isManagerRole } from "@openincident/config";
 import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
 import { listPaths, targetLabels } from "@/lib/oncall";
 import { avatarTone, initials } from "@/lib/avatar";
-import { OnCallRail } from "../rail";
 import { AddNodeDialog, NewPathDialog } from "./dialogs";
 import { discardDraft, publishPath, removeNode, testPath, updateNode } from "./actions";
 
@@ -23,6 +23,9 @@ export default async function PathsPage({
   const { tenant, member } = await requireMember();
   const t = await getT();
   const q = await searchParams;
+  // The four-tab screen is the front door; this route is the editor behind the
+  // Policies tab's "Edit", and it is only ever reached with a policy in hand.
+  if (!q.path) redirect("/app/on-call?tab=policies");
   const manages = isManagerRole(member);
   const data = await withTenant(tenant.id, async (tx) => ({
     paths: await listPaths(tx, tenant.id),
@@ -310,9 +313,22 @@ export default async function PathsPage({
   );
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-      <OnCallRail active={{ paths: true }} />
-      <main style={{ flex: 1, minWidth: 0, padding: "16px 20px 24px", overflow: "auto" }}>
+    <div style={{ maxWidth: 1160, margin: "0 auto", padding: "22px 28px 60px" }}>
+      <Link
+        href="/app/on-call?tab=policies"
+        className="oi-link"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 12.5,
+          fontWeight: 600,
+          marginBottom: 12,
+        }}
+      >
+        ← {t("oc2.tab.policies")}
+      </Link>
+      <main style={{ minWidth: 0 }}>
         <div
           style={{
             display: "flex",

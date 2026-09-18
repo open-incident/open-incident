@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useT } from "@/i18n/client";
 import { declareIncident, findSimilar } from "./actions";
 import { suggestDeclarationAction } from "./ai-actions";
@@ -22,49 +23,63 @@ type FieldOpt = {
   incidentTypeId: string | null;
 };
 
-const label: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" };
+const label: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: ".08em",
+  textTransform: "uppercase",
+  color: "var(--ink-3)",
+};
 const control: React.CSSProperties = {
-  height: 40,
+  height: 38,
   padding: "0 12px",
   border: "1px solid var(--line)",
-  borderRadius: 9,
+  borderRadius: 10,
   background: "var(--panel)",
   fontSize: 13.5,
   outline: "none",
   width: "100%",
+  boxSizing: "border-box",
 };
 
 /**
- * The declaration modal of the design: title, the three modes as a segmented
- * control, the similar-incident hint under the title, type and severity side
- * by side, the affected service from the catalog, an optional summary, then
- * the type's own fields. Fields and requirements follow the type.
+ * IN-03 — declaring an incident, as the design's modal over the list: what is
+ * happening, the duplicate it might be, the severity and the service, and the
+ * one line that says what declaring will set off. The three modes sit in the
+ * header; the type's own required fields follow, because a workspace that asks
+ * for a region at declaration still gets it.
  */
 export function DeclareForm({
   types,
   severities,
   services,
+  catalogServices,
   fields,
   timeZone,
   initial,
   aiSuggest = false,
+  closeHref = "/app/incidents",
 }: {
   types: TypeOpt[];
   severities: Array<{ id: string; name: string; description: string | null }>;
-  services: Array<{ id: string; name: string }>;
+  /** The services the workspace has learned about — what an incident is about now. */
+  services: Array<{ id: string; key: string }>;
+  /** The catalog's Service entries — still the target while a workspace has no service rows. */
+  catalogServices: Array<{ id: string; name: string }>;
   fields: FieldOpt[];
   timeZone: string;
-  /** Prefilled from an alert ("Create an incident" on its page); the alert is attached on submit. */
   initial?: {
     alertId: string;
     name: string;
     serviceEntryId: string | null;
     summary: string | null;
   };
-  /** Whether the assistant may propose a title and summary (instance configured, workspace and capability on). */
   aiSuggest?: boolean;
+  /** Where ✕ and Cancel go back to. */
+  closeHref?: string;
 }) {
   const t = useT();
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [typeId, setTypeId] = useState(types.find((x) => x.isDefault)?.id ?? types[0]?.id ?? "");
   const [mode, setMode] = useState<"live" | "retrospective" | "test">("live");
@@ -89,6 +104,7 @@ export function DeclareForm({
       ),
     [fields, typeId, form],
   );
+  const useServices = services.length > 0;
 
   useEffect(() => {
     const q = name.trim();
@@ -104,447 +120,460 @@ export function DeclareForm({
     return () => clearTimeout(handle);
   }, [name]);
 
+  const close = () => router.push(closeHref);
+
   return (
-    <form
-      ref={formRef}
-      data-testid="declare-form"
-      action={(fd) => {
-        setError(null);
-        start(async () => {
-          const res = await declareIncident(fd);
-          if (res && "error" in res) setError(res.error);
-        });
-      }}
-      className="oi-rise-modal"
+    <div
+      onClick={close}
       style={{
-        width: 580,
-        maxWidth: "94vw",
-        background: "var(--panel)",
-        borderRadius: 18,
-        boxShadow: "var(--shadow-modal)",
-        overflow: "hidden",
+        position: "fixed",
+        inset: 0,
+        background: "var(--scrim)",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        paddingTop: "9vh",
+        zIndex: 50,
       }}
     >
-      <div
+      <form
+        ref={formRef}
+        data-testid="declare-form"
+        onClick={(e) => e.stopPropagation()}
+        action={(fd) => {
+          setError(null);
+          start(async () => {
+            const res = await declareIncident(fd);
+            if (res && "error" in res) setError(res.error);
+          });
+        }}
+        className="oi-rise-modal"
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "16px 22px",
-          borderBottom: "1px solid var(--line)",
+          width: 560,
+          maxWidth: "calc(100vw - 32px)",
+          background: "var(--panel)",
+          borderRadius: "var(--radius-modal)",
+          boxShadow: "var(--shadow-modal)",
+          overflow: "hidden",
         }}
       >
-        <h1
-          style={{
-            margin: 0,
-            fontFamily: "var(--font-title)",
-            fontSize: 17,
-            fontWeight: 600,
-            letterSpacing: "-.015em",
-          }}
-        >
-          {t("incidents.declare.title")}
-        </h1>
         <div
-          role="radiogroup"
-          aria-label={t("incidents.declare.mode")}
           style={{
             display: "flex",
-            gap: 2,
-            background: "var(--sunk)",
-            borderRadius: 9,
-            padding: 3,
-            marginLeft: 6,
+            alignItems: "center",
+            gap: 12,
+            padding: "16px 22px",
+            borderBottom: "1px solid var(--line)",
           }}
         >
-          {(["live", "retrospective", "test"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              role="radio"
-              aria-checked={mode === m}
-              onClick={() => setMode(m)}
-              style={{
-                padding: "4px 11px",
-                borderRadius: 7,
-                border: 0,
-                background: mode === m ? "var(--panel)" : "transparent",
-                fontSize: 12,
-                fontWeight: mode === m ? 600 : 500,
-                color: mode === m ? "var(--ink)" : "var(--ink-3)",
-                boxShadow: mode === m ? "var(--shadow-card)" : "none",
-                cursor: "pointer",
-              }}
-            >
-              {t(`incident.mode.${m}`)}
-            </button>
-          ))}
-        </div>
-        <input type="hidden" name="mode" value={mode} />
-        <span style={{ flex: 1 }} />
-        <Link
-          href="/app/incidents"
-          aria-label={t("common.close")}
-          className="oi-hover"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 8,
-            display: "grid",
-            placeItems: "center",
-            color: "var(--ink-3)",
-            fontSize: 15,
-            textDecoration: "none",
-          }}
-        >
-          ✕
-        </Link>
-      </div>
-
-      <div style={{ padding: "18px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={label}>{t("incidents.declare.name")}</span>
-          <input
-            name="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            autoFocus
-            placeholder={t("incidents.declare.namePlaceholder")}
-            className="oi-field"
-            style={{ ...control, height: 42, borderRadius: 10, fontSize: 14 }}
-          />
-          {initial && <input type="hidden" name="alertId" value={initial.alertId} />}
-        </label>
-        {similar.length > 0 && (
+          <span style={{ fontFamily: "var(--title)", fontSize: 17, fontWeight: 600 }}>
+            {t("incidents.declare.title")}
+          </span>
           <div
+            role="radiogroup"
+            aria-label={t("incidents.declare.mode")}
             style={{
               display: "flex",
-              alignItems: "center",
-              gap: 10,
-              background: "var(--viol-t)",
-              border: "1px solid var(--viol)",
-              borderRadius: 11,
-              padding: "10px 13px",
-              fontSize: 12.5,
+              gap: 2,
+              background: "var(--sunk)",
+              borderRadius: 8,
+              padding: 2,
             }}
           >
-            <span
+            {(["live", "retrospective", "test"] as const).map((m) => {
+              const on = mode === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => setMode(m)}
+                  style={{
+                    height: 24,
+                    padding: "0 10px",
+                    borderRadius: 6,
+                    border: 0,
+                    background: on ? "var(--panel)" : "transparent",
+                    boxShadow: on ? "var(--shadow-card)" : "none",
+                    fontSize: 11.5,
+                    fontWeight: on ? 600 : 500,
+                    color: on ? "var(--ink)" : m === "test" ? "var(--viol)" : "var(--ink-3)",
+                    display: "flex",
+                    alignItems: "center",
+                    cursor: "pointer",
+                  }}
+                >
+                  {t(`incident.mode.${m}`)}
+                </button>
+              );
+            })}
+          </div>
+          <input type="hidden" name="mode" value={mode} />
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            onClick={close}
+            aria-label={t("common.close")}
+            className="oi-hover"
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 8,
+              border: 0,
+              background: "transparent",
+              color: "var(--ink-3)",
+              cursor: "pointer",
+              fontSize: 14,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <div style={{ padding: "18px 22px", display: "flex", flexDirection: "column", gap: 13 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={label}>{t("inc2.decl.what")}</span>
+            <input
+              name="name"
+              required
+              minLength={3}
+              maxLength={200}
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("incidents.declare.namePlaceholder")}
+              className="oi-field"
+              style={{ ...control, fontSize: 14 }}
+            />
+            {initial && <input type="hidden" name="alertId" value={initial.alertId} />}
+          </label>
+
+          {similar.length > 0 && (
+            <div
               style={{
-                fontWeight: 700,
-                fontSize: 10.5,
-                letterSpacing: ".06em",
-                color: "var(--viol)",
-                background: "var(--panel)",
-                borderRadius: 6,
-                padding: "2px 7px",
-                flex: "none",
-              }}
-            >
-              {t("incidents.declare.similarTag")}
-            </span>
-            <span style={{ color: "var(--ink-2)", flex: 1 }}>
-              <strong>
-                INC-{similar[0]!.number} — {similar[0]!.name}
-              </strong>{" "}
-              {t("incidents.declare.similarOpen", {
-                when: t.fmt.relative(new Date(similar[0]!.declaredAt)),
-              })}
-            </span>
-            <Link
-              href={`/app/incidents/${similar[0]!.number}`}
-              style={{
-                height: 28,
-                padding: "0 11px",
-                border: "1px solid var(--viol)",
-                borderRadius: 8,
-                background: "var(--panel)",
                 display: "flex",
                 alignItems: "center",
-                fontSize: 12,
-                fontWeight: 600,
-                color: "var(--viol)",
-                textDecoration: "none",
-                flex: "none",
+                gap: 10,
+                background: "var(--viol-t)",
+                border: "1px solid var(--viol)",
+                borderRadius: 11,
+                padding: "10px 13px",
+                fontSize: 12.5,
               }}
             >
-              {t("incidents.declare.join")}
-            </Link>
+              <span style={{ color: "var(--viol)" }}>✦</span>
+              <span style={{ flex: 1, lineHeight: 1.45 }}>
+                <strong>
+                  INC-{similar[0]!.number} — {similar[0]!.name}
+                </strong>{" "}
+                {t("incidents.declare.similarOpen", {
+                  when: t.fmt.relative(new Date(similar[0]!.declaredAt)),
+                })}{" "}
+                {t("inc2.decl.join")}
+              </span>
+              <Link
+                href={`/app/incidents/${similar[0]!.number}`}
+                style={{
+                  height: 27,
+                  padding: "0 11px",
+                  border: "1px solid var(--viol)",
+                  borderRadius: 8,
+                  background: "var(--panel)",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "var(--viol)",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  textDecoration: "none",
+                  flex: "none",
+                }}
+              >
+                {t("incidents.declare.join")}
+              </Link>
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {shows("severity") && (
+              <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <span style={label}>{t("incidents.declare.severity")}</span>
+                <select
+                  name="severityId"
+                  required={req("severity")}
+                  defaultValue={severities[2]?.id ?? severities[0]?.id}
+                  className="oi-field"
+                  style={control}
+                >
+                  {severities.map((sv) => (
+                    <option key={sv.id} value={sv.id}>
+                      {sv.name}
+                      {sv.description ? ` — ${sv.description.split(" — ")[0]?.toLowerCase()}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {shows("service") && (
+              <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <span style={label}>{t("inc2.decl.service")}</span>
+                {useServices ? (
+                  <select
+                    name="serviceId"
+                    required={req("service")}
+                    defaultValue=""
+                    className="oi-field"
+                    style={{ ...control, fontFamily: "var(--mono)", fontSize: 12.5 }}
+                  >
+                    <option value="">{t("inc2.decl.serviceNone")}</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.key}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    name="serviceEntryId"
+                    required={req("service")}
+                    defaultValue={initial?.serviceEntryId ?? ""}
+                    className="oi-field"
+                    style={{ ...control, fontFamily: "var(--mono)", fontSize: 12.5 }}
+                  >
+                    <option value="">{t("inc2.decl.serviceNone")}</option>
+                    {catalogServices.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {services.length === 0 && catalogServices.length === 0 && (
+                  <span style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.45 }}>
+                    {t("inc2.decl.serviceEmpty")}
+                  </span>
+                )}
+              </label>
+            )}
           </div>
-        )}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={label}>{t("incidents.declare.type")}</span>
-            <select
-              name="typeId"
-              value={typeId}
-              onChange={(e) => setTypeId(e.target.value)}
-              className="oi-field"
-              style={control}
-            >
-              {types.map((ty) => (
-                <option key={ty.id} value={ty.id}>
-                  {ty.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {shows("severity") && (
-            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <span style={label}>{t("incidents.declare.severity")}</span>
+
+          {types.length > 1 && (
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={label}>{t("incidents.declare.type")}</span>
               <select
-                name="severityId"
-                required={req("severity")}
-                defaultValue={severities[2]?.id ?? severities[0]?.id}
+                name="typeId"
+                value={typeId}
+                onChange={(e) => setTypeId(e.target.value)}
                 className="oi-field"
                 style={control}
               >
-                {severities.map((sv) => (
-                  <option key={sv.id} value={sv.id}>
-                    {sv.name}
-                    {sv.description ? ` — ${sv.description.split(" — ")[0]?.toLowerCase()}` : ""}
+                {types.map((ty) => (
+                  <option key={ty.id} value={ty.id}>
+                    {ty.name}
                   </option>
                 ))}
               </select>
             </label>
           )}
-        </div>
-        {shows("service") && (
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={label}>
-              {t("incidents.declare.service")}{" "}
-              <span style={{ fontWeight: 400, color: "var(--ink-3)" }}>
-                — {t("incidents.declare.fromCatalog")}
+          {types.length <= 1 && <input type="hidden" name="typeId" value={typeId} />}
+
+          {shows("summary") && (
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={{ ...label, display: "flex", alignItems: "center", gap: 6 }}>
+                <span>{t("incidents.declare.summary")}</span>
+                <span style={{ flex: 1 }} />
+                {aiSuggest && (
+                  <button
+                    type="button"
+                    data-testid="ai-suggest-declare"
+                    title={t("ai.declare.note")}
+                    disabled={suggesting || name.trim().length < 3}
+                    onClick={async () => {
+                      setSuggesting(true);
+                      setSuggestError(null);
+                      const fd = formRef.current ? new FormData(formRef.current) : null;
+                      const out = await suggestDeclarationAction({
+                        name,
+                        summary,
+                        serviceEntryId: (fd?.get("serviceEntryId") as string | null) || null,
+                      });
+                      if ("error" in out) setSuggestError(out.error);
+                      else {
+                        setName(out.value.title);
+                        setSummary(out.value.summary);
+                      }
+                      setSuggesting(false);
+                    }}
+                    style={{
+                      background: "none",
+                      border: 0,
+                      padding: 0,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "var(--viol)",
+                      cursor: "pointer",
+                      textTransform: "none",
+                      letterSpacing: "normal",
+                      opacity: suggesting ? 0.6 : 1,
+                    }}
+                  >
+                    ✦ {suggesting ? t("ai.working") : t("ai.declare.suggest")}
+                  </button>
+                )}
               </span>
-            </span>
-            <select
-              name="serviceEntryId"
-              required={req("service")}
-              defaultValue={initial?.serviceEntryId ?? ""}
-              className="oi-field"
-              style={{ ...control, fontFamily: "var(--font-mono)", fontSize: 12.5 }}
-            >
-              <option value="">—</option>
-              {services.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {shows("summary") && (
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ ...label, display: "flex", alignItems: "center", gap: 6 }}>
-              <span>
-                {t("incidents.declare.summary")}{" "}
-                <span style={{ fontWeight: 400, color: "var(--ink-3)" }}>
-                  — {t("common.optional")}
-                </span>
-              </span>
-              <span style={{ flex: 1 }} />
-              {aiSuggest && (
-                <button
-                  type="button"
-                  data-testid="ai-suggest-declare"
-                  title={t("ai.declare.note")}
-                  disabled={suggesting || name.trim().length < 3}
-                  onClick={async () => {
-                    setSuggesting(true);
-                    setSuggestError(null);
-                    const fd = formRef.current ? new FormData(formRef.current) : null;
-                    const out = await suggestDeclarationAction({
-                      name,
-                      summary,
-                      serviceEntryId: (fd?.get("serviceEntryId") as string | null) || null,
-                    });
-                    if ("error" in out) setSuggestError(out.error);
-                    else {
-                      setName(out.value.title);
-                      setSummary(out.value.summary);
-                    }
-                    setSuggesting(false);
-                  }}
-                  style={{
-                    background: "none",
-                    border: 0,
-                    padding: 0,
-                    fontSize: 11.5,
-                    fontWeight: 600,
-                    color: "var(--viol)",
-                    cursor: "pointer",
-                    opacity: suggesting || name.trim().length < 3 ? 0.5 : 1,
-                  }}
-                >
-                  ✦ {suggesting ? t("ai.working") : t("ai.declare.suggest")}
-                </button>
-              )}
               {suggestError && (
-                <span
-                  role="alert"
-                  style={{ fontSize: 11.5, color: "var(--dang)", fontWeight: 400 }}
-                >
+                <span role="alert" style={{ fontSize: 12, color: "var(--dang)" }}>
                   {suggestError}
                 </span>
               )}
-            </span>
-            <textarea
-              name="summary"
-              rows={3}
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              placeholder={t("incidents.declare.summaryPlaceholder")}
-              className="oi-field"
-              style={{
-                ...control,
-                height: "auto",
-                padding: "10px 13px",
-                borderRadius: 10,
-                resize: "vertical",
-                lineHeight: 1.6,
-              }}
-            />
-          </label>
-        )}
-        {typeFields.map((f) => (
-          <label key={f.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={label}>
-              <span
-                style={{ fontFamily: /^[a-z_]+$/.test(f.label) ? "var(--font-mono)" : undefined }}
-              >
-                {f.label}
-              </span>
-              {!req(f.key) && (
-                <span style={{ fontWeight: 400, color: "var(--ink-3)" }}>
-                  {" "}
-                  — {t("common.optional")}
-                </span>
-              )}
-            </span>
-            {f.type === "select" ? (
-              <select
-                name={`field.${f.key}`}
-                required={req(f.key)}
-                defaultValue=""
-                className="oi-field"
-                style={control}
-              >
-                <option value="">—</option>
-                {f.options.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
-            ) : f.type === "long_text" ? (
               <textarea
-                name={`field.${f.key}`}
-                required={req(f.key)}
-                rows={3}
+                name="summary"
+                rows={2}
+                value={summary}
+                onChange={(e) => setSummary(e.target.value)}
+                placeholder={t("incidents.declare.summaryPlaceholder")}
                 className="oi-field"
                 style={{
                   ...control,
                   height: "auto",
-                  padding: "10px 13px",
-                  borderRadius: 10,
+                  padding: "10px 12px",
+                  fontSize: 13.5,
                   resize: "vertical",
+                  lineHeight: 1.5,
                 }}
               />
-            ) : (
+            </label>
+          )}
+
+          {typeFields.map((f) => (
+            <label key={f.id} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={label}>
+                {f.label}
+                {!req(f.key) && (
+                  <span style={{ fontWeight: 400, textTransform: "none" }}>
+                    {" "}
+                    — {t("common.optional")}
+                  </span>
+                )}
+              </span>
+              {f.type === "select" ? (
+                <select
+                  name={`field.${f.key}`}
+                  required={req(f.key)}
+                  defaultValue=""
+                  className="oi-field"
+                  style={control}
+                >
+                  <option value="">—</option>
+                  {f.options.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              ) : f.type === "long_text" ? (
+                <textarea
+                  name={`field.${f.key}`}
+                  required={req(f.key)}
+                  rows={3}
+                  className="oi-field"
+                  style={{ ...control, height: "auto", padding: "10px 12px", resize: "vertical" }}
+                />
+              ) : (
+                <input
+                  name={`field.${f.key}`}
+                  required={req(f.key)}
+                  type={f.type === "number" ? "number" : f.type === "link" ? "url" : "text"}
+                  className="oi-field"
+                  style={control}
+                />
+              )}
+            </label>
+          ))}
+
+          {mode === "retrospective" && (
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={label}>{t("incidents.declare.startedAt", { timeZone })}</span>
               <input
-                name={`field.${f.key}`}
-                required={req(f.key)}
-                type={f.type === "number" ? "number" : f.type === "link" ? "url" : "text"}
+                name="declaredAt"
+                type="datetime-local"
+                required
                 className="oi-field"
                 style={control}
               />
-            )}
-          </label>
-        ))}
-        {mode === "retrospective" && (
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={label}>{t("incidents.declare.startedAt", { timeZone })}</span>
-            <input
-              name="declaredAt"
-              type="datetime-local"
-              required
-              className="oi-field"
-              style={control}
-            />
-          </label>
-        )}
-        {error && (
-          <p
-            role="alert"
+            </label>
+          )}
+
+          <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
+            {t("inc2.decl.line", { type: type?.name ?? "—" })}
+            {type?.privateByDefault ? ` ${t("incidents.declare.privateNote")}` : ""}
+          </div>
+
+          {error && (
+            <p
+              role="alert"
+              style={{
+                margin: 0,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: "var(--dang-t)",
+                border: "1px solid var(--dang)",
+                color: "var(--dang)",
+                fontSize: 13,
+              }}
+            >
+              {error}
+            </p>
+          )}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            padding: "14px 22px",
+            borderTop: "1px solid var(--line)",
+            background: "var(--sunk)",
+          }}
+        >
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            onClick={close}
             style={{
-              margin: 0,
-              padding: "10px 12px",
-              borderRadius: 10,
-              background: "var(--dang-t)",
-              border: "1px solid var(--dang)",
-              color: "var(--dang)",
-              fontSize: 13,
+              height: 34,
+              padding: "0 13px",
+              border: "1px solid var(--line)",
+              borderRadius: 9,
+              background: "var(--panel)",
+              fontSize: 12.5,
+              cursor: "pointer",
             }}
           >
-            {error}
-          </p>
-        )}
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "14px 22px",
-          borderTop: "1px solid var(--line)",
-          background: "var(--canvas)",
-        }}
-      >
-        <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-          {type?.privateByDefault
-            ? t("incidents.declare.privateNote")
-            : t("incidents.declare.footer")}
-        </span>
-        <span style={{ flex: 1 }} />
-        <Link
-          href="/app/incidents"
-          style={{
-            height: 36,
-            padding: "0 14px",
-            border: "1px solid var(--line)",
-            borderRadius: 9,
-            background: "var(--panel)",
-            display: "flex",
-            alignItems: "center",
-            fontSize: 13.5,
-            fontWeight: 500,
-            color: "inherit",
-            textDecoration: "none",
-          }}
-        >
-          {t("common.cancel")}
-        </Link>
-        <button
-          type="submit"
-          disabled={pending}
-          style={{
-            height: 36,
-            padding: "0 16px",
-            borderRadius: 9,
-            background: "var(--brand)",
-            color: "#fff",
-            border: 0,
-            fontSize: 13.5,
-            fontWeight: 600,
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-            opacity: pending ? 0.6 : 1,
-          }}
-        >
-          {pending ? t("common.saving") : t("incidents.declare.submit")}
-        </button>
-      </div>
-    </form>
+            {t("common.cancel")}
+          </button>
+          <button
+            type="submit"
+            disabled={pending}
+            className="oi-hover-brand-2"
+            style={{
+              height: 34,
+              padding: "0 16px",
+              borderRadius: 9,
+              border: 0,
+              background: "var(--brand)",
+              color: "var(--on-brand)",
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: "pointer",
+              opacity: pending ? 0.6 : 1,
+            }}
+          >
+            {pending ? t("common.saving") : t("inc2.decl.submit")}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

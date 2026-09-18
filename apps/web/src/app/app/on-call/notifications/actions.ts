@@ -30,7 +30,8 @@ import { headers } from "next/headers";
 import { requireMember } from "@/lib/session";
 import { requestOrigin } from "@/lib/tenant";
 
-const PAGE = "/app/on-call/notifications";
+const PATH = "/app/on-call";
+const PAGE = `${PATH}?tab=notifications`;
 
 async function origin(): Promise<string> {
   const h = await headers();
@@ -56,8 +57,8 @@ export async function sendTest() {
       },
     ),
   );
-  revalidatePath(PAGE);
-  redirect(`${PAGE}?test=1`);
+  revalidatePath(PATH);
+  redirect(`${PAGE}&test=1`);
 }
 
 /** Adds a phone (SMS or voice) and sends a 6-digit code through that very channel — the proof it works. */
@@ -69,8 +70,8 @@ export async function addPhoneMethod(formData: FormData) {
     .trim()
     .regex(/^\+[1-9]\d{6,14}$/)
     .safeParse(formData.get("value"));
-  if (!value.success) redirect(`${PAGE}?error=phone`);
-  if (!availableChannels().includes(kind)) redirect(`${PAGE}?error=unavailable`);
+  if (!value.success) redirect(`${PAGE}&error=phone`);
+  if (!availableChannels().includes(kind)) redirect(`${PAGE}&error=unavailable`);
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   const base = await origin();
   const id = await withTenant(current.tenant.id, async (tx) => {
@@ -96,8 +97,8 @@ export async function addPhoneMethod(formData: FormData) {
     text: `Your code is ${code}`,
     origin: base,
   });
-  revalidatePath(PAGE);
-  redirect(`${PAGE}?verify=${id}`);
+  revalidatePath(PATH);
+  redirect(`${PAGE}&verify=${id}`);
 }
 
 async function logVerification(
@@ -132,7 +133,7 @@ export async function verifyMethod(formData: FormData) {
     .trim()
     .regex(/^\d{6}$/)
     .safeParse(formData.get("code"));
-  if (!code.success) redirect(`${PAGE}?verify=${id}&error=code`);
+  if (!code.success) redirect(`${PAGE}&verify=${id}&error=code`);
   const ok = await withTenant(current.tenant.id, async (tx) => {
     const [m] = await tx
       .select()
@@ -154,8 +155,8 @@ export async function verifyMethod(formData: FormData) {
       .where(eq(notificationMethods.id, id));
     return true;
   });
-  revalidatePath(PAGE);
-  redirect(ok ? `${PAGE}?verified=1` : `${PAGE}?verify=${id}&error=code`);
+  revalidatePath(PATH);
+  redirect(ok ? `${PAGE}&verified=1` : `${PAGE}&verify=${id}&error=code`);
 }
 
 export async function removeMethod(formData: FormData) {
@@ -168,7 +169,7 @@ export async function removeMethod(formData: FormData) {
         and(eq(notificationMethods.memberId, current.member.id), eq(notificationMethods.id, id)),
       ),
   );
-  revalidatePath(PAGE);
+  revalidatePath(PATH);
 }
 
 /** The browser's push subscription becomes a verified method: the browser proved itself by subscribing. */
@@ -206,7 +207,7 @@ export async function addWebPushMethod(
       verifiedAt: new Date(),
     });
   });
-  revalidatePath(PAGE);
+  revalidatePath(PATH);
   return { ok: true };
 }
 
@@ -223,8 +224,8 @@ export async function saveShiftReminders(formData: FormData) {
       })
       .where(eq(members.id, current.member.id)),
   );
-  revalidatePath(PAGE);
-  redirect(`${PAGE}?saved=1`);
+  revalidatePath(PATH);
+  redirect(`${PAGE}&saved=1`);
 }
 
 /** Adds a step to a rule (10 at most) or removes one. */
@@ -263,7 +264,7 @@ export async function updateRule(formData: FormData) {
         .insert(notificationRules)
         .values({ tenantId: current.tenant.id, memberId: current.member.id, urgency, steps });
   });
-  revalidatePath(PAGE);
+  revalidatePath(PATH);
 }
 
 /** Links the member's Slack user (by email, through the workspace's Slack app) as a verified DM method. */
@@ -316,8 +317,8 @@ export async function linkSlackMethod() {
     await ensureHighUrgencyStep(tx, current.member.id, "slack");
     return true;
   });
-  revalidatePath(PAGE);
-  redirect(ok ? `${PAGE}?verified=1` : `${PAGE}?error=slack`);
+  revalidatePath(PATH);
+  redirect(ok ? `${PAGE}&verified=1` : `${PAGE}&error=slack`);
 }
 
 /** Teams DM as a notification method: the member's Azure AD user, found by email through Graph. */
@@ -352,6 +353,6 @@ export async function linkTeamsMethod() {
     await ensureHighUrgencyStep(tx, current.member.id, "teams");
     return true;
   });
-  revalidatePath(PAGE);
-  redirect(ok ? `${PAGE}?verified=1` : `${PAGE}?error=teams`);
+  revalidatePath(PATH);
+  redirect(ok ? `${PAGE}&verified=1` : `${PAGE}&error=teams`);
 }

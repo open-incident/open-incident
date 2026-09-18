@@ -4,7 +4,14 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { alertEvents, alerts, incidentEvents, incidentTypes, withTenant } from "@openincident/db";
+import {
+  alertEvents,
+  alerts,
+  incidentEvents,
+  incidentTypes,
+  incidents,
+  withTenant,
+} from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { requireMember, requireResponder } from "@/lib/session";
 import { similarOpenIncidents } from "@/lib/incidents";
@@ -20,6 +27,7 @@ const schema = z.object({
   typeId: z.string().uuid(),
   severityId: z.string().uuid().optional().or(z.literal("")),
   serviceEntryId: z.string().uuid().optional().or(z.literal("")),
+  serviceId: z.string().uuid().optional().or(z.literal("")),
   summary: z.string().trim().max(4000).optional(),
   declaredAt: z.string().optional(),
 });
@@ -80,6 +88,17 @@ export async function declareIncident(formData: FormData): Promise<{ error: stri
       },
     );
   });
+  // The service the incident is about, when the workspace has learned its
+  // services: `declareIncidentCore` still writes the catalog entry, so the new
+  // column is set here until the write path carries it itself.
+  if (input.serviceId)
+    await withTenant(tenantId, (tx) =>
+      tx
+        .update(incidents)
+        .set({ serviceId: input.serviceId })
+        .where(and(eq(incidents.tenantId, tenantId), eq(incidents.id, created.id))),
+    );
+
   // Declared from an alert: the alert is attached, both timelines say so.
   const alertId = String(formData.get("alertId") ?? "");
   if (/^[0-9a-f-]{36}$/i.test(alertId)) {

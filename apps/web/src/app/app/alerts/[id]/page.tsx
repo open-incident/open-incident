@@ -1,11 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { alertNotes, withTenant } from "@openincident/db";
-import { desc, eq } from "drizzle-orm";
-import { getT } from "@/i18n/server";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { alertNotes, services, withTenant } from "@openincident/db";
+import { aiConfigured } from "@openincident/ai";
+import { getT, type Translate } from "@/i18n/server";
 import { canRespond, requireMember } from "@/lib/session";
-import { getAlert } from "@/lib/alerts";
-import { phaseTone, priorityTone } from "@/lib/tones";
+import { getAlert, type AlertDetail } from "@/lib/alerts";
+import { relatedIncidents } from "@/lib/ai-capabilities";
+import { phaseTone } from "@/lib/tones";
+import { governingRoute } from "../sources/choices";
+import { priorityChip } from "../tone";
+import { Fold } from "../fold";
 import { Countdown } from "./countdown";
 import {
   addAlertNote,
@@ -16,11 +21,113 @@ import {
   unacknowledgeAlert,
 } from "../actions";
 
+const card: React.CSSProperties = {
+  background: "var(--panel)",
+  border: "1px solid var(--line)",
+  borderRadius: "var(--radius-card)",
+  boxShadow: "var(--shadow-card)",
+};
+const eyebrow: React.CSSProperties = {
+  fontSize: 10.5,
+  fontWeight: 700,
+  letterSpacing: ".08em",
+  color: "var(--ink-3)",
+};
+const action: React.CSSProperties = {
+  height: 34,
+  padding: "0 13px",
+  border: "1px solid var(--line)",
+  borderRadius: 9,
+  background: "var(--panel)",
+  display: "flex",
+  alignItems: "center",
+  fontSize: 13,
+  cursor: "pointer",
+  color: "inherit",
+  textDecoration: "none",
+};
+
+/** The colour of a dot on the timeline — what kind of thing happened, not who did it. */
+function eventInk(kind: string): string {
+  if (kind === "triggered") return "var(--dang)";
+  if (kind === "routed") return "var(--brand)";
+  if (kind === "incident_created" || kind === "incident_linked") return "var(--wait)";
+  if (kind === "acknowledged" || kind === "resolved") return "var(--ok)";
+  if (kind === "note") return "var(--viol)";
+  return "var(--ink-3)";
+}
+
+/** What one alert event says, in words — the vocabulary the first design already had. */
+function eventText(t: Translate, e: AlertDetail["events"][number]): string {
+  const p = e.payload as Record<string, unknown>;
+  switch (e.kind) {
+    case "triggered":
+      return t("alerts.event.triggered", { priority: String(p.priority ?? "—") });
+    case "routed": {
+      if (p.warning === "path_unpublished") return t("alerts.event.pathUnpublished");
+      if (!p.route) return t("alerts.event.unrouted");
+      const esc = Array.isArray(p.escalation)
+        ? (p.escalation as Array<{
+            path: string | null;
+            via: string | null;
+            skipped: string | null;
+          }>)
+        : [];
+      const paged = esc
+        .filter((x) => x.path && !x.skipped)
+        .map((x) => x.path)
+        .join(", ");
+      const skipped = esc.filter((x) => x.skipped).length;
+      const missing = Array.isArray(p.missing) ? (p.missing as string[]) : [];
+      return [
+        t("alerts.event.routed", { route: String(p.route) }),
+        paged
+          ? t("alerts.event.routedPages", { paths: paged })
+          : esc.length
+            ? ""
+            : t("alerts.event.routedNobody"),
+        skipped ? t("alerts.event.routedSkipped", { count: skipped }) : "",
+        missing.length ? t("alerts.event.routedMissing", { keys: missing.join(", ") }) : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    }
+    case "escalated":
+      return t("alerts.event.escalated", {
+        members: Array.isArray(p.members) ? (p.members as string[]).join(", ") : "—",
+      });
+    case "incident_created":
+      return t("alerts.event.incidentCreated", { number: `INC-${String(p.number)}` });
+    case "incident_linked":
+      return t("alerts.event.incidentLinked", { number: `INC-${String(p.number)}` });
+    case "grouped":
+      return t("alerts.event.grouped", { title: String(p.title ?? p.leaderTitle ?? "") });
+    case "acknowledged":
+      return t("alerts.event.acknowledged", {
+        by: e.actorName ?? "—",
+        channel: String(p.channel ?? "web"),
+      });
+    case "unacknowledged":
+      return t("alerts.event.unacknowledged", { by: e.actorName ?? "—" });
+    case "snoozed":
+      return t("alerts.event.snoozed", { count: Number(p.minutes ?? 0) });
+    case "resolved":
+      return p.by === "member"
+        ? t("alerts.event.resolvedBy", { by: e.actorName ?? "—" })
+        : t("alerts.event.resolvedSource");
+    case "deferred":
+      return t("alerts.event.deferred", { count: Number(p.minutes ?? 0) });
+    case "test_mode":
+      return t("alerts.event.testMode");
+    default:
+      return e.kind;
+  }
+}
+
 /**
- * Alert detail: the header with its status, priority and the four actions,
- * the attributes bound to the catalog, the grouped alerts, the raw payload;
- * on the right the escalation card with its live timer, the route, the
- * incident and the history.
+ * One alert: its labels, everything that happened to it, the payload it came
+ * in with — and, down the right, who is being paged right now, why this path
+ * and not another, and what the history says about alerts like it.
  */
 export default async function AlertPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -29,712 +136,351 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
   const alert = await withTenant(tenant.id, (tx) => getAlert(tx, tenant.id, id));
   if (!alert) notFound();
-  const notes = await withTenant(tenant.id, (tx) =>
-    tx
+  const a = alert.row;
+  const extra = await withTenant(tenant.id, async (tx) => {
+    const notes = await tx
       .select()
       .from(alertNotes)
       .where(eq(alertNotes.alertId, id))
-      .orderBy(desc(alertNotes.createdAt)),
-  );
+      .orderBy(desc(alertNotes.createdAt));
+    const [service] = a.attributes.service
+      ? await tx
+          .select({ id: services.id })
+          .from(services)
+          .where(
+            and(
+              eq(services.tenantId, tenant.id),
+              sql`lower(${services.key}) = lower(${a.attributes.service})`,
+            ),
+          )
+      : [];
+    const governing = await governingRoute(tx, tenant.id, a.sourceId);
+    return { notes, serviceId: service?.id ?? null, governing };
+  });
   const acts = canRespond(member);
-  const a = alert.row;
   const firing = a.status === "firing";
   const acked = Boolean(a.ackedAt);
-  const pr = priorityTone(alert.priority?.rank ?? null);
+  const chip = priorityChip(alert.priority?.rank ?? null);
   const esc = alert.escalation;
-  const btn: React.CSSProperties = {
-    height: 36,
-    padding: "0 14px",
-    border: "1px solid var(--line)",
-    borderRadius: 9,
-    background: "var(--panel)",
-    display: "flex",
-    alignItems: "center",
-    fontSize: 13.5,
-    fontWeight: 500,
-    cursor: "pointer",
-    color: "inherit",
-    textDecoration: "none",
-  };
-  const attrs: Array<{ label: string; value: string; mono?: boolean; href?: string }> = [];
-  if (a.attributes.service)
-    attrs.push({
-      label: t("alerts.attr.service"),
-      value: a.attributes.service,
-      mono: true,
-      href: a.attributes.service_id
-        ? `/app/catalog?type=service&entry=${a.attributes.service_id}`
-        : undefined,
-    });
-  if (a.attributes.team)
-    attrs.push({
-      label: t("alerts.attr.team"),
-      value: a.attributes.team,
-      href: "/app/catalog?type=team",
-    });
-  if (a.attributes.environment)
-    attrs.push({ label: t("alerts.attr.environment"), value: a.attributes.environment });
-  attrs.push({ label: t("alerts.attr.priority"), value: alert.priority?.name ?? "—" });
-  if (a.attributes.region)
-    attrs.push({ label: t("alerts.attr.region"), value: a.attributes.region, mono: true });
-  attrs.push({ label: t("alerts.attr.dedupKey"), value: a.dedupKey, mono: true });
-  for (const [k, v] of Object.entries(a.attributes)) {
-    if (
-      [
-        "service",
-        "service_id",
-        "team",
-        "environment",
-        "priority",
-        "region",
-        "source",
-        "source_name",
-      ].includes(k)
-    )
-      continue;
-    attrs.push({ label: k, value: v, mono: true });
-  }
-  const eventText = (e: (typeof alert.events)[number]): string => {
-    const p = e.payload as Record<string, unknown>;
-    switch (e.kind) {
-      case "triggered":
-        return t("alerts.event.triggered", { priority: String(p.priority ?? "—") });
-      case "routed": {
-        if (p.warning === "path_unpublished") return t("alerts.event.pathUnpublished");
-        if (!p.route) return t("alerts.event.unrouted");
-        const esc = Array.isArray(p.escalation)
-          ? (p.escalation as Array<{
-              path: string | null;
-              via: string | null;
-              skipped: string | null;
-            }>)
-          : [];
-        const paged = esc
-          .filter((e) => e.path && !e.skipped)
-          .map((e) => e.path)
-          .join(", ");
-        const skipped = esc.filter((e) => e.skipped).length;
-        const missing = Array.isArray(p.missing) ? (p.missing as string[]) : [];
-        return [
-          t("alerts.event.routed", { route: String(p.route) }),
-          paged
-            ? t("alerts.event.routedPages", { paths: paged })
-            : esc.length
-              ? ""
-              : t("alerts.event.routedNobody"),
-          skipped ? t("alerts.event.routedSkipped", { count: skipped }) : "",
-          missing.length ? t("alerts.event.routedMissing", { keys: missing.join(", ") }) : "",
-        ]
-          .filter(Boolean)
-          .join(" · ");
-      }
-      case "escalated":
-        return t("alerts.event.escalated", {
-          members: Array.isArray(p.members) ? (p.members as string[]).join(", ") : "—",
-        });
-      case "incident_created":
-        return t("alerts.event.incidentCreated", { number: `INC-${String(p.number)}` });
-      case "incident_linked":
-        return t("alerts.event.incidentLinked", { number: `INC-${String(p.number)}` });
-      case "grouped":
-        return t("alerts.event.grouped", { title: String(p.title ?? p.leaderTitle ?? "") });
-      case "acknowledged":
-        return t("alerts.event.acknowledged", {
-          by: e.actorName ?? "—",
-          channel: String(p.channel ?? "web"),
-        });
-      case "unacknowledged":
-        return t("alerts.event.unacknowledged", { by: e.actorName ?? "—" });
-      case "snoozed":
-        return t("alerts.event.snoozed", { count: Number(p.minutes ?? 0) });
-      case "resolved":
-        return p.by === "member"
-          ? t("alerts.event.resolvedBy", { by: e.actorName ?? "—" })
-          : t("alerts.event.resolvedSource");
-      case "deferred":
-        return t("alerts.event.deferred", { count: Number(p.minutes ?? 0) });
-      case "test_mode":
-        return t("alerts.event.testMode");
-      default:
-        return e.kind;
-    }
-  };
+  const paging = Boolean(esc && esc.status === "pending" && !acked);
+
+  const statusTone = firing
+    ? acked
+      ? { bg: "var(--ok-t)", ink: "var(--ok)", label: t("alt2.detail.status.acked") }
+      : { bg: "var(--dang-t)", ink: "var(--dang)", label: t("alt2.detail.status.firing") }
+    : { bg: "var(--ok-t)", ink: "var(--ok)", label: t("alt2.detail.status.resolved") };
+
+  // The labels: the service first, then the rest of the attributes the
+  // pipeline bound, minus the bookkeeping keys nobody wants on a chip.
+  const hidden = new Set(["service", "service_id", "team_id", "priority", "source", "source_name"]);
+  const labels = Object.entries(a.attributes).filter(([k, v]) => !hidden.has(k) && v);
+  const teamFromOwner = Boolean(a.attributes.team_id && a.attributes.service);
+
+  // The timeline: what the pipeline recorded and what people wrote, in order.
+  const entries = [
+    ...alert.events.map((e) => ({
+      key: e.id,
+      at: e.occurredAt,
+      ink: eventInk(e.kind),
+      text: eventText(t, e),
+      note: null as null | (typeof extra.notes)[number],
+    })),
+    ...extra.notes.map((n) => ({
+      key: n.id,
+      at: n.createdAt,
+      ink: eventInk("note"),
+      text: t("alt2.detail.noteBy", { name: n.memberName, body: n.body }),
+      note: n,
+    })),
+  ].sort((x, y) => x.at.getTime() - y.at.getTime());
+
+  // "Why this path": read back from the routing decision the ingest stored.
+  const routed = alert.events.find((e) => e.kind === "routed")?.payload as
+    Record<string, unknown> | undefined;
+  const decided = Array.isArray(routed?.escalation)
+    ? (routed!.escalation as Array<{
+        path: string | null;
+        via: string | null;
+        skipped: string | null;
+      }>)
+    : [];
+  const taken = decided.find((d) => d.path && !d.skipped) ?? null;
+  const blocked = decided.find((d) => d.skipped) ?? null;
+  const ownRoute =
+    alert.route && extra.governing.own && extra.governing.route?.id === alert.route.id;
+
+  // Atlas: only when the instance has a provider — otherwise the card says so.
+  const atlas = aiConfigured()
+    ? await relatedIncidents(tenant.id, { id: a.id, name: a.title, summary: null }, 1)
+    : null;
+  const similar = atlas?.items[0] ?? null;
 
   return (
-    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-      <header
-        style={{
-          flex: "none",
-          background: "var(--panel)",
-          borderBottom: "1px solid var(--line)",
-          padding: "14px 22px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-        }}
+    <div
+      className="oi-rise"
+      style={{
+        maxWidth: 1160,
+        margin: "0 auto",
+        padding: "22px 28px 60px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+      }}
+    >
+      <Link
+        href="/app/alerts"
+        className="oi-link"
+        style={{ fontSize: 12.5, color: "var(--ink-3)", width: "fit-content" }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "4px 12px 4px 10px",
-              borderRadius: 999,
-              background: firing ? "var(--dang-t)" : "var(--ok-t)",
-              color: firing ? "var(--dang)" : "var(--ok)",
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            <span
-              style={{ width: 5, height: 5, borderRadius: "50%", background: "currentColor" }}
-            />
-            {firing
-              ? acked
-                ? t("alerts.status.firingAcked")
-                : t("alerts.status.firing")
-              : t("alerts.status.resolved")}
-          </span>
-          {alert.priority && (
+        {t("alt2.detail.back")}
+      </Link>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span
               style={{
-                padding: "2px 8px",
-                borderRadius: 999,
-                background: pr.bg,
-                color: pr.ink,
                 fontSize: 11,
                 fontWeight: 700,
+                borderRadius: 6,
+                padding: "2px 8px",
+                background: chip.bg,
+                color: chip.ink,
               }}
             >
-              {alert.priority.name}
+              {alert.priority?.name ?? "—"}
             </span>
-          )}
-          {a.testMode && (
             <span
               style={{
-                padding: "2px 8px",
-                borderRadius: 6,
-                background: "var(--wait-t)",
-                color: "var(--wait)",
-                fontSize: 10.5,
-                fontWeight: 700,
+                fontSize: 11,
+                fontWeight: 600,
+                borderRadius: 999,
+                padding: "2px 9px",
+                background: statusTone.bg,
+                color: statusTone.ink,
               }}
             >
-              {t("alerts.testMode")}
+              {statusTone.label}
             </span>
-          )}
-          <h1 className="oi-title" style={{ margin: 0, minWidth: 0 }}>
+            {a.testMode && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: "var(--viol)",
+                  background: "var(--viol-t)",
+                  borderRadius: 5,
+                  padding: "1px 6px",
+                }}
+              >
+                {t("alt2.list.test")}
+              </span>
+            )}
+            <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+              {t("alt2.detail.meta", {
+                source: alert.source.name,
+                count: a.groupCount,
+                when: t.fmt.time(a.lastAt),
+              })}
+            </span>
+          </div>
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: "var(--title)",
+              fontSize: 21,
+              fontWeight: 600,
+              letterSpacing: "-.015em",
+            }}
+          >
             {a.title}
           </h1>
-          <span style={{ flex: 1 }} />
+        </div>
+        <div style={{ display: "flex", gap: 8, flex: "none", flexWrap: "wrap" }}>
+          {acts && firing && !acked && (
+            <form action={acknowledgeAlert}>
+              <input type="hidden" name="id" value={a.id} />
+              <button
+                type="submit"
+                data-testid="alert-ack"
+                className="oi-hover-brand-2"
+                style={{
+                  ...action,
+                  padding: "0 15px",
+                  border: 0,
+                  background: "var(--brand)",
+                  color: "var(--on-brand)",
+                  fontWeight: 600,
+                }}
+              >
+                {t("alt2.detail.ack")}
+              </button>
+            </form>
+          )}
+          {(alert.incident || acts) && (
+            <Link
+              href={
+                alert.incident
+                  ? `/app/incidents/${alert.incident.number}`
+                  : `/app/incidents/new?alert=${a.id}`
+              }
+              className="oi-hover"
+              style={{ ...action, fontWeight: 600 }}
+            >
+              {alert.incident
+                ? t("alt2.detail.openIncident", { number: alert.incident.number })
+                : t("alt2.detail.createIncident")}
+            </Link>
+          )}
           {acts && firing && (
-            <div style={{ display: "flex", gap: 8 }}>
-              {!acked && (
-                <form action={acknowledgeAlert}>
-                  <input type="hidden" name="id" value={a.id} />
-                  <button
-                    type="submit"
-                    data-testid="alert-ack"
-                    style={{
-                      ...btn,
-                      background: "var(--brand)",
-                      color: "#fff",
-                      border: 0,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {t("alerts.ack")}
-                  </button>
-                </form>
-              )}
-              {!alert.incident && (
-                <Link href={`/app/incidents/new?alert=${a.id}`} className="oi-hover" style={btn}>
-                  {t("alerts.createIncident")}
-                </Link>
-              )}
+            <>
               <form action={snoozeAlert}>
                 <input type="hidden" name="id" value={a.id} />
-                <input type="hidden" name="minutes" value="30" />
-                <button type="submit" className="oi-hover" style={btn}>
-                  {t("alerts.snooze")}
+                <input type="hidden" name="minutes" value="60" />
+                <button type="submit" className="oi-hover" style={action}>
+                  {t("alt2.detail.mute")}
                 </button>
               </form>
               <form action={resolveAlert}>
                 <input type="hidden" name="id" value={a.id} />
-                <button type="submit" data-testid="alert-resolve" className="oi-hover" style={btn}>
-                  {t("alerts.resolve")}
+                <button
+                  type="submit"
+                  data-testid="alert-resolve"
+                  className="oi-hover-ok"
+                  style={{ ...action, color: "var(--ok)", fontWeight: 600 }}
+                >
+                  {t("alt2.detail.resolve")}
                 </button>
               </form>
-            </div>
+            </>
           )}
         </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            fontSize: 13,
-            color: "var(--ink-3)",
-            flexWrap: "wrap",
-          }}
-        >
-          <span
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0,1fr) 310px",
+          gap: 14,
+          alignItems: "start",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          <div
             style={{
-              padding: "2px 9px",
-              borderRadius: 999,
-              background: "var(--sunk)",
-              color: "var(--ink-2)",
-              fontSize: 11.5,
-              fontWeight: 600,
+              ...card,
+              padding: "14px 16px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
             }}
           >
-            {alert.source.name}
-          </span>
-          <span>
-            {t("alerts.firstSeen", { when: t.fmt.dateTime(a.firstAt) })}
-            {a.externalUrl && (
-              <>
-                {" · "}
-                <a
-                  href={a.externalUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="oi-link"
-                  style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
-                >
-                  {new URL(a.externalUrl).host}
-                </a>
-              </>
-            )}
-          </span>
-          {a.snoozedUntil && a.snoozedUntil > new Date() && (
-            <span style={{ color: "var(--wait)", fontWeight: 600 }}>
-              {t("alerts.snoozedUntil", { when: t.fmt.time(a.snoozedUntil) })}
-            </span>
-          )}
-        </div>
-      </header>
-
-      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-        <main style={{ flex: 1, minWidth: 0, padding: "20px 22px 28px", overflow: "auto" }}>
-          <div style={{ maxWidth: 820, display: "flex", flexDirection: "column", gap: 14 }}>
-            <section
-              className="oi-panel"
-              style={{ padding: "15px 18px", display: "flex", flexDirection: "column", gap: 10 }}
-            >
-              <div className="oi-eyebrow">
-                {t("alerts.attributes")}{" "}
-                <span style={{ fontWeight: 400 }}>· {t("alerts.attributesNote")}</span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-                {attrs.map((x) => (
-                  <div
-                    key={x.label}
+            <div style={eyebrow}>{t("alt2.detail.labels")}</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {a.attributes.service &&
+                (extra.serviceId ? (
+                  <Link
+                    href={`/app/services/${extra.serviceId}`}
                     style={{
-                      border: "1px solid var(--line)",
-                      borderRadius: 10,
-                      padding: "9px 12px",
-                    }}
-                  >
-                    <div style={{ fontSize: 11, color: "var(--ink-3)" }}>{x.label}</div>
-                    {x.href ? (
-                      <Link
-                        href={x.href}
-                        className="oi-link"
-                        style={{
-                          fontSize: x.mono ? 12.5 : 13,
-                          fontWeight: 600,
-                          fontFamily: x.mono ? "var(--font-mono)" : undefined,
-                        }}
-                      >
-                        {x.value}
-                      </Link>
-                    ) : (
-                      <div
-                        style={{
-                          fontSize: x.mono ? 11.5 : 13,
-                          fontWeight: x.mono ? 500 : 600,
-                          fontFamily: x.mono ? "var(--font-mono)" : undefined,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
-                        {x.value}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </section>
-            <section className="oi-panel">
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "12px 18px",
-                  borderBottom: "1px solid var(--line)",
-                }}
-              >
-                <span style={{ fontSize: 14, fontWeight: 600 }}>
-                  {t("alerts.groupedTitle", { count: alert.grouped.length + 1 })}
-                </span>
-                <span style={{ flex: 1 }} />
-                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                  {t("alerts.groupWindow")}
-                </span>
-              </div>
-              {[
-                { id: a.id, title: a.title, firstAt: a.firstAt, status: a.status },
-                ...alert.grouped,
-              ].map((g) => (
-                <div
-                  key={g.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    padding: "10px 18px",
-                    borderBottom: "1px solid var(--line-2)",
-                    fontSize: 13,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: "50%",
-                      background: g.status === "firing" ? "var(--dang)" : "var(--ok)",
-                      flex: "none",
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontWeight: 500,
-                      flex: 1,
-                      minWidth: 0,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {g.title}
-                  </span>
-                  <span
-                    style={{ color: "var(--ink-3)", fontSize: 12, fontFamily: "var(--font-mono)" }}
-                  >
-                    {t.fmt.time(g.firstAt)}
-                  </span>
-                </div>
-              ))}
-            </section>
-            <section className="oi-panel" style={{ overflow: "hidden" }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "12px 18px",
-                  borderBottom: "1px solid var(--line)",
-                }}
-              >
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{t("alerts.payload")}</span>
-                <span style={{ flex: 1 }} />
-                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                  {t("alerts.payloadNote")}
-                </span>
-              </div>
-              <pre
-                style={{
-                  margin: 0,
-                  padding: "16px 18px",
-                  background: "var(--topbar-dark)",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  lineHeight: 1.6,
-                  color: "var(--code-blue)",
-                  overflowX: "auto",
-                  maxHeight: 360,
-                }}
-              >
-                {JSON.stringify(a.payload, null, 2)}
-              </pre>
-            </section>
-          </div>
-        </main>
-
-        <aside
-          aria-label={t("alerts.sideLabel")}
-          style={{
-            width: 304,
-            flex: "none",
-            borderLeft: "1px solid var(--line)",
-            background: "var(--panel)",
-            padding: "16px 16px 24px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 16,
-            overflow: "auto",
-          }}
-        >
-          {esc && esc.status === "pending" && (
-            <div
-              data-testid="escalation-card"
-              style={{
-                border: "1.5px solid var(--dang)",
-                background: "var(--dang-t)",
-                borderRadius: 14,
-                padding: "13px 15px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 9,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span
-                  style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--dang)" }}
-                />
-                <span style={{ fontSize: 13.5, fontWeight: 600 }}>
-                  {t("alerts.escalation.pending")}
-                </span>
-              </div>
-              <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
-                {t("alerts.escalation.level", { level: esc.level })} —{" "}
-                <strong>{esc.levelMembers.join(", ") || t("alerts.escalation.nobody")}</strong>{" "}
-                {esc.enteredAt
-                  ? t("alerts.escalation.pagedAgo", { when: t.fmt.relative(esc.enteredAt) })
-                  : ""}{" "}
-                ·{" "}
-                {esc.urgency === "high"
-                  ? t("alerts.escalation.urgencyHigh")
-                  : t("alerts.escalation.urgencyLow")}
-              </div>
-              {esc.nextTickAt && (
-                <div style={{ fontSize: 12.5, color: "var(--ink-2)" }}>
-                  {esc.isLast
-                    ? t("alerts.escalation.exhaustIn")
-                    : t("alerts.escalation.nextLevelIn")}{" "}
-                  <Countdown until={esc.nextTickAt.toISOString()} />
-                </div>
-              )}
-              {acts && !acked && (
-                <form action={acknowledgeAlert}>
-                  <input type="hidden" name="id" value={a.id} />
-                  <button
-                    type="submit"
-                    style={{
-                      width: "100%",
-                      height: 34,
-                      borderRadius: 8,
-                      background: "var(--dang)",
-                      color: "#fff",
-                      border: 0,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {t("alerts.ackNow")}
-                  </button>
-                </form>
-              )}
-            </div>
-          )}
-          {acked && firing && (
-            <div
-              data-testid="acked-card"
-              style={{
-                border: "1px solid var(--ok)",
-                background: "var(--ok-t)",
-                borderRadius: 14,
-                padding: "13px 15px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: "50%",
-                    background: "var(--ok)",
-                    color: "#fff",
-                    display: "grid",
-                    placeItems: "center",
-                    fontSize: 10,
-                    fontWeight: 700,
-                  }}
-                >
-                  ✓
-                </span>
-                <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ok)" }}>
-                  {t("alerts.status.acked")}
-                </span>
-              </div>
-              <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
-                {t("alerts.ackedBy", {
-                  by: alert.ackedByName ?? esc?.ackedByName ?? "—",
-                  when: a.ackedAt ? t.fmt.relative(a.ackedAt) : "",
-                })}
-                {alert.incident ? ` ${t("alerts.ackedJoined")}` : ""}
-              </div>
-              {acts && (
-                <form action={unacknowledgeAlert}>
-                  <input type="hidden" name="id" value={a.id} />
-                  <button
-                    type="submit"
-                    className="oi-hover"
-                    style={{
-                      width: "100%",
-                      height: 30,
-                      border: "1px solid var(--line)",
-                      borderRadius: 8,
-                      background: "var(--panel)",
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {t("alerts.unack")}
-                  </button>
-                </form>
-              )}
-            </div>
-          )}
-          {esc && esc.status !== "pending" && !acked && (
-            <div
-              style={{
-                border: "1px solid var(--line)",
-                borderRadius: 14,
-                padding: "11px 15px",
-                fontSize: 12.5,
-                color: "var(--ink-2)",
-              }}
-            >
-              {t(
-                `alerts.escalation.ended.${esc.status as "acked" | "resolved" | "exhausted" | "cancelled"}`,
-              )}
-            </div>
-          )}
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div className="oi-eyebrow">{t("alerts.route")}</div>
-            {alert.route ? (
-              <>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{alert.route.name}</div>
-                <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55 }}>
-                  {alert.route.escalationMode === "dynamic" && (
-                    <>
-                      {t("alerts.routeDynamic")} <strong>{t("alerts.routeDynamically")}</strong> :{" "}
-                      {String(
-                        (
-                          alert.events.find((e) => e.kind === "routed")?.payload as
-                            Record<string, unknown> | undefined
-                        )?.via ?? t("alerts.routeChain"),
-                      )}
-                    </>
-                  )}
-                  {alert.route.escalationMode === "static" &&
-                    `${t("alerts.routeStatic")} · ${esc?.pathName ?? ""}`}
-                  {alert.route.escalationMode === "none" && t("alerts.routeNone")}
-                </div>
-                <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-                  {t(`alerts.routeIncident.${alert.route.incidentMode}`)}
-                </div>
-                <Link
-                  href={`/app/settings/alert-routes?route=${alert.route.id}`}
-                  className="oi-link"
-                  style={{ fontSize: 12.5, fontWeight: 600 }}
-                >
-                  {t("alerts.editRoute")}
-                </Link>
-              </>
-            ) : (
-              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("alerts.noRoute")}</div>
-            )}
-          </div>
-          <div style={{ height: 1, background: "var(--line-2)" }} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div className="oi-eyebrow">{t("alerts.incident")}</div>
-            {alert.incident ? (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
+                      fontFamily: "var(--mono)",
                       fontSize: 11.5,
-                      color: "var(--ink-2)",
+                      background: "var(--brand-t)",
+                      color: "var(--brand)",
+                      border: "1px solid var(--brand-b)",
+                      borderRadius: 6,
+                      padding: "3px 8px",
+                      textDecoration: "none",
                     }}
                   >
-                    INC-{alert.incident.number}
+                    service:{a.attributes.service}
+                  </Link>
+                ) : (
+                  <span
+                    style={{
+                      fontFamily: "var(--mono)",
+                      fontSize: 11.5,
+                      background: "var(--sunk)",
+                      borderRadius: 6,
+                      padding: "3px 8px",
+                    }}
+                  >
+                    service:{a.attributes.service}
                   </span>
-                  {(() => {
-                    const tone = phaseTone(alert.incident.phase);
-                    return (
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          padding: "3px 10px 3px 8px",
-                          borderRadius: 999,
-                          background: tone.bg,
-                          color: tone.ink,
-                          fontSize: 11.5,
-                          fontWeight: 600,
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: 5,
-                            height: 5,
-                            borderRadius: "50%",
-                            background: "currentColor",
-                          }}
-                        />
-                        {t(`incident.phase.${alert.incident.phase}`)}
-                      </span>
-                    );
-                  })()}
-                </div>
-                <Link
-                  href={`/app/incidents/${alert.incident.number}`}
-                  className="oi-link"
-                  style={{ fontSize: 12.5, fontWeight: 600 }}
+                ))}
+              {labels.map(([k, v]) => (
+                <span
+                  key={k}
+                  style={{
+                    fontFamily: "var(--mono)",
+                    fontSize: 11.5,
+                    background: "var(--sunk)",
+                    borderRadius: 6,
+                    padding: "3px 8px",
+                  }}
                 >
-                  {t("alerts.openIncident")}
-                </Link>
-              </>
-            ) : (
-              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("alerts.noIncident")}</div>
+                  {k}:{v}
+                </span>
+              ))}
+              {!a.attributes.service && labels.length === 0 && (
+                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                  {t("alt2.detail.labelsNone")}
+                </span>
+              )}
+            </div>
+            {teamFromOwner && (
+              <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                {t("alt2.detail.labelsOwner")}
+              </div>
             )}
           </div>
-          <div style={{ height: 1, background: "var(--line-2)" }} />
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: 8 }}
-            data-testid="alert-notes"
-          >
-            <div className="oi-eyebrow">{t("alerts.notes")}</div>
-            {notes.length === 0 && (
-              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("alerts.notesEmpty")}</div>
-            )}
-            {notes.map((n) => (
+
+          <div style={{ ...card, overflow: "hidden" }} data-testid="alert-notes">
+            <div
+              style={{
+                padding: "12px 16px",
+                borderBottom: "1px solid var(--line)",
+                fontSize: 13.5,
+                fontWeight: 600,
+              }}
+            >
+              {t("alt2.detail.timeline")}
+            </div>
+            {entries.map((e) => (
               <div
-                key={n.id}
-                style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5 }}
-                data-testid="alert-note"
+                key={e.key}
+                data-testid={e.note ? "alert-note" : undefined}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "48px 14px minmax(0,1fr) auto",
+                  gap: 8,
+                  padding: "9px 16px",
+                  borderBottom: "1px solid var(--line-2)",
+                }}
               >
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ fontWeight: 600 }}>{n.memberName}</span>
-                  <span style={{ color: "var(--ink-3)" }}> · {t.fmt.relative(n.createdAt)}</span>
-                  <span style={{ display: "block", color: "var(--ink-2)", whiteSpace: "pre-wrap" }}>
-                    {n.body}
-                  </span>
+                <span
+                  style={{
+                    fontFamily: "var(--mono)",
+                    fontSize: 11,
+                    color: "var(--ink-3)",
+                    paddingTop: 2,
+                  }}
+                >
+                  {t.fmt.time(e.at)}
                 </span>
-                {n.memberId === member.id && (
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: e.ink,
+                    marginTop: 5,
+                  }}
+                />
+                <span style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                  {e.text}
+                </span>
+                {e.note && e.note.memberId === member.id && (
                   <form action={deleteAlertNote}>
-                    <input type="hidden" name="id" value={n.id} />
+                    <input type="hidden" name="id" value={e.note.id} />
                     <input type="hidden" name="alertId" value={a.id} />
                     <button
                       type="submit"
@@ -756,22 +502,22 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
             {acts && (
               <form
                 action={addAlertNote}
-                style={{ display: "flex", gap: 6, alignItems: "flex-start" }}
                 data-testid="alert-note-form"
+                style={{ display: "flex", gap: 8, padding: "10px 16px", alignItems: "flex-start" }}
               >
                 <input type="hidden" name="id" value={a.id} />
                 <textarea
                   name="body"
                   required
-                  rows={2}
+                  rows={1}
                   maxLength={4000}
-                  placeholder={t("alerts.notePlaceholder")}
+                  placeholder={t("alt2.detail.notePlaceholder")}
                   className="oi-field"
                   style={{
                     flex: 1,
                     border: "1px solid var(--line)",
-                    borderRadius: 8,
-                    padding: "6px 9px",
+                    borderRadius: 9,
+                    padding: "7px 10px",
                     fontSize: 12.5,
                     background: "var(--panel)",
                     resize: "vertical",
@@ -781,46 +527,287 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
                 />
                 <button
                   type="submit"
-                  style={{
-                    height: 30,
-                    padding: "0 10px",
-                    border: "1px solid var(--line)",
-                    borderRadius: 8,
-                    background: "var(--panel)",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
+                  className="oi-hover"
+                  style={{ ...action, height: 32, fontSize: 12.5, fontWeight: 600 }}
                 >
-                  {t("alerts.noteAdd")}
+                  {t("alt2.detail.noteAdd")}
                 </button>
               </form>
             )}
           </div>
-          <div style={{ height: 1, background: "var(--line-2)" }} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            <div className="oi-eyebrow">{t("alerts.history")}</div>
-            {alert.events.map((e) => (
-              <div
-                key={e.id}
-                style={{ display: "flex", gap: 8, fontSize: 12.5, color: "var(--ink-2)" }}
-              >
+
+          <Fold
+            title={t("alt2.detail.payload")}
+            showLabel={t("alt2.common.showRaw")}
+            hideLabel={t("alt2.common.hide")}
+            padding="12px 16px"
+          >
+            <pre
+              style={{
+                margin: 0,
+                padding: "14px 16px",
+                borderTop: "1px solid var(--line)",
+                background: "var(--sunk)",
+                fontFamily: "var(--mono)",
+                fontSize: 11.5,
+                lineHeight: 1.6,
+                color: "var(--ink-2)",
+                overflowX: "auto",
+              }}
+            >
+              {JSON.stringify(a.payload, null, 2)}
+            </pre>
+          </Fold>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {paging && esc && (
+            <div
+              data-testid="escalation-card"
+              style={{
+                background: "var(--panel)",
+                border: "1.5px solid color-mix(in srgb, var(--dang) 40%, transparent)",
+                borderRadius: "var(--radius-card)",
+                padding: "14px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span
+                  className="oi-pulse"
                   style={{
-                    color: "var(--ink-3)",
-                    flex: "none",
-                    fontFamily: "var(--font-mono)",
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: "var(--dang)",
+                  }}
+                />
+                <span style={{ fontSize: 13.5, fontWeight: 700 }}>
+                  {esc.levelMembers.length
+                    ? t("alt2.detail.paging", { name: esc.levelMembers.join(", ") })
+                    : t("alt2.detail.pagingNobody")}
+                </span>
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
+                {t(
+                  esc.urgency === "high"
+                    ? "alt2.detail.pagingDetailHigh"
+                    : "alt2.detail.pagingDetailLow",
+                  { path: esc.pathName, level: esc.level },
+                )}
+              </div>
+              {esc.nextTickAt && (
+                <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
+                  {(() => {
+                    const [before, after] = t.parts(
+                      esc.isLast ? "alt2.detail.lastLevelIn" : "alt2.detail.nextLevelIn",
+                      "timer",
+                    );
+                    return (
+                      <>
+                        {before}
+                        <Countdown until={esc.nextTickAt.toISOString()} />
+                        {after}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+              {acts && (
+                <form action={acknowledgeAlert}>
+                  <input type="hidden" name="id" value={a.id} />
+                  <button
+                    type="submit"
+                    style={{
+                      width: "100%",
+                      height: 32,
+                      borderRadius: 9,
+                      background: "var(--dang)",
+                      color: "var(--on-brand)",
+                      border: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {esc.levelMembers.length === 1
+                      ? t("alt2.detail.ackFor", { name: esc.levelMembers[0]! })
+                      : t("alt2.detail.ack")}
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+          {acked && (
+            <div
+              data-testid="acked-card"
+              style={{
+                background: "var(--ok-t)",
+                border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)",
+                borderRadius: "var(--radius-card)",
+                padding: "14px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--ok)" }}>
+                {t("alt2.detail.status.acked")}
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--ink-2)" }}>
+                {t("alt2.detail.ackedBy", {
+                  name: alert.ackedByName ?? esc?.ackedByName ?? "—",
+                  when: a.ackedAt ? t.fmt.relative(a.ackedAt) : "",
+                })}
+              </div>
+              {acts && firing && (
+                <form action={unacknowledgeAlert} style={{ marginTop: 4 }}>
+                  <input type="hidden" name="id" value={a.id} />
+                  <button
+                    type="submit"
+                    className="oi-hover"
+                    style={{
+                      width: "100%",
+                      height: 30,
+                      border: "1px solid var(--line)",
+                      borderRadius: 9,
+                      background: "var(--panel)",
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t("alt2.detail.unack")}
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+
+          <div
+            style={{
+              ...card,
+              padding: "14px 16px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <div style={eyebrow}>{t("alt2.detail.why")}</div>
+            <div style={{ fontSize: 13, lineHeight: 1.55 }}>
+              {alert.route
+                ? ownRoute
+                  ? t("alt2.detail.whySource", { source: alert.source.name })
+                  : t("alt2.detail.whyRule", {
+                      rule: alert.route.name,
+                      source: alert.source.name,
+                    })
+                : t("alt2.detail.whyNoRoute")}
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--ink-2)" }}>
+              {taken
+                ? taken.via
+                  ? t("alt2.detail.whyPagedVia", { path: taken.path!, via: taken.via })
+                  : t("alt2.detail.whyPaged", { path: taken.path! })
+                : blocked?.skipped === "unpublished"
+                  ? t("alt2.detail.whyUnpublished", { path: blocked.path ?? "—" })
+                  : blocked
+                    ? t("alt2.detail.whyUnresolved")
+                    : t("alt2.detail.whyNobody")}
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--ink-2)" }}>
+              {alert.incident
+                ? t("alt2.detail.whyIncident", { number: alert.incident.number })
+                : t("alt2.detail.whyNoIncident")}
+            </div>
+            <Link
+              href="/app/settings/alert-routes"
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--brand)",
+                textDecoration: "none",
+              }}
+            >
+              {t("alt2.detail.addRule")}
+            </Link>
+          </div>
+
+          <div
+            style={{
+              ...card,
+              padding: "14px 16px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <div
+              style={{
+                ...eyebrow,
+                color: "var(--viol)",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              ✦ {t("alt2.detail.atlas")}
+            </div>
+            {!atlas ? (
+              <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-2)" }}>
+                {t("alt2.detail.atlasOff")}
+              </div>
+            ) : similar ? (
+              <>
+                <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+                  {t("alt2.detail.atlasSimilar", {
+                    number: similar.number,
+                    name: similar.name,
+                  })}
+                </div>
+                <Link
+                  href={`/app/incidents/${similar.number}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
                     fontSize: 11,
-                    paddingTop: 2,
+                    color: "var(--ink-3)",
+                    border: "1px solid var(--line)",
+                    borderRadius: 7,
+                    padding: "4px 8px",
+                    width: "fit-content",
+                    textDecoration: "none",
                   }}
                 >
-                  {t.fmt.time(e.occurredAt)}
-                </span>
-                <span>{eventText(e)}</span>
+                  {t("alt2.detail.atlasFrom", {
+                    number: similar.number,
+                    when: t.fmt.dateCompact(similar.declaredAt),
+                  })}
+                  <span style={{ color: phaseTone(similar.phase).ink, fontWeight: 600 }}>
+                    {t(`incident.phase.${similar.phase}`)}
+                  </span>
+                </Link>
+                <div style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                  {t(
+                    atlas.method === "embeddings"
+                      ? "alt2.detail.atlasByMeaning"
+                      : "alt2.detail.atlasByTitle",
+                  )}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-2)" }}>
+                {t("alt2.detail.atlasNone")}
               </div>
-            ))}
+            )}
           </div>
-        </aside>
+        </div>
       </div>
     </div>
   );

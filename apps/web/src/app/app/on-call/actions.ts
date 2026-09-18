@@ -13,8 +13,9 @@ import {
   schedules,
   withTenant,
 } from "@openincident/db";
-import { notifyMember, zonedTime, localParts } from "@openincident/oncall";
+import { availableChannels, notifyMember } from "@openincident/oncall";
 import { recordAudit } from "@/lib/audit";
+import { getT } from "@/i18n/server";
 import { TIMEZONES } from "@/lib/oncall";
 import { requireManager, requireMember, requireResponder } from "@/lib/session";
 import { requestOrigin } from "@/lib/tenant";
@@ -41,7 +42,7 @@ export async function createSchedule(formData: FormData) {
       interval: z.enum(["weekly", "daily", "weekend"]),
     })
     .safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) redirect("/app/on-call?error=invalid");
+  if (!parsed.success) redirect("/app/on-call?tab=schedules&error=invalid");
   const memberIds = formData
     .getAll("members")
     .map(String)
@@ -73,7 +74,7 @@ export async function createSchedule(formData: FormData) {
     return row!.id;
   });
   revalidatePath("/app/on-call");
-  redirect(`/app/on-call?schedule=${id}&created=1`);
+  redirect(`/app/on-call?tab=schedules&members=${id}`);
 }
 
 export async function publishSchedule(formData: FormData) {
@@ -118,7 +119,7 @@ export async function updateRotationMembers(formData: FormData) {
     return r.scheduleId;
   });
   revalidatePath("/app/on-call");
-  if (scheduleId) redirect(`/app/on-call?schedule=${scheduleId}&manage=${rotationId}`);
+  if (scheduleId) redirect(`/app/on-call?tab=schedules&members=${scheduleId}`);
 }
 
 /** One override on one slot — the rotation is untouched, everything is traced. Member empty = NOBODY. */
@@ -134,11 +135,11 @@ export async function createOverride(formData: FormData) {
       reason: z.enum(["override", "cover"]).default("override"),
     })
     .safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) redirect("/app/on-call?error=invalid");
+  if (!parsed.success) redirect("/app/on-call?tab=now&error=invalid");
   const input = parsed.data;
   const start = new Date(input.startAt);
   const end = new Date(input.endAt);
-  if (end <= start) redirect(`/app/on-call?schedule=${input.scheduleId}&error=invalid`);
+  if (end <= start) redirect("/app/on-call?tab=now&error=invalid");
   await withTenant(current.tenant.id, async (tx) => {
     await tx.insert(scheduleOverrides).values({
       tenantId: current.tenant.id,
@@ -158,7 +159,7 @@ export async function createOverride(formData: FormData) {
     });
   });
   revalidatePath("/app/on-call");
-  redirect(`/app/on-call?schedule=${input.scheduleId}`);
+  redirect("/app/on-call?tab=now");
 }
 
 export async function deleteOverride(formData: FormData) {
@@ -175,7 +176,7 @@ export async function deleteOverride(formData: FormData) {
     return o.scheduleId;
   });
   revalidatePath("/app/on-call");
-  if (scheduleId) redirect(`/app/on-call?schedule=${scheduleId}`);
+  if (scheduleId) redirect("/app/on-call?tab=now");
 }
 
 /**
@@ -192,16 +193,16 @@ export async function requestCover(formData: FormData) {
       endAt: z.string().datetime(),
     })
     .safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) redirect("/app/on-call?error=invalid");
+  if (!parsed.success) redirect("/app/on-call?tab=now&error=invalid");
   const input = parsed.data;
   const base = await origin();
-  await withTenant(current.tenant.id, async (tx) => {
+  const notified = await withTenant(current.tenant.id, async (tx) => {
     const [rot] = await tx
       .select()
       .from(rotations)
       .where(and(eq(rotations.tenantId, current.tenant.id), eq(rotations.id, input.rotationId)));
     const [sched] = await tx.select().from(schedules).where(eq(schedules.id, input.scheduleId));
-    if (!rot || !sched) return;
+    if (!rot || !sched) return 0;
     const [req] = await tx
       .insert(coverRequests)
       .values({
@@ -226,13 +227,14 @@ export async function requestCover(formData: FormData) {
           .from(members)
           .where(and(eq(members.tenantId, current.tenant.id)))
       : [];
-    for (const m of rows.filter((r) => others.includes(r.id) && r.status === "active")) {
+    const reachable = rows.filter((r) => others.includes(r.id) && r.status === "active");
+    for (const m of reachable) {
       await notifyMember(tx, current.tenant.id, m, {
         kind: "cover_request",
         urgency: "low",
         subject: `${current.member.name} asks for cover · ${sched.name}`,
         text: `${rot.name} — ${new Date(input.startAt).toISOString()} → ${new Date(input.endAt).toISOString()}. First to accept takes the shift.`,
-        url: `${base}/app/on-call?schedule=${sched.id}&cover=${req!.id}`,
+        url: `${base}/app/on-call?tab=now&cover=${req!.id}`,
         origin: base,
       });
     }
@@ -240,11 +242,12 @@ export async function requestCover(formData: FormData) {
       schedule: sched.name,
       startAt: input.startAt,
       endAt: input.endAt,
-      notified: others.length,
+      notified: reachable.length,
     });
+    return reachable.length;
   });
   revalidatePath("/app/on-call");
-  redirect(`/app/on-call?schedule=${input.scheduleId}&coverSent=1`);
+  redirect(`/app/on-call?tab=now&coverSent=${notified}`);
 }
 
 /** Accepting a cover request creates the override and closes the request — once. */
@@ -284,36 +287,54 @@ export async function acceptCover(formData: FormData) {
         urgency: "low",
         subject: `${current.member.name} covers your shift`,
         text: `${req.startAt.toISOString()} → ${req.endAt.toISOString()}`,
-        url: `${base}/app/on-call?schedule=${req.scheduleId}`,
+        url: `${base}/app/on-call?tab=now`,
         origin: base,
       });
     await recordAudit(tx, current, "config", "cover.accepted", { requestId: id });
     return req.scheduleId;
   });
   revalidatePath("/app/on-call");
-  if (scheduleId) redirect(`/app/on-call?schedule=${scheduleId}&covered=1`);
+  if (scheduleId) redirect("/app/on-call?tab=now&covered=1");
 }
 
-/** Helper for the week grid: the local day bounds of a slot in the schedule's zone. */
-export async function slotBounds(
-  timezone: string,
-  dayKey: string,
-  activeStart: string | null,
-  activeEnd: string | null,
-): Promise<{ start: Date; end: Date }> {
-  const [y, m, d] = dayKey.split("-").map(Number) as [number, number, number];
-  const start = zonedTime(y, m, d, activeStart ?? "00:00", timezone);
-  let end = zonedTime(y, m, d, activeEnd ?? "00:00", timezone);
-  if (end.getTime() <= start.getTime()) {
-    const next = new Date(Date.UTC(y, m - 1, d + 1));
-    end = zonedTime(
-      next.getUTCFullYear(),
-      next.getUTCMonth() + 1,
-      next.getUTCDate(),
-      activeEnd ?? "00:00",
-      timezone,
+/**
+ * "Page Jordan": a real high-urgency notification to whoever holds the pager,
+ * through THEIR own rule — push, then a call, exactly as an escalation would.
+ *
+ * It is worth a button only because nothing about it is simulated, which is
+ * also why an instance with no channel is told to say so rather than to draw a
+ * button that rings nothing.
+ */
+export async function pageOnCall(formData: FormData) {
+  const current = await requireResponder();
+  const t = await getT();
+  const memberId = uuid.parse(formData.get("memberId"));
+  if (availableChannels().length === 0) redirect("/app/on-call?tab=now&pageError=1");
+  const base = await origin();
+  const name = await withTenant(current.tenant.id, async (tx) => {
+    const [target] = await tx
+      .select({ id: members.id, name: members.name, email: members.email, status: members.status })
+      .from(members)
+      .where(and(eq(members.tenantId, current.tenant.id), eq(members.id, memberId)));
+    if (!target || target.status !== "active") return null;
+    await notifyMember(
+      tx,
+      current.tenant.id,
+      { id: target.id, name: target.name, email: target.email },
+      {
+        kind: "escalation",
+        urgency: "high",
+        subject: t("oc2.page.subject", { name: current.member.name }),
+        text: t("oc2.page.body", { name: current.member.name }),
+        url: `${base}/app/on-call?tab=now`,
+        origin: base,
+      },
     );
-  }
-  void localParts;
-  return { start, end };
+    await recordAudit(tx, current, "config", "oncall.paged", { memberId, name: target.name });
+    return target.name;
+  });
+  revalidatePath("/app/on-call");
+  redirect(
+    name ? `/app/on-call?tab=now&paged=${encodeURIComponent(name)}` : "/app/on-call?tab=now",
+  );
 }

@@ -5,6 +5,8 @@
 import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
 import {
   componentImpactHistory,
+  monitorDays,
+  monitors,
   statusPageComponents,
   statusPageIncidentUpdates,
   statusPageIncidents,
@@ -39,9 +41,16 @@ export type Snapshot = {
     id: string;
     name: string;
     groupName: string | null;
+    /** The five component states, plus `unknown` when a tracked monitor has never answered. */
     state: string;
-    uptime90: number;
+    /** Null when nothing is known yet — a monitor without a single rolled-up day. */
+    uptime90: number | null;
+    /** One per day, oldest first; `none` is a day without any measurement. */
     ticks: string[];
+    /** Where the state comes from: a monitor decides it, or a human does. */
+    source: "monitor" | "manual";
+    monitorId: string | null;
+    monitorName: string | null;
   }>;
   incidents: Array<{
     id: string;
@@ -68,6 +77,27 @@ export type Snapshot = {
 };
 
 const DAY = 86_400_000;
+
+/**
+ * What a monitor's own verdict says about the component tracking it. A monitor
+ * that has never run, or that is paused, says `unknown`: the page states that
+ * nothing is measured rather than painting a green it has not earned.
+ */
+const MONITOR_STATE: Record<string, string> = {
+  online: "operational",
+  degraded: "degraded",
+  offline: "major_outage",
+  paused: "unknown",
+  waiting: "unknown",
+};
+
+/** The day keys the monitor bars are drawn on, oldest first, so gaps still line up. */
+function dayKeys(n: number, now: Date): string[] {
+  const out: string[] = [];
+  for (let i = n - 1; i >= 0; i--)
+    out.push(new Date(now.getTime() - i * DAY).toISOString().slice(0, 10));
+  return out;
+}
 
 export async function buildSnapshot(
   tx: Tx,
@@ -100,6 +130,55 @@ export async function buildSnapshot(
           ),
         )
     : [];
+  // Components tracking a monitor read their state, uptime and bars off that
+  // monitor's day rollup — never off the impact history a human writes.
+  const monitorIds = [...new Set(comps.map((c) => c.monitorId).filter((x) => x !== null))];
+  const tracked = monitorIds.length
+    ? await tx
+        .select({ id: monitors.id, name: monitors.name, state: monitors.state })
+        .from(monitors)
+        .where(and(eq(monitors.tenantId, tenantId), inArray(monitors.id, monitorIds)))
+    : [];
+  const rollup = monitorIds.length
+    ? await tx
+        .select()
+        .from(monitorDays)
+        .where(
+          and(
+            inArray(monitorDays.monitorId, monitorIds),
+            gte(monitorDays.day, dayKeys(90, now)[0]!),
+          ),
+        )
+    : [];
+  const daysOf = new Map<string, Map<string, (typeof rollup)[number]>>();
+  for (const d of rollup) {
+    const mine = daysOf.get(d.monitorId) ?? new Map();
+    mine.set(d.day, d);
+    daysOf.set(d.monitorId, mine);
+  }
+  const barKeys = dayKeys(30, now);
+  const monitorView = (id: string) => {
+    const m = tracked.find((r) => r.id === id);
+    const mine = daysOf.get(id);
+    let up = 0;
+    let total = 0;
+    for (const d of mine?.values() ?? []) {
+      up += d.onlineSeconds;
+      total += d.onlineSeconds + d.degradedSeconds + d.offlineSeconds;
+    }
+    return {
+      name: m?.name ?? null,
+      state: MONITOR_STATE[m?.state ?? "waiting"] ?? "unknown",
+      uptime90: total > 0 ? Math.round((up / total) * 10_000) / 100 : null,
+      ticks: barKeys.map((k) => {
+        const d = mine?.get(k);
+        if (!d) return "none";
+        if (d.offlineSeconds > 0) return "major_outage";
+        if (d.degradedSeconds > 0) return "degraded";
+        return "operational";
+      }),
+    };
+  };
   const nameOf = new Map(comps.map((c) => [c.id, c.name]));
   const incidents = await tx
     .select()
@@ -155,6 +234,41 @@ export async function buildSnapshot(
     .select({ branding: workspaces.branding })
     .from(workspaces)
     .where(eq(workspaces.tenantId, tenantId));
+  // A maintenance under way is a human statement the monitor cannot make: the
+  // component says "maintenance" rather than the outage the probe is seeing.
+  const underMaintenance = new Set(
+    maints.filter((m) => m.status === "in_progress").flatMap((m) => m.componentIds),
+  );
+  const components = comps.map((c) => {
+    if (c.monitorId) {
+      const v = monitorView(c.monitorId);
+      return {
+        id: c.id,
+        name: c.name,
+        groupName: c.groupName,
+        state: underMaintenance.has(c.id) ? "maintenance" : v.state,
+        uptime90: v.uptime90,
+        ticks: v.ticks,
+        source: "monitor" as const,
+        monitorId: c.monitorId,
+        monitorName: v.name,
+      };
+    }
+    const mine = history
+      .filter((h) => h.componentId === c.id)
+      .map((h) => ({ state: h.state, fromAt: h.fromAt, toAt: h.toAt }));
+    return {
+      id: c.id,
+      name: c.name,
+      groupName: c.groupName,
+      state: c.state as string,
+      uptime90: computeUptime(mine, since90, now),
+      ticks: dayTicks(mine, 30, now),
+      source: "manual" as const,
+      monitorId: null,
+      monitorName: null,
+    };
+  });
   return {
     page: {
       id: page.id,
@@ -170,20 +284,8 @@ export async function buildSnapshot(
       privacyUrl: page.privacyUrl,
       legalUrl: page.legalUrl,
     },
-    overall: overallState(comps.map((c) => c.state)),
-    components: comps.map((c) => {
-      const mine = history
-        .filter((h) => h.componentId === c.id)
-        .map((h) => ({ state: h.state, fromAt: h.fromAt, toAt: h.toAt }));
-      return {
-        id: c.id,
-        name: c.name,
-        groupName: c.groupName,
-        state: c.state,
-        uptime90: computeUptime(mine, since90, now),
-        ticks: dayTicks(mine, 30, now),
-      };
-    }),
+    overall: overallState(components.map((c) => c.state)),
+    components,
     incidents: incidents.map((i) => ({
       id: i.id,
       title: i.title,

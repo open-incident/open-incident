@@ -159,7 +159,9 @@ export async function publishIncidentUpdate(
         .select()
         .from(statusPageComponents)
         .where(eq(statusPageComponents.id, cid));
-      if (!comp || comp.state === targetState) continue;
+      // A component tracking a monitor keeps the monitor's word, published
+      // incident or not: the probe is the one measuring it.
+      if (!comp || comp.monitorId || comp.state === targetState) continue;
       await tx
         .update(statusPageComponents)
         .set({ state: targetState })
@@ -241,7 +243,11 @@ export async function publishIncidentUpdate(
   };
 }
 
-/** Sets a component's state by hand (admin), closing or opening the history stretch. */
+/**
+ * Sets a component's state by hand (admin), closing or opening the history
+ * stretch. A component tracking a monitor is left alone: the monitor is the
+ * only thing allowed to say how it is, and the snapshot reads it from there.
+ */
 export async function setComponentState(
   tx: Tx,
   tenantId: string,
@@ -256,7 +262,7 @@ export async function setComponentState(
     .where(
       and(eq(statusPageComponents.tenantId, tenantId), eq(statusPageComponents.id, componentId)),
     );
-  if (!comp || comp.state === state) return;
+  if (!comp || comp.monitorId || comp.state === state) return;
   await tx
     .update(statusPageComponents)
     .set({ state })

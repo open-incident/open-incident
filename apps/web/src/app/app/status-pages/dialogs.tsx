@@ -4,24 +4,43 @@ import { useState } from "react";
 import { useT } from "@/i18n/client";
 import { createComponent, createMaintenance, createStatusPage } from "./actions";
 
+/** A monitor as the "add a component" choice needs it: a name and how it is. */
+export type MonitorChoice = {
+  id: string;
+  name: string;
+  type: string;
+  state: "online" | "degraded" | "offline" | "paused" | "waiting";
+};
+
 const label: React.CSSProperties = {
   fontSize: 11,
   fontWeight: 600,
-  letterSpacing: ".1em",
+  letterSpacing: ".08em",
   textTransform: "uppercase",
   color: "var(--ink-3)",
 };
 const control: React.CSSProperties = {
   height: 38,
-  padding: "0 12px",
   border: "1px solid var(--line)",
   borderRadius: 10,
+  padding: "0 12px",
+  fontSize: 14,
   outline: "none",
-  fontSize: 13,
   background: "var(--panel)",
   width: "100%",
 };
+const select: React.CSSProperties = { ...control, padding: "0 9px", fontSize: 13.5 };
+const field: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 5 };
+const note: React.CSSProperties = {
+  background: "var(--sunk)",
+  borderRadius: 11,
+  padding: "11px 13px",
+  fontSize: 12,
+  color: "var(--ink-2)",
+  lineHeight: 1.5,
+};
 
+/** The design's modal: 520 px, header, body, a sunk footer with the two buttons. */
 function Frame({
   title,
   testId,
@@ -44,11 +63,12 @@ function Frame({
       style={{
         position: "fixed",
         inset: 0,
-        background: "var(--scrim-dialog)",
-        display: "grid",
-        placeItems: "center",
-        padding: 24,
-        zIndex: 60,
+        background: "var(--scrim)",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        paddingTop: "12vh",
+        zIndex: 50,
       }}
     >
       <form
@@ -58,55 +78,55 @@ function Frame({
         role="dialog"
         className="oi-rise"
         style={{
-          width: 540,
-          maxWidth: "100%",
+          width: 520,
+          maxWidth: "calc(100vw - 32px)",
           background: "var(--panel)",
-          borderRadius: 18,
+          borderRadius: "var(--radius-modal)",
           boxShadow: "var(--shadow-modal)",
+          overflow: "hidden",
         }}
       >
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 12,
-            padding: "16px 20px",
+            padding: "16px 22px",
             borderBottom: "1px solid var(--line)",
           }}
         >
-          <div style={{ fontFamily: "var(--font-title)", fontSize: 16.5, fontWeight: 600 }}>
-            {title}
-          </div>
+          <span style={{ fontFamily: "var(--title)", fontSize: 17, fontWeight: 600 }}>{title}</span>
+          <span style={{ flex: 1 }} />
           <button
             type="button"
             onClick={onClose}
             aria-label={t("common.close")}
             className="oi-hover"
             style={{
-              marginLeft: "auto",
-              width: 30,
-              height: 30,
+              width: 28,
+              height: 28,
               borderRadius: 8,
               border: 0,
+              display: "grid",
+              placeItems: "center",
               background: "transparent",
               color: "var(--ink-3)",
               cursor: "pointer",
-              fontSize: 14,
+              fontSize: 13,
             }}
           >
             ✕
           </button>
         </div>
-        <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 13 }}>
+        <div style={{ padding: "18px 22px", display: "flex", flexDirection: "column", gap: 13 }}>
           {children}
         </div>
         <div
           style={{
             display: "flex",
-            alignItems: "center",
             gap: 8,
-            padding: "14px 20px",
+            padding: "14px 22px",
             borderTop: "1px solid var(--line)",
+            background: "var(--sunk)",
           }}
         >
           <span style={{ flex: 1 }} />
@@ -128,13 +148,14 @@ function Frame({
           </button>
           <button
             type="submit"
+            className="oi-hover-brand-2"
             style={{
               height: 34,
               padding: "0 16px",
               borderRadius: 9,
-              background: "var(--brand)",
-              color: "#fff",
               border: 0,
+              background: "var(--brand)",
+              color: "var(--on-brand)",
               fontSize: 12.5,
               fontWeight: 600,
               cursor: "pointer",
@@ -166,16 +187,18 @@ export function NewPageDialog({ defaultAccent }: { defaultAccent: string }) {
         type="button"
         data-testid="page-new"
         onClick={() => setOpen(true)}
-        className="oi-hover"
+        className="oi-hover-brand-2"
         style={{
-          marginTop: 4,
-          padding: "8px 10px",
-          border: "1.5px dashed var(--line)",
+          height: 32,
+          padding: "0 13px",
           borderRadius: 9,
+          border: 0,
+          background: "var(--brand)",
+          color: "var(--on-brand)",
+          display: "flex",
+          alignItems: "center",
           fontSize: 12.5,
-          color: "var(--ink-3)",
-          background: "transparent",
-          textAlign: "left",
+          fontWeight: 600,
           cursor: "pointer",
         }}
       >
@@ -189,7 +212,7 @@ export function NewPageDialog({ defaultAccent }: { defaultAccent: string }) {
           onClose={() => setOpen(false)}
           submit={t("common.create")}
         >
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={field}>
             <span style={label}>{t("oncall.name")}</span>
             <input
               name="name"
@@ -205,7 +228,7 @@ export function NewPageDialog({ defaultAccent }: { defaultAccent: string }) {
             />
           </label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <label style={field}>
               <span style={label}>{t("statusPages.slug")}</span>
               <input
                 name="slug"
@@ -214,55 +237,66 @@ export function NewPageDialog({ defaultAccent }: { defaultAccent: string }) {
                 key={slug}
                 pattern="[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?"
                 className="oi-field"
-                style={{ ...control, fontFamily: "var(--font-mono)", fontSize: 12.5 }}
+                style={{ ...control, fontFamily: "var(--mono)", fontSize: 12.5 }}
               />
             </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <label style={field}>
               <span style={label}>{t("statusPages.language")}</span>
-              <select name="locale" defaultValue="en" className="oi-field" style={control}>
+              <select name="locale" defaultValue="en" className="oi-field" style={select}>
                 <option value="en">{t("statusPages.locale.en")}</option>
                 <option value="fr">{t("statusPages.locale.fr")}</option>
                 <option value="de">{t("statusPages.locale.de")}</option>
               </select>
             </label>
           </div>
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={field}>
             <span style={label}>{t("statusPages.accent")}</span>
             <input
               name="accentColor"
               defaultValue={defaultAccent}
               pattern="#[0-9a-fA-F]{6}"
               className="oi-field"
-              style={{ ...control, fontFamily: "var(--font-mono)", fontSize: 12.5, width: 140 }}
+              style={{ ...control, fontFamily: "var(--mono)", fontSize: 12.5, width: 140 }}
             />
           </label>
-          <div
-            style={{
-              background: "var(--sunk)",
-              borderRadius: 11,
-              padding: "11px 13px",
-              fontSize: 12,
-              color: "var(--ink-2)",
-              lineHeight: 1.5,
-            }}
-          >
-            {t("statusPages.newPageNote")}
-          </div>
+          <div style={note}>{t("statusPages.newPageNote")}</div>
         </Frame>
       )}
     </>
   );
 }
 
+/**
+ * Add a component. The one real choice is where its status comes from: a
+ * monitor, and then the component never has to be touched again, or a human,
+ * from the incidents. Without a single monitor the first choice is not offered
+ * — an empty select is a dead control.
+ */
 export function NewComponentDialog({
   pageId,
   services,
+  monitors,
 }: {
   pageId: string;
   services: Array<{ id: string; name: string }>;
+  monitors: MonitorChoice[];
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"monitor" | "manual">(
+    monitors.length > 0 ? "monitor" : "manual",
+  );
+  const chip = (on: boolean): React.CSSProperties => ({
+    flex: 1,
+    border: on ? "1.5px solid var(--brand)" : "1px solid var(--line)",
+    background: on ? "var(--brand-t)" : "var(--panel)",
+    borderRadius: 11,
+    padding: "11px 13px",
+    textAlign: "left",
+    cursor: "pointer",
+    color: "inherit",
+    font: "inherit",
+  });
   return (
     <>
       <button
@@ -271,13 +305,15 @@ export function NewComponentDialog({
         onClick={() => setOpen(true)}
         className="oi-hover"
         style={{
-          height: 30,
-          padding: "0 12px",
+          height: 28,
+          padding: "0 11px",
           border: "1px solid var(--line)",
           borderRadius: 8,
           background: "var(--panel)",
-          fontSize: 12.5,
-          fontWeight: 500,
+          display: "flex",
+          alignItems: "center",
+          fontSize: 12,
+          fontWeight: 600,
           cursor: "pointer",
         }}
       >
@@ -285,60 +321,101 @@ export function NewComponentDialog({
       </button>
       {open && (
         <Frame
-          title={t("statusPages.newComponentTitle")}
+          title={t("sp2.addComponentTitle")}
           testId="component-form"
           action={createComponent}
           onClose={() => setOpen(false)}
-          submit={t("common.create")}
+          submit={t("sp2.addComponent")}
         >
           <input type="hidden" name="pageId" value={pageId} />
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <span style={label}>{t("oncall.name")}</span>
-              <input
-                name="name"
-                required
-                autoFocus
-                maxLength={60}
-                placeholder="Checkout"
-                className="oi-field"
-                style={control}
-              />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <span style={label}>{t("statusPages.group")}</span>
-              <input
-                name="groupName"
-                maxLength={60}
-                placeholder={t("common.optional")}
-                className="oi-field"
-                style={control}
-              />
-            </label>
-          </div>
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={label}>{t("statusPages.serviceLink")}</span>
-            <select name="serviceEntryId" defaultValue="" className="oi-field" style={control}>
-              <option value="">—</option>
-              {services.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+          <input type="hidden" name="source" value={mode} />
+          <label style={field}>
+            <span style={label}>{t("sp2.publicName")}</span>
+            <input
+              name="name"
+              required
+              autoFocus
+              maxLength={60}
+              placeholder="Checkout"
+              className="oi-field"
+              style={control}
+            />
           </label>
-          <div
-            style={{
-              background: "var(--sunk)",
-              borderRadius: 11,
-              padding: "11px 13px",
-              fontSize: 12,
-              color: "var(--ink-2)",
-              lineHeight: 1.5,
-            }}
-          >
-            {t("statusPages.componentNote")}
+          <label style={field}>
+            <span style={label}>
+              {t("statusPages.group")} · {t("common.optional")}
+            </span>
+            <input name="groupName" maxLength={60} className="oi-field" style={control} />
+          </label>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={label}>{t("sp2.sourceLabel")}</span>
+            <div style={{ display: "flex", gap: 6 }}>
+              {monitors.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setMode("monitor")}
+                  aria-pressed={mode === "monitor"}
+                  style={chip(mode === "monitor")}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sp2.sourceMonitor")}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                    {t("sp2.sourceMonitorHint")}
+                  </div>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setMode("manual")}
+                aria-pressed={mode === "manual"}
+                style={chip(mode === "manual")}
+              >
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sp2.sourceManual")}</div>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                  {t("sp2.sourceManualHint")}
+                </div>
+              </button>
+            </div>
           </div>
+          {mode === "monitor" ? (
+            <>
+              <label style={field}>
+                <span style={label}>{t("sp2.monitorLabel")}</span>
+                <select name="monitorId" className="oi-field" style={select}>
+                  {monitors.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} · {m.type} — {t(`monitors.state.${m.state}`)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div style={note}>{t("sp2.trackedNote")}</div>
+            </>
+          ) : (
+            <>
+              <label style={field}>
+                <span style={label}>{t("statusPages.serviceLink")}</span>
+                <select
+                  name="serviceEntryId"
+                  defaultValue=""
+                  className="oi-field"
+                  style={select}
+                  disabled={services.length === 0}
+                >
+                  <option value="">—</option>
+                  {services.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div style={note}>
+                {monitors.length === 0
+                  ? `${t("sp2.noMonitors")} ${t("statusPages.componentNote")}`
+                  : t("statusPages.componentNote")}
+              </div>
+            </>
+          )}
         </Frame>
       )}
     </>
@@ -365,13 +442,15 @@ export function MaintenanceDialog({
         onClick={() => setOpen(true)}
         className="oi-hover"
         style={{
-          height: 34,
-          padding: "0 13px",
+          height: 28,
+          padding: "0 11px",
           border: "1px solid var(--line)",
-          borderRadius: 9,
+          borderRadius: 8,
           background: "var(--panel)",
-          fontSize: 13,
-          fontWeight: 500,
+          display: "flex",
+          alignItems: "center",
+          fontSize: 12,
+          fontWeight: 600,
           cursor: "pointer",
         }}
       >
@@ -386,7 +465,7 @@ export function MaintenanceDialog({
           submit={t("statusPages.schedule")}
         >
           <input type="hidden" name="pageId" value={pageId} />
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={field}>
             <span style={label}>{t("statusPages.maintenanceTitle")}</span>
             <input
               name="title"
@@ -398,7 +477,7 @@ export function MaintenanceDialog({
               style={control}
             />
           </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={field}>
             <span style={label}>{t("statusPages.message")}</span>
             <textarea
               name="body"
@@ -409,7 +488,7 @@ export function MaintenanceDialog({
             />
           </label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <label style={field}>
               <span style={label}>{t("oncall.from")}</span>
               <input
                 type="datetime-local"
@@ -421,7 +500,7 @@ export function MaintenanceDialog({
               />
               <input type="hidden" name="startAt" value={iso(start)} />
             </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <label style={field}>
               <span style={label}>{t("oncall.to")}</span>
               <input
                 type="datetime-local"
@@ -465,22 +544,13 @@ export function MaintenanceDialog({
               color: "var(--ink-2)",
             }}
           >
+            {/* The hidden "off" comes first: a checked box appends "on" after
+                it, and Object.fromEntries keeps the last value. */}
+            <input type="hidden" name="autoTransitions" value="off" />
             <input type="checkbox" name="autoTransitions" value="on" defaultChecked />{" "}
             {t("statusPages.autoTransitionsLabel")}
-            <input type="hidden" name="autoTransitions" value="off" />
           </label>
-          <div
-            style={{
-              background: "var(--sunk)",
-              borderRadius: 11,
-              padding: "11px 13px",
-              fontSize: 12,
-              color: "var(--ink-2)",
-              lineHeight: 1.5,
-            }}
-          >
-            {t("statusPages.maintenanceNote")}
-          </div>
+          <div style={note}>{t("statusPages.maintenanceNote")}</div>
         </Frame>
       )}
     </>

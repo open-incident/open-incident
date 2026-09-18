@@ -155,5 +155,5 @@ export async function declineTriage(formData: FormData) {
     });
   });
   revalidatePath("/app/incidents");
-  redirect("/app/incidents?view=triage");
+  redirect("/app/incidents?tab=triage");
 }

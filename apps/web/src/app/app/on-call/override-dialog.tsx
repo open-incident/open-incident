@@ -27,10 +27,13 @@ export function OverrideDialog({
   scheduleId,
   rotations,
   members,
+  triggerLabel,
 }: {
   scheduleId: string;
   rotations: Array<{ id: string; name: string }>;
   members: Array<{ id: string; name: string }>;
+  /** What the trigger says — the card calls it "Add override". */
+  triggerLabel: string;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -43,19 +46,17 @@ export function OverrideDialog({
         type="button"
         data-testid="override-open"
         onClick={() => setOpen(true)}
-        className="oi-hover"
         style={{
-          height: 34,
-          padding: "0 13px",
-          border: "1px solid var(--line)",
-          borderRadius: 9,
-          background: "var(--panel)",
-          fontSize: 13,
-          fontWeight: 500,
+          border: 0,
+          background: "transparent",
+          padding: 0,
+          fontSize: 12,
+          fontWeight: 600,
+          color: "var(--brand)",
           cursor: "pointer",
         }}
       >
-        {t("oncall.addOverride")}
+        {triggerLabel}
       </button>
       {open && (
         <div

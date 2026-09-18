@@ -203,6 +203,37 @@ export async function assignRole(formData: FormData) {
   revalidatePath(`/app/incidents/${number}`);
 }
 
+/**
+ * A note in the timeline — what a responder knows, written where the incident
+ * is read. It is an event like any other: it streams to everyone watching and
+ * the post-mortem can quote it once pinned.
+ */
+export async function addNote(formData: FormData) {
+  const current = await requireResponder();
+  const number = numberSchema.parse(formData.get("number"));
+  const message = z.string().trim().min(1).max(2000).parse(formData.get("message"));
+  await withTenant(current.tenant.id, async (tx) => {
+    const [inc] = await tx
+      .select({ id: incidents.id })
+      .from(incidents)
+      .where(and(eq(incidents.tenantId, current.tenant.id), eq(incidents.number, number)));
+    if (!inc) return;
+    const now = new Date();
+    await tx.insert(incidentEvents).values({
+      tenantId: current.tenant.id,
+      incidentId: inc.id,
+      kind: "note",
+      actorKind: "member",
+      actorMemberId: current.member.id,
+      actorName: current.member.name,
+      payload: { message },
+      occurredAt: now,
+    });
+    await touch(tx, current, inc.id, now);
+  });
+  revalidatePath(`/app/incidents/${number}`);
+}
+
 export async function togglePin(formData: FormData) {
   const current = await requireResponder();
   const number = numberSchema.parse(formData.get("number"));

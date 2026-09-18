@@ -4,6 +4,7 @@ import { getSlackInstall, getTeamsInstall } from "@openincident/chat";
 import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
 import { createIncidentChannel } from "./chat-actions";
+import { card, eyebrow } from "./side-panel";
 
 /** The side panel's chat section: the Slack and Teams channels (or the button that creates them) and the war-room link. */
 export async function IncidentChat({
@@ -44,10 +45,9 @@ export async function IncidentChat({
   const missingChannel =
     (data.install && !data.channel) || (data.teamsInstall && !data.teamsChannel);
   return (
-    <>
-      <div style={{ height: 1, background: "var(--line-2)" }} />
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div className="oi-eyebrow">{t("incident.chat")}</div>
+    <div style={card}>
+      <div style={eyebrow}>{t("incident.chat")}</div>
+      <>
         {data.channel ? (
           <a
             data-testid="slack-channel"
@@ -194,7 +194,7 @@ export async function IncidentChat({
             </span>
           </a>
         )}
-      </div>
-    </>
+      </>
+    </div>
   );
 }

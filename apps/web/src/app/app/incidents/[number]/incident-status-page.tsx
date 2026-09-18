@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { and, eq, sql } from "drizzle-orm";
 import {
-  severities,
   statusPageIncidentUpdates,
   statusPageIncidents,
   statusPages,
@@ -10,8 +9,9 @@ import {
 import { statusPageUrl } from "@openincident/statuspages";
 import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
+import { card, eyebrow } from "./side-panel";
 
-/** The side panel's status page section: what is published, or the invitation to publish when the severity qualifies. */
+/** The side card that says what the public page carries — or that nothing is published. */
 export async function IncidentStatusPage({
   incidentId,
   number,
@@ -55,84 +55,77 @@ export async function IncidentStatusPage({
           .from(statusPageIncidentUpdates)
           .where(eq(statusPageIncidentUpdates.statusPageIncidentId, pub.id))
       : [];
-    void severities;
     return { page, pub: pub ?? null, updates: stats?.n ?? 0, notified: stats?.notified ?? 0 };
   });
   if (!data) return null;
   const eligible = severityRank !== null && severityRank <= data.page.minSeverityRank;
   return (
-    <>
-      <div style={{ height: 1, background: "var(--line-2)" }} />
-      <div
-        data-testid="status-page-section"
-        style={{ display: "flex", flexDirection: "column", gap: 7 }}
-      >
-        <div style={{ display: "flex", alignItems: "center" }}>
-          <span className="oi-eyebrow">{t("incident.statusPage")}</span>
-          <span style={{ flex: 1 }} />
-          {data.pub && (
-            <span
-              style={{
-                fontSize: 11.5,
-                fontWeight: 600,
-                color: data.pub.status === "resolved" ? "var(--ok)" : "var(--wait)",
-              }}
-            >
-              {t("incident.statusPagePublished", {
-                status: t(`statusPages.publicStatus.${data.pub.status}`),
-              })}
-            </span>
-          )}
-        </div>
-        {data.pub ? (
-          <>
-            <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.45 }}>
-              {data.page.name} — « {data.pub.title} »
-            </div>
-            <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
-              {t("incident.statusPageStats", { count: data.updates, notified: data.notified })}
-            </div>
-            <a
-              href={statusPageUrl(data.page)}
-              target="_blank"
-              rel="noreferrer"
-              className="oi-link"
-              style={{ fontSize: 12.5, fontWeight: 600 }}
-            >
-              {t("statusPages.viewPublic")}
-            </a>
-          </>
-        ) : eligible && canAct && phase !== "closed" && phase !== "triage" ? (
-          <>
-            <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
-              {t("incident.statusPageEligible", { page: data.page.name })}
-            </div>
-            <Link
-              href={`/app/incidents/${number}?update=1&publish=1`}
-              data-testid="status-page-publish"
-              className="oi-hover-edge-fill"
-              style={{
-                height: 32,
-                border: "1px solid var(--line)",
-                borderRadius: 8,
-                background: "var(--panel)",
-                display: "grid",
-                placeItems: "center",
-                fontSize: 12.5,
-                fontWeight: 600,
-                color: "var(--brand)",
-                textDecoration: "none",
-              }}
-            >
-              {t("incident.statusPagePublish", { page: data.page.name })}
-            </Link>
-          </>
-        ) : (
-          <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-            {t("incident.statusPageNotEligible", { page: data.page.name })}
-          </div>
+    <div style={card} data-testid="status-page-section">
+      <div style={{ display: "flex", alignItems: "center" }}>
+        <span style={eyebrow}>{t("inc2.card.statusPage")}</span>
+        <span style={{ flex: 1 }} />
+        {data.pub && (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: data.pub.status === "resolved" ? "var(--ok)" : "var(--wait)",
+            }}
+          >
+            {t("incident.statusPagePublished", {
+              status: t(`statusPages.publicStatus.${data.pub.status}`),
+            })}
+          </span>
         )}
       </div>
-    </>
+      {data.pub ? (
+        <>
+          <div style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+            {data.page.name} — « {data.pub.title} »
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+            {t("incident.statusPageStats", { count: data.updates, notified: data.notified })}
+          </div>
+          <a
+            href={statusPageUrl(data.page)}
+            target="_blank"
+            rel="noreferrer"
+            className="oi-link"
+            style={{ fontSize: 11.5, fontWeight: 600 }}
+          >
+            {t("statusPages.viewPublic")}
+          </a>
+        </>
+      ) : eligible && canAct && phase !== "closed" && phase !== "triage" ? (
+        <>
+          <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
+            {t("incident.statusPageEligible", { page: data.page.name })}
+          </div>
+          <Link
+            href={`/app/incidents/${number}?update=1&publish=1`}
+            data-testid="status-page-publish"
+            className="oi-hover-edge-fill"
+            style={{
+              height: 30,
+              border: "1px solid var(--line)",
+              borderRadius: 8,
+              background: "var(--panel)",
+              display: "grid",
+              placeItems: "center",
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--brand)",
+              textDecoration: "none",
+            }}
+          >
+            {t("incident.statusPagePublish", { page: data.page.name })}
+          </Link>
+        </>
+      ) : (
+        <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+          {t("incident.statusPageNotEligible", { page: data.page.name })}
+        </div>
+      )}
+    </div>
   );
 }

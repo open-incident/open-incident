@@ -9,6 +9,7 @@ import { z } from "zod";
 import {
   componentImpactHistory,
   deleteStatusSnapshot,
+  monitors,
   statusPageComponents,
   statusPageMaintenanceUpdates,
   statusPageMaintenances,
@@ -195,6 +196,11 @@ export async function deleteStatusPage(formData: FormData) {
   redirect(PAGE);
 }
 
+/**
+ * A component is born either manual — a human says how it is, from the
+ * incidents — or tracking a monitor, and then nobody says anything: its state,
+ * its uptime and its bars are read off that monitor.
+ */
 export async function createComponent(formData: FormData) {
   const current = await requireManager();
   const parsed = z
@@ -202,12 +208,26 @@ export async function createComponent(formData: FormData) {
       pageId: uuid,
       name: z.string().trim().min(1).max(60),
       groupName: z.string().trim().max(60).optional(),
-      serviceEntryId: uuid.or(z.literal("")),
+      serviceEntryId: uuid.or(z.literal("")).optional(),
+      source: z.enum(["monitor", "manual"]).default("manual"),
+      monitorId: uuid.or(z.literal("")).optional(),
     })
     .safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect(`${PAGE}?error=invalid`);
   const input = parsed.data;
-  await withTenant(current.tenant.id, async (tx) => {
+  if (input.source === "monitor" && !input.monitorId)
+    redirect(`${PAGE}?page=${input.pageId}&error=invalid`);
+  const ok = await withTenant(current.tenant.id, async (tx) => {
+    // The monitor must be the workspace's own — the form is not the authority.
+    let monitorId: string | null = null;
+    if (input.source === "monitor" && input.monitorId) {
+      const [m] = await tx
+        .select({ id: monitors.id })
+        .from(monitors)
+        .where(and(eq(monitors.tenantId, current.tenant.id), eq(monitors.id, input.monitorId)));
+      if (!m) return false;
+      monitorId = m.id;
+    }
     const [max] = await tx
       .select({
         max: sql<number>`coalesce(max(${statusPageComponents.position}), -1)`.mapWith(Number),
@@ -219,11 +239,18 @@ export async function createComponent(formData: FormData) {
       pageId: input.pageId,
       name: input.name,
       groupName: input.groupName || null,
-      serviceEntryId: input.serviceEntryId || null,
+      serviceEntryId: monitorId ? null : input.serviceEntryId || null,
+      monitorId,
       position: (max?.max ?? -1) + 1,
     });
-    await recordAudit(tx, current, "config", "status_component.created", { name: input.name });
+    await recordAudit(tx, current, "config", "status_component.created", {
+      name: input.name,
+      source: monitorId ? "monitor" : "manual",
+      monitorId,
+    });
+    return true;
   });
+  if (!ok) redirect(`${PAGE}?page=${input.pageId}&error=invalid`);
   await refreshStatusSnapshot(current.tenant.id, input.pageId);
   revalidatePath(PAGE);
   redirect(`${PAGE}?page=${input.pageId}`);
@@ -243,6 +270,9 @@ export async function updateComponentState(formData: FormData) {
         and(eq(statusPageComponents.tenantId, current.tenant.id), eq(statusPageComponents.id, id)),
       );
     if (!c) return null;
+    // A tracked component's state is the monitor's word; the screen offers no
+    // control for it, and a crafted request does not get one either.
+    if (c.monitorId) return c.pageId;
     await setComponentState(tx, current.tenant.id, id, state);
     await recordAudit(tx, current, "config", "status_component.state", { name: c.name, state });
     return c.pageId;

@@ -1,0 +1,3 @@
+ALTER TABLE "app"."status_page_components" ADD COLUMN "monitor_id" uuid;--> statement-breakpoint
+ALTER TABLE "app"."status_page_components" ADD CONSTRAINT "status_page_components_monitor_id_monitors_id_fk" FOREIGN KEY ("monitor_id") REFERENCES "app"."monitors"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "status_page_components_monitor" ON "app"."status_page_components" USING btree ("monitor_id");

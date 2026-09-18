@@ -7,10 +7,30 @@ import { postUpdate } from "./actions";
 
 type Opt = { id: string; name: string; rank: number };
 
+const label: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: ".08em",
+  textTransform: "uppercase",
+  color: "var(--ink-3)",
+};
+const field: React.CSSProperties = {
+  height: 36,
+  border: "1px solid var(--line)",
+  borderRadius: 10,
+  padding: "0 9px",
+  fontSize: 13,
+  background: "var(--panel)",
+  outline: "none",
+  width: "100%",
+  boxSizing: "border-box",
+};
+
 /**
- * "Share an update" — the one gesture of the incident: a status (or Resolved),
- * a short message, optionally a severity and the next reminder. The design's
- * modal: 520 px, radius 18, the status choices as pills.
+ * "Share an update" — the one gesture of a live incident, as the design's right
+ * drawer: the new status as pills, the message (which the assistant can draft),
+ * where it goes, and when to be reminded. "Declare resolved" is the same drawer
+ * with the resolving status already chosen: a resolution still says why.
  */
 export function UpdateDialog({
   number,
@@ -19,6 +39,9 @@ export function UpdateDialog({
   currentStatusId,
   currentSeverityName,
   openInitially,
+  initialStatus,
+  initialMessage = "",
+  resolved = false,
   slackChannel = null,
   statusPage = null,
   aiDraft = false,
@@ -28,22 +51,27 @@ export function UpdateDialog({
   severities: Opt[];
   currentStatusId: string | null;
   currentSeverityName: string | null;
-  /** The incident's Slack channel, when it has one: the update is mirrored there unless unticked. */
-  slackChannel?: string | null;
-  /** The workspace's status page, when the incident qualifies or is already published there. */
-  statusPage?: { name: string; published: boolean; checked: boolean } | null;
-  /** Whether the assistant may draft the message (instance configured, workspace and capability on). */
-  aiDraft?: boolean;
   openInitially?: boolean;
+  /** "resolve", when the reader arrived through "Declare resolved". */
+  initialStatus?: string;
+  /** The assistant's summary, when the reader asked to turn it into an update. */
+  initialMessage?: string;
+  /** Already resolved: the drawer stays, the resolving shortcut goes. */
+  resolved?: boolean;
+  slackChannel?: string | null;
+  statusPage?: { name: string; published: boolean; checked: boolean } | null;
+  aiDraft?: boolean;
 }) {
   const t = useT();
   const [open, setOpen] = useState(Boolean(openInitially));
   const [mirrorChat, setMirrorChat] = useState(true);
   const [publish, setPublish] = useState(statusPage?.checked ?? false);
-  const [statusId, setStatusId] = useState<string>(currentStatusId ?? statuses[0]?.id ?? "resolve");
+  const [statusId, setStatusId] = useState<string>(
+    initialStatus ?? currentStatusId ?? statuses[0]?.id ?? "resolve",
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(initialMessage);
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [aiDrafted, setAiDrafted] = useState(false);
@@ -55,15 +83,9 @@ export function UpdateDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  const control: React.CSSProperties = {
-    height: 38,
-    padding: "0 12px",
-    border: "1px solid var(--line)",
-    borderRadius: 9,
-    fontSize: 13,
-    background: "var(--panel)",
-    outline: "none",
-    width: "100%",
+  const openWith = (id: string) => {
+    setStatusId(id);
+    setOpen(true);
   };
 
   return (
@@ -71,15 +93,16 @@ export function UpdateDialog({
       <button
         type="button"
         data-testid="update-open"
-        onClick={() => setOpen(true)}
+        onClick={() => openWith(initialStatus ?? currentStatusId ?? statuses[0]?.id ?? "resolve")}
+        className="oi-hover-brand-2"
         style={{
-          height: 36,
-          padding: "0 16px",
+          height: 34,
+          padding: "0 15px",
           borderRadius: 9,
           background: "var(--brand)",
-          color: "#fff",
+          color: "var(--on-brand)",
           border: 0,
-          fontSize: 13.5,
+          fontSize: 13,
           fontWeight: 600,
           cursor: "pointer",
           whiteSpace: "nowrap",
@@ -87,24 +110,46 @@ export function UpdateDialog({
       >
         {t("incident.update.cta")}
       </button>
+      {!resolved && (
+        <button
+          type="button"
+          data-testid="resolve-open"
+          onClick={() => openWith("resolve")}
+          className="oi-hover-ok"
+          style={{
+            height: 34,
+            padding: "0 13px",
+            border: "1px solid var(--line)",
+            borderRadius: 9,
+            background: "var(--panel)",
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--ok)",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {t("inc2.resolve")}
+        </button>
+      )}
       {open && (
         <div
           onClick={() => setOpen(false)}
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(8,12,14,.45)",
-            backdropFilter: "blur(2px)",
+            background: "var(--scrim)",
+            zIndex: 50,
             display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "center",
-            paddingTop: "8vh",
-            zIndex: 60,
+            justifyContent: "flex-end",
           }}
         >
           <form
             data-testid="update-form"
+            role="dialog"
+            aria-label={t("inc2.upd.drawerLabel")}
             onClick={(e) => e.stopPropagation()}
+            className="oi-rise-fast"
             action={(fd) => {
               setError(null);
               start(async () => {
@@ -113,16 +158,14 @@ export function UpdateDialog({
                 else setOpen(false);
               });
             }}
-            className="oi-rise-modal"
-            role="dialog"
-            aria-label={t("incident.update.title")}
             style={{
-              width: 520,
-              maxWidth: "94vw",
+              width: 420,
+              maxWidth: "100vw",
+              height: "100%",
               background: "var(--panel)",
-              borderRadius: 18,
               boxShadow: "var(--shadow-modal)",
-              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
             }}
           >
             <input type="hidden" name="number" value={number} />
@@ -131,18 +174,11 @@ export function UpdateDialog({
               style={{
                 display: "flex",
                 alignItems: "center",
-                padding: "16px 22px",
+                padding: "16px 20px",
                 borderBottom: "1px solid var(--line)",
               }}
             >
-              <span
-                style={{
-                  fontFamily: "var(--font-title)",
-                  fontSize: 17,
-                  fontWeight: 600,
-                  letterSpacing: "-.015em",
-                }}
-              >
+              <span style={{ fontFamily: "var(--title)", fontSize: 17, fontWeight: 600 }}>
                 {t("incident.update.title")}
               </span>
               <span style={{ flex: 1 }} />
@@ -158,24 +194,30 @@ export function UpdateDialog({
                   border: 0,
                   background: "transparent",
                   color: "var(--ink-3)",
-                  fontSize: 15,
                   cursor: "pointer",
+                  fontSize: 14,
                 }}
               >
                 ✕
               </button>
             </div>
+
             <div
-              style={{ padding: "18px 22px", display: "flex", flexDirection: "column", gap: 14 }}
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "18px 20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 14,
+              }}
             >
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>
-                  {t("incident.update.newStatus")}
-                </span>
-                <div role="radiogroup" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <span style={label}>{t("inc2.upd.status")}</span>
+                <div role="radiogroup" style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
                   {[
-                    ...statuses.map((s) => ({ id: s.id, label: s.name })),
-                    { id: "resolve", label: t("incident.update.resolved") },
+                    ...statuses.map((s) => ({ id: s.id, name: s.name })),
+                    { id: "resolve", name: t("incident.update.resolved") },
                   ].map((s) => {
                     const on = statusId === s.id;
                     return (
@@ -187,52 +229,29 @@ export function UpdateDialog({
                         onClick={() => setStatusId(s.id)}
                         style={{
                           height: 30,
-                          padding: "0 13px",
+                          padding: "0 12px",
                           border: on ? "1.5px solid var(--brand)" : "1px solid var(--line)",
                           borderRadius: 999,
                           background: on ? "var(--brand-t)" : "var(--panel)",
-                          display: "inline-flex",
+                          color: on ? "var(--brand)" : "var(--ink-2)",
+                          display: "flex",
                           alignItems: "center",
                           fontSize: 12.5,
                           fontWeight: 600,
-                          color: on ? "var(--brand)" : "var(--ink-2)",
                           cursor: "pointer",
                         }}
                       >
-                        {s.label}
+                        {s.name}
                       </button>
                     );
                   })}
                 </div>
               </div>
-              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 12.5,
-                    fontWeight: 600,
-                    color: "var(--ink-2)",
-                  }}
-                >
-                  {t("incident.update.message")}
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  <span style={label}>{t("incident.update.message")}</span>
                   <span style={{ flex: 1 }} />
-                  {aiDrafted && (
-                    <span
-                      style={{
-                        fontWeight: 700,
-                        fontSize: 10,
-                        letterSpacing: ".08em",
-                        color: "var(--viol)",
-                        background: "var(--viol-t)",
-                        borderRadius: 6,
-                        padding: "1px 6px",
-                      }}
-                    >
-                      {t("ai.badge")}
-                    </span>
-                  )}
                   {aiDraft && (
                     <button
                       type="button"
@@ -263,7 +282,7 @@ export function UpdateDialog({
                       ✦ {drafting ? t("ai.working") : t("ai.update.draft")}
                     </button>
                   )}
-                </span>
+                </div>
                 {draftError && (
                   <span role="alert" style={{ fontSize: 12, color: "var(--dang)" }}>
                     {draftError}
@@ -272,7 +291,7 @@ export function UpdateDialog({
                 <textarea
                   name="message"
                   required
-                  rows={4}
+                  rows={5}
                   autoFocus
                   value={message}
                   onChange={(e) => {
@@ -284,21 +303,98 @@ export function UpdateDialog({
                   style={{
                     border: "1px solid var(--line)",
                     borderRadius: 10,
-                    padding: "10px 13px",
+                    padding: "10px 12px",
                     fontSize: 13.5,
+                    lineHeight: 1.5,
                     resize: "vertical",
                     outline: "none",
                     background: "var(--panel)",
-                    lineHeight: 1.6,
                   }}
                 />
-              </label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>
-                    {t("incident.update.severity")}
+                {aiDrafted && (
+                  <span
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      color: "var(--viol)",
+                      background: "var(--viol-t)",
+                      borderRadius: 5,
+                      padding: "2px 7px",
+                      width: "fit-content",
+                    }}
+                  >
+                    {t("inc2.upd.draftTag")}
                   </span>
-                  <select name="severityId" defaultValue="" className="oi-field" style={control}>
+                )}
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <span style={label}>{t("inc2.upd.sendTo")}</span>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                    fontSize: 13,
+                    color: "var(--ink-2)",
+                  }}
+                >
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: "50%",
+                      background: "var(--ok)",
+                      marginLeft: 4,
+                    }}
+                  />
+                  {t("inc2.upd.subscribers")}
+                  <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                    {t("inc2.upd.always")}
+                  </span>
+                </div>
+                {statusPage && (
+                  <label
+                    data-testid="update-status-page-toggle"
+                    style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={publish}
+                      onChange={(e) => setPublish(e.target.checked)}
+                      style={{ width: 15, height: 15, accentColor: "var(--brand)" }}
+                    />
+                    {t("incident.update.statusPage", { page: statusPage.name })}
+                    <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                      {statusPage.published
+                        ? t("incident.update.statusPagePublished")
+                        : t("incident.update.statusPagePublic")}
+                    </span>
+                    <input type="hidden" name="statusPage" value={publish ? "on" : "off"} />
+                  </label>
+                )}
+                {slackChannel && (
+                  <label
+                    data-testid="update-slack-toggle"
+                    style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13 }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={mirrorChat}
+                      onChange={(e) => setMirrorChat(e.target.checked)}
+                      style={{ width: 15, height: 15, accentColor: "var(--brand)" }}
+                    />
+                    {t("incident.update.slackChannel", { channel: `#${slackChannel}` })}
+                    <input type="hidden" name="chat" value={mirrorChat ? "on" : "off"} />
+                  </label>
+                )}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={label}>{t("incident.update.severity")}</span>
+                  <select name="severityId" defaultValue="" className="oi-field" style={field}>
                     <option value="">
                       {currentSeverityName
                         ? t("incident.update.keepSeverity", { severity: currentSeverityName })
@@ -311,16 +407,14 @@ export function UpdateDialog({
                     ))}
                   </select>
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>
-                    {t("incident.update.nextReminder")}
-                  </span>
+                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <span style={label}>{t("incident.update.nextReminder")}</span>
                   <select
                     name="nextUpdateMinutes"
                     defaultValue={statusId === "resolve" ? "" : "30"}
                     disabled={statusId === "resolve"}
                     className="oi-field"
-                    style={control}
+                    style={field}
                   >
                     <option value="">{t("incident.update.noReminder")}</option>
                     {[15, 30, 60, 120].map((m) => (
@@ -331,94 +425,7 @@ export function UpdateDialog({
                   </select>
                 </label>
               </div>
-              {(slackChannel || statusPage) && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-2)" }}>
-                    {t("incident.update.sendAlso")}
-                  </span>
-                  {statusPage && (
-                    <label
-                      data-testid="update-status-page-toggle"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 9,
-                        fontSize: 13,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={publish}
-                        onChange={(e) => setPublish(e.target.checked)}
-                        style={{ position: "absolute", opacity: 0, width: 0, height: 0 }}
-                      />
-                      <span
-                        aria-hidden
-                        style={{
-                          width: 16,
-                          height: 16,
-                          borderRadius: 5,
-                          background: publish ? "var(--brand)" : "var(--sunk)",
-                          border: publish ? "1px solid var(--brand)" : "1.5px solid var(--line)",
-                          display: "grid",
-                          placeItems: "center",
-                          color: "#fff",
-                          fontSize: 10,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {publish ? "✓" : ""}
-                      </span>
-                      {t("incident.update.statusPage", { page: statusPage.name })}
-                      <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
-                        {statusPage.published
-                          ? t("incident.update.statusPagePublished")
-                          : t("incident.update.statusPagePublic")}
-                      </span>
-                      <input type="hidden" name="statusPage" value={publish ? "on" : "off"} />
-                    </label>
-                  )}
-                  {slackChannel && (
-                    <label
-                      data-testid="update-slack-toggle"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 9,
-                        fontSize: 13,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={mirrorChat}
-                        onChange={(e) => setMirrorChat(e.target.checked)}
-                        style={{ position: "absolute", opacity: 0, width: 0, height: 0 }}
-                      />
-                      <span
-                        aria-hidden
-                        style={{
-                          width: 16,
-                          height: 16,
-                          borderRadius: 5,
-                          background: mirrorChat ? "var(--brand)" : "var(--sunk)",
-                          border: mirrorChat ? "1px solid var(--brand)" : "1.5px solid var(--line)",
-                          display: "grid",
-                          placeItems: "center",
-                          color: "#fff",
-                          fontSize: 10,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {mirrorChat ? "✓" : ""}
-                      </span>
-                      {t("incident.update.slackChannel", { channel: `#${slackChannel}` })}
-                      <input type="hidden" name="chat" value={mirrorChat ? "on" : "off"} />
-                    </label>
-                  )}
-                </div>
-              )}
+
               {error && (
                 <p
                   role="alert"
@@ -435,21 +442,19 @@ export function UpdateDialog({
                   {error}
                 </p>
               )}
+              <p style={{ margin: 0, fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
+                {t("incident.update.footer")}
+              </p>
             </div>
+
             <div
               style={{
                 display: "flex",
-                alignItems: "center",
-                gap: 10,
-                padding: "14px 22px",
+                gap: 8,
+                padding: "14px 20px",
                 borderTop: "1px solid var(--line)",
-                background: "var(--canvas)",
               }}
             >
-              <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                {t("incident.update.footer")}
-              </span>
-              <span style={{ flex: 1 }} />
               <button
                 type="button"
                 onClick={() => setOpen(false)}
@@ -459,8 +464,7 @@ export function UpdateDialog({
                   border: "1px solid var(--line)",
                   borderRadius: 9,
                   background: "var(--panel)",
-                  fontSize: 13.5,
-                  fontWeight: 500,
+                  fontSize: 13,
                   cursor: "pointer",
                 }}
               >
@@ -469,17 +473,20 @@ export function UpdateDialog({
               <button
                 type="submit"
                 disabled={pending}
+                className="oi-hover-brand-2"
                 style={{
+                  flex: 1,
                   height: 36,
-                  padding: "0 16px",
                   borderRadius: 9,
-                  background: "var(--brand)",
-                  color: "#fff",
                   border: 0,
-                  fontSize: 13.5,
+                  background: "var(--brand)",
+                  color: "var(--on-brand)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 13,
                   fontWeight: 600,
                   cursor: "pointer",
-                  whiteSpace: "nowrap",
                   opacity: pending ? 0.6 : 1,
                 }}
               >

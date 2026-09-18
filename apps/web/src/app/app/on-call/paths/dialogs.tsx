@@ -428,20 +428,22 @@ export function NewPathDialog() {
         type="button"
         data-testid="path-new"
         onClick={() => setOpen(true)}
-        className="oi-hover"
+        className="oi-hover-brand-2"
         style={{
-          height: 30,
-          padding: "0 12px",
-          border: "1.5px dashed var(--line)",
-          borderRadius: 999,
-          background: "transparent",
-          color: "var(--ink-3)",
+          height: 32,
+          borderRadius: 9,
+          border: 0,
+          background: "var(--brand)",
+          color: "var(--on-brand)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
           fontSize: 12.5,
           fontWeight: 600,
           cursor: "pointer",
         }}
       >
-        {t("oncall.newPath")}
+        {t("oc2.pol.newCta")}
       </button>
       {open && (
         <div

@@ -165,9 +165,9 @@ export function SectionEditor({
     <section
       id={`pm-${section.key}`}
       data-testid={`pm-section-${section.key}`}
-      style={{ marginBottom: 22, scrollMarginTop: 80 }}
+      style={{ display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 80 }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         {renaming ? (
           <form
             action={async (fd) => {
@@ -208,18 +208,12 @@ export function SectionEditor({
             </button>
           </form>
         ) : (
-          <h2
-            style={{
-              margin: 0,
-              fontFamily: "var(--font-title)",
-              fontSize: 17,
-              fontWeight: 600,
-              letterSpacing: "-.01em",
-            }}
+          <h3
+            style={{ margin: 0, fontSize: 16, fontWeight: 700, letterSpacing: "-.01em" }}
             title={hint || undefined}
           >
             {title}
-          </h2>
+          </h3>
         )}
         {review && review.verdict !== "supported" && (
           <span

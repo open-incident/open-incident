@@ -1932,10 +1932,20 @@ export const statusPageComponents = app.table(
     serviceEntryId: uuid("service_entry_id").references(() => catalogEntries.id, {
       onDelete: "set null",
     }),
+    /**
+     * The monitor this component tracks. Set, the component stops being told
+     * what to say: its state, its uptime and its bars are read off the
+     * monitor's own day rollup, and no human — nor a published incident — can
+     * overwrite them. Null, the component is manual, as it always was.
+     */
+    monitorId: uuid("monitor_id").references(() => monitors.id, { onDelete: "set null" }),
     state: text("state").$type<ComponentState>().notNull().default("operational"),
     createdAt: createdAt(),
   },
-  (t) => [index("status_page_components_page").on(t.pageId, t.position)],
+  (t) => [
+    index("status_page_components_page").on(t.pageId, t.position),
+    index("status_page_components_monitor").on(t.monitorId),
+  ],
 );
 
 /** Every non-operational stretch of a component — the base of uptime and of the 30-day bars. */

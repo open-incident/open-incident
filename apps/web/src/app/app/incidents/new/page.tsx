@@ -4,14 +4,15 @@ import { and, eq } from "drizzle-orm";
 import { getT } from "@/i18n/server";
 import { canRespond, requireMember } from "@/lib/session";
 import { declareOptions } from "@/lib/incidents";
-import { DeclareForm } from "./declare-form";
+import { listServices } from "@/lib/services";
 import { aiAllowance } from "@/lib/ai-capabilities";
+import { DeclareForm } from "./declare-form";
 
 /**
- * IN-03 — Declaring an incident. The design draws it as a modal over the list;
- * it is a page here (`/app/incidents/new`) so that ⌘K, the top bar and a plain
- * link all reach it — and so the browser's back button closes it. It renders
- * the modal frame over the canvas.
+ * IN-03 — declaring an incident. The design draws it as a modal over the list,
+ * and it is one there (`/app/incidents?declare=1`); this address renders the
+ * same modal so that ⌘K, an alert's "create an incident" and a plain link all
+ * reach it, and the browser's back button closes it.
  */
 export default async function DeclarePage({
   searchParams,
@@ -22,7 +23,10 @@ export default async function DeclarePage({
   if (!canRespond(member)) redirect("/app/incidents");
   const t = await getT();
   const { alert: alertId } = await searchParams;
-  const options = await withTenant(tenant.id, (tx) => declareOptions(tx, tenant.id));
+  const { options, services } = await withTenant(tenant.id, async (tx) => ({
+    options: await declareOptions(tx, tenant.id),
+    services: await listServices(tx, tenant.id),
+  }));
   // "Create an incident" from an alert: its title, service and description prefill the form.
   const initial =
     alertId && /^[0-9a-f-]{36}$/i.test(alertId)
@@ -46,41 +50,29 @@ export default async function DeclarePage({
   );
 
   return (
-    <section
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 60,
-        backdropFilter: "blur(2px)",
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "center",
-        paddingTop: "8vh",
-        background: "rgba(8,12,14,.45)",
-      }}
-    >
-      <DeclareForm
-        types={types.map((ty) => ({
-          id: ty.id,
-          name: ty.name,
-          isDefault: ty.isDefault,
-          declareForm: ty.declareForm,
-          privateByDefault: ty.privateByDefault,
-        }))}
-        initial={initial}
-        aiSuggest={(await aiAllowance(tenant.id, "declare_suggest")).ok}
-        severities={options.severities}
-        services={options.services.map((s) => ({ id: s.id, name: s.name }))}
-        fields={options.fields.map((f) => ({
-          id: f.id,
-          key: f.key,
-          label: f.label,
-          type: f.type,
-          options: f.options,
-          incidentTypeId: f.incidentTypeId,
-        }))}
-        timeZone={t.timeZone}
-      />
-    </section>
+    <DeclareForm
+      types={types.map((ty) => ({
+        id: ty.id,
+        name: ty.name,
+        isDefault: ty.isDefault,
+        declareForm: ty.declareForm,
+        privateByDefault: ty.privateByDefault,
+      }))}
+      initial={initial}
+      aiSuggest={(await aiAllowance(tenant.id, "declare_suggest")).ok}
+      severities={options.severities}
+      services={services.map((s) => ({ id: s.id, key: s.key }))}
+      catalogServices={options.services.map((s) => ({ id: s.id, name: s.name }))}
+      fields={options.fields.map((f) => ({
+        id: f.id,
+        key: f.key,
+        label: f.label,
+        type: f.type,
+        options: f.options,
+        incidentTypeId: f.incidentTypeId,
+      }))}
+      timeZone={t.timeZone}
+      closeHref="/app/incidents"
+    />
   );
 }

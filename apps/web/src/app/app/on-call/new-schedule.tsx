@@ -43,20 +43,23 @@ export function NewScheduleDialog({
         type="button"
         data-testid="schedule-open"
         onClick={() => setOpen(true)}
-        className="oi-hover"
+        className="oi-hover-brand-2"
         style={{
-          marginTop: 4,
-          padding: "8px 10px",
-          border: "1.5px dashed var(--line)",
+          height: 32,
+          padding: "0 13px",
+          border: 0,
           borderRadius: 9,
+          background: "var(--brand)",
+          color: "var(--on-brand)",
+          display: "flex",
+          alignItems: "center",
           fontSize: 12.5,
-          color: "var(--ink-3)",
-          background: "transparent",
-          textAlign: "left",
+          fontWeight: 600,
           cursor: "pointer",
+          flex: "none",
         }}
       >
-        {t("oncall.newSchedule")}
+        {t("oc2.sched.newCta")}
       </button>
       {open && (
         <div

@@ -62,15 +62,15 @@ export function EscalateDialog({
         onClick={() => setOpen(true)}
         className="oi-hover"
         style={{
-          height: 36,
-          padding: "0 14px",
+          height: 34,
+          padding: "0 13px",
           border: "1px solid var(--line)",
           borderRadius: 9,
           background: "var(--panel)",
           display: "flex",
           alignItems: "center",
-          fontSize: 13.5,
-          fontWeight: 500,
+          fontSize: 13,
+          fontWeight: 600,
           cursor: "pointer",
         }}
       >
