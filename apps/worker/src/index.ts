@@ -20,6 +20,7 @@ import {
   sweepCoverageReminders,
   sweepEscalations,
   sweepHeartbeats,
+  sweepMonitors,
   sweepShiftReminders,
   type NotifyJob,
   type TickJob,
@@ -163,6 +164,11 @@ const processors: Record<QueueName, Processor> = {
     const n = await sweepHeartbeats(tenants);
     if (n) console.log(`[heartbeat-sweep] ${n} heartbeat(s) missed`);
   },
+  "monitor-sweep": async () => {
+    const tenants = (await listLiveTenants()).map((t) => t.id);
+    const n = await sweepMonitors(tenants);
+    if (n) console.log(`[monitor-sweep] ${n} monitor state change(s) published`);
+  },
   "tracker-sync": async () => {
     // Issue trackers: a closed issue marks its follow-up done. Per tenant, failures isolated.
     let completed = 0;
@@ -258,6 +264,7 @@ async function registerSchedulers() {
     ["status-sweep", 60_000],
     ["tracker-sync", 300_000],
     ["heartbeat-sweep", 30_000],
+    ["monitor-sweep", 30_000],
     ["coverage-sweep", 6 * 3_600_000],
     ["runbook-sync", 6 * 3_600_000],
     ["housekeeping", DAY_MS],

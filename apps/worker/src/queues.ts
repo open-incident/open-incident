@@ -10,6 +10,7 @@
  * - oncall-sweep     : reconciler — due ticks, lost deliveries, shift reminders
  * - status-sweep     : maintenance windows on the clock, status page snapshots
  * - investigation    : one root cause assessment of an incident (declaration, signal, request)
+ * - monitor-sweep    : runs the checks whose turn it is, and publishes state changes
  */
 export const QUEUE_NAMES = [
   "mail-send",
@@ -22,6 +23,7 @@ export const QUEUE_NAMES = [
   "status-sweep",
   "tracker-sync",
   "heartbeat-sweep",
+  "monitor-sweep",
   "coverage-sweep",
   "runbook-sync",
   "investigation",

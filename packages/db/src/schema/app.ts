@@ -2557,7 +2557,7 @@ export const services = app.table(
     confirmed: boolean("confirmed").notNull().default(false),
     /** Where it was seen: source names, monitor ids — for "seen in 4 sources". */
     seenIn: jsonb("seen_in").$type<string[]>().notNull().default([]),
-    firstSeenAt: createdAt(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
