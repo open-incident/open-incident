@@ -2,8 +2,8 @@ import Link from "next/link";
 import { withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
+import { getWorkspace } from "@/lib/tenant";
 import {
-  alertInsights,
   delta,
   followUpInsights,
   incidentInsights,
@@ -11,1030 +11,683 @@ import {
   periodOf,
   type Stat,
 } from "@/lib/insights";
-import { PeriodSelect } from "./period-select";
-import { getSchedule, listSchedules, scheduleCoverage } from "@/lib/oncall";
-import { getPayReport, getPayRules, listPayReports, previousPeriod } from "@/lib/pay";
-import { PayTab } from "./pay-tab";
-import { isManagerRole } from "@openincident/config";
+import { listMonitors } from "@/lib/monitors";
+import type { MessageKey } from "@/i18n/dictionaries/en";
 
-type Tab = "incidents" | "alerts" | "pager" | "followups" | "pay";
-const TABS: Tab[] = ["incidents", "alerts", "pager", "followups", "pay"];
+const TABS = ["incidents", "pager", "uptime", "followups"] as const;
+type Tab = (typeof TABS)[number];
+
+const CARD: React.CSSProperties = {
+  background: "var(--panel)",
+  border: "1px solid var(--line)",
+  borderRadius: "var(--radius-card)",
+  boxShadow: "var(--shadow-card)",
+};
 
 /**
- * Reports, from the design: one period, compared with the previous one, four
- * tabs each with four numbers and the charts that explain them. Every figure
- * comes from the workspace's rows; test incidents are excluded; what cannot be
- * measured is said on screen, never simulated.
+ * Insights — four questions, four tabs, and nothing invented.
+ *
+ * Test incidents and test alerts are excluded upstream, the current week is
+ * drawn hatched because it is partial rather than falling, and a figure this
+ * instance cannot measure is said to be unmeasurable instead of shown as zero.
  */
 export default async function InsightsPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    tab?: string;
-    days?: string;
-    compare?: string;
-    period?: string;
-    saved?: string;
-    error?: string;
-  }>;
+  searchParams: Promise<{ tab?: string; days?: string }>;
 }) {
-  const { tenant, workspace, member } = await requireMember();
+  const { tenant } = await requireMember();
   const t = await getT();
-  const q = await searchParams;
-  const tab: Tab = TABS.includes(q.tab as Tab) ? (q.tab as Tab) : "incidents";
-  const daysRaw = Number(q.days ?? 90);
-  const days = daysRaw === 30 || daysRaw === 365 ? daysRaw : 90;
-  const compare = q.compare !== "0";
+  const sp = await searchParams;
+  const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? "")
+    ? (sp.tab as Tab)
+    : "incidents";
+  const days = sp.days === "30" ? 30 : sp.days === "365" ? 365 : 90;
   const period = periodOf(days);
-  const data = await withTenant(tenant.id, async (tx) => {
-    if (tab === "pay") {
-      const payPeriod = /^\d{4}-(0[1-9]|1[0-2])$/.test(q.period ?? "")
-        ? q.period!
-        : previousPeriod(new Date(), workspace.timezone);
-      return {
-        pay: {
-          period: payPeriod,
-          rules: await getPayRules(tx, tenant.id),
-          report: await getPayReport(tx, tenant.id, payPeriod),
-          history: await listPayReports(tx, tenant.id),
-        },
-      };
-    }
-    if (tab === "alerts") return { alerts: await alertInsights(tx, tenant.id, period) };
-    if (tab === "pager") {
-      const pager = await pagerInsights(tx, tenant.id, period, workspace.timezone);
-      // Coverage of the next sixty days, across published schedules.
-      const now = new Date();
-      let expected = 0;
-      let covered = 0;
-      let gaps = 0;
-      for (const sch of (await listSchedules(tx, tenant.id)).filter(
-        (x) => x.status === "published",
-      )) {
-        const detail = await getSchedule(tx, tenant.id, sch.id, { from: now, to: now }, now);
-        if (!detail) continue;
-        const c = scheduleCoverage(detail, now);
-        const horizon = 60 * 24 * 60;
-        expected += horizon;
-        covered += Math.round(c.coveredRatio * horizon);
-        gaps += c.gaps.length;
-      }
-      return {
-        pager,
-        coverage: expected ? { ratio: Math.round((covered / expected) * 1000) / 10, gaps } : null,
-      };
-    }
-    if (tab === "followups") return { followups: await followUpInsights(tx, tenant.id, period) };
-    return { incidents: await incidentInsights(tx, tenant.id, period) };
-  });
-  const href = (over: Partial<{ tab: Tab; days: number; compare: boolean }>) =>
-    `/app/insights?tab=${over.tab ?? tab}&days=${over.days ?? days}&compare=${(over.compare ?? compare) ? 1 : 0}`;
+  const workspace = await getWorkspace();
 
-  const fmtMin = (m: number | null) => (m === null ? "—" : t.fmt.duration(m));
-  const fmtPct = (p: number | null) => (p === null ? "—" : `${p} %`);
-  const fmtCount = (n: number | null) => (n === null ? "—" : t.fmt.number(n));
-  const fmtDays = (d: number | null) =>
-    d === null ? "—" : t("insights.days", { count: Math.round(d * 10) / 10 });
-  type Card = {
-    label: string;
-    value: string;
-    stat: Stat;
-    unit: "count" | "pct" | "minutes" | "days";
-    lowerIsBetter: boolean;
-    sub: string;
-  };
-  const cards: Card[] = [];
-  if (data.incidents) {
-    const d = data.incidents;
-    cards.push(
-      {
-        label: t("insights.inc.count"),
-        value: fmtCount(d.count.value),
-        stat: d.count,
-        unit: "count",
-        lowerIsBetter: true,
-        sub:
-          d.count.prev !== null && compare
-            ? t("insights.vsPrev", { count: d.count.prev, days })
-            : t("insights.inc.countSub"),
-      },
-      {
-        label: "MTTA",
-        value: fmtMin(d.mtta.value),
-        stat: d.mtta,
-        unit: "minutes",
-        lowerIsBetter: true,
-        sub: t("insights.inc.mttaSub"),
-      },
-      {
-        label: "MTTR",
-        value: fmtMin(d.mttr.value),
-        stat: d.mttr,
-        unit: "minutes",
-        lowerIsBetter: true,
-        sub: t("insights.inc.mttrSub"),
-      },
-      {
-        label: t("insights.inc.high"),
-        value: fmtCount(d.high.value),
-        stat: d.high,
-        unit: "count",
-        lowerIsBetter: true,
-        sub: t("insights.inc.highSub"),
-      },
-    );
-  }
-  if (data.alerts) {
-    const d = data.alerts;
-    cards.push(
-      {
-        label: t("insights.al.count"),
-        value: fmtCount(d.count.value),
-        stat: d.count,
-        unit: "count",
-        lowerIsBetter: true,
-        sub: t("insights.al.countSub"),
-      },
-      {
-        label: t("insights.al.conversion"),
-        value: fmtPct(d.conversion.value),
-        stat: d.conversion,
-        unit: "pct",
-        lowerIsBetter: false,
-        sub: t("insights.al.conversionSub"),
-      },
-      {
-        label: t("insights.al.auto"),
-        value: fmtPct(d.autoResolved.value),
-        stat: d.autoResolved,
-        unit: "pct",
-        lowerIsBetter: true,
-        sub: t("insights.al.autoSub"),
-      },
-      {
-        label: t("insights.al.sources"),
-        value: fmtCount(d.activeSources.value),
-        stat: d.activeSources,
-        unit: "count",
-        lowerIsBetter: false,
-        sub: t("insights.al.sourcesSub"),
-      },
-    );
-  }
-  if (data.pager) {
-    const d = data.pager;
-    cards.push(
-      {
-        label: t("insights.pg.pages"),
-        value: fmtCount(d.pages.value),
-        stat: d.pages,
-        unit: "count",
-        lowerIsBetter: true,
-        sub: t("insights.pg.pagesSub"),
-      },
-      {
-        label: t("insights.pg.night"),
-        value: fmtCount(d.night.value),
-        stat: d.night,
-        unit: "count",
-        lowerIsBetter: true,
-        sub: t("insights.pg.nightSub"),
-      },
-      {
-        label: t("insights.pg.ack"),
-        value: fmtMin(d.ackMedian.value),
-        stat: d.ackMedian,
-        unit: "minutes",
-        lowerIsBetter: true,
-        sub: t("insights.pg.ackSub"),
-      },
-      {
-        label: t("insights.pg.offHours"),
-        value: fmtPct(d.offHours.value),
-        stat: d.offHours,
-        unit: "pct",
-        lowerIsBetter: true,
-        sub: t("insights.pg.offHoursSub"),
-      },
-    );
-  }
-  if (data.followups) {
-    const d = data.followups;
-    cards.push(
-      {
-        label: t("insights.fu.created"),
-        value: fmtCount(d.created.value),
-        stat: d.created,
-        unit: "count",
-        lowerIsBetter: false,
-        sub: t("insights.fu.createdSub"),
-      },
-      {
-        label: t("insights.fu.closed"),
-        value: fmtPct(d.closed.value),
-        stat: d.closed,
-        unit: "pct",
-        lowerIsBetter: false,
-        sub: t("insights.fu.closedSub"),
-      },
-      {
-        label: t("insights.fu.closure"),
-        value: fmtDays(d.closureDays.value),
-        stat: d.closureDays,
-        unit: "days",
-        lowerIsBetter: true,
-        sub: t("insights.fu.closureSub"),
-      },
-      {
-        label: t("insights.fu.overdue"),
-        value: fmtCount(d.overdue.value),
-        stat: d.overdue,
-        unit: "count",
-        lowerIsBetter: true,
-        sub: d.overdueList[0]
-          ? t("insights.fu.overdueSub", {
-              priority: d.overdueList[0].priority ?? "—",
-              days: d.overdueList[0].daysLate,
-            })
-          : t("insights.fu.overdueNone"),
-      },
-    );
-  }
+  const data = await withTenant(tenant.id, async (tx) => ({
+    incidents: await incidentInsights(tx, tenant.id, period),
+    pager: await pagerInsights(tx, tenant.id, period, workspace?.timezone ?? "Europe/Paris"),
+    followUps: await followUpInsights(tx, tenant.id, period),
+    monitors: await listMonitors(tx, tenant.id),
+  }));
 
-  const panel: React.CSSProperties = {
-    background: "var(--panel)",
-    border: "1px solid var(--line)",
-    borderRadius: 14,
-    padding: "16px 20px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
+  const num = (v: number | null, suffix = "") =>
+    v === null ? "—" : `${t.fmt.number(Math.round(v * 10) / 10)}${suffix}`;
+  const mins = (v: number | null) =>
+    v === null
+      ? "—"
+      : v >= 60
+        ? `${Math.floor(v / 60)} h ${String(Math.round(v % 60)).padStart(2, "0")}`
+        : `${Math.round(v * 10) / 10} min`;
+
+  const kpi = (
+    label: string,
+    value: string,
+    stat: Stat,
+    unit: "count" | "pct" | "minutes" | "days",
+    sub: string,
+    lowerIsBetter = false,
+  ) => {
+    const d = delta(stat, unit);
+    const improving =
+      d && stat.value !== null && stat.prev !== null
+        ? lowerIsBetter
+          ? stat.value <= stat.prev
+          : stat.value >= stat.prev
+        : null;
+    return { label, value, deltaText: d?.text ?? "", improving, sub };
   };
-  const h: React.CSSProperties = { fontSize: 14, fontWeight: 600 };
-  const sub: React.CSSProperties = { fontWeight: 400, fontSize: 12, color: "var(--ink-3)" };
-  const bar = (w: number, color: string) => (
-    <div
-      style={{ flex: 1, height: 8, borderRadius: 4, background: "var(--sunk)", overflow: "hidden" }}
-    >
-      <div
-        style={{
-          height: "100%",
-          borderRadius: 4,
-          background: color,
-          width: `${Math.max(0, Math.min(100, w))}%`,
-        }}
-      />
-    </div>
-  );
-  const sevTone = (name: string) =>
-    /1$/.test(name)
-      ? "var(--dang)"
-      : /2$/.test(name)
-        ? "var(--wait)"
-        : /3$/.test(name)
-          ? "var(--open)"
-          : "var(--ink-3)";
-  const heatColor = (v: number) =>
+
+  const uptimeAvg = (() => {
+    const known = data.monitors.filter((m) => m.uptime90 !== null);
+    if (known.length === 0) return null;
+    return known.reduce((a, m) => a + m.uptime90!, 0) / known.length;
+  })();
+
+  const kpis =
+    tab === "incidents"
+      ? [
+          kpi(
+            t("insights.kpiIncidents"),
+            num(data.incidents.count.value),
+            data.incidents.count,
+            "count",
+            t("insights.vsPrevious", { count: days }),
+            true,
+          ),
+          kpi(
+            t("insights.kpiTta"),
+            mins(data.incidents.mtta.value),
+            data.incidents.mtta,
+            "minutes",
+            t("insights.median"),
+            true,
+          ),
+          kpi(
+            t("insights.kpiTtr"),
+            mins(data.incidents.mttr.value),
+            data.incidents.mttr,
+            "minutes",
+            t("insights.median"),
+            true,
+          ),
+          kpi(
+            t("insights.kpiHigh"),
+            num(data.incidents.high.value),
+            data.incidents.high,
+            "count",
+            t("insights.highSeverity"),
+            true,
+          ),
+        ]
+      : tab === "pager"
+        ? [
+            kpi(
+              t("insights.kpiPages"),
+              num(data.pager.pages.value),
+              data.pager.pages,
+              "count",
+              t("insights.allSchedules"),
+              true,
+            ),
+            kpi(
+              t("insights.kpiNight"),
+              num(data.pager.night.value),
+              data.pager.night,
+              "count",
+              t("insights.localTime"),
+              true,
+            ),
+            kpi(
+              t("insights.kpiAck"),
+              mins(data.pager.ackMedian.value),
+              data.pager.ackMedian,
+              "minutes",
+              t("insights.pageToAck"),
+              true,
+            ),
+            kpi(
+              t("insights.kpiOffHours"),
+              data.pager.offHours.value === null
+                ? "—"
+                : `${Math.round(data.pager.offHours.value)} %`,
+              data.pager.offHours,
+              "pct",
+              t("insights.shareOfPages"),
+              true,
+            ),
+          ]
+        : tab === "uptime"
+          ? [
+              {
+                label: t("insights.kpiUptime"),
+                value: uptimeAvg === null ? "—" : `${uptimeAvg.toFixed(2)} %`,
+                deltaText: "",
+                improving: null,
+                sub: t("insights.allMonitors"),
+              },
+              {
+                label: t("insights.kpiMonitors"),
+                value: String(data.monitors.length),
+                deltaText: "",
+                improving: null,
+                sub: t("insights.active"),
+              },
+              {
+                label: t("insights.kpiDegraded"),
+                value: String(
+                  data.monitors.filter((m) => m.state === "degraded" || m.state === "offline")
+                    .length,
+                ),
+                deltaText: "",
+                improving: null,
+                sub: t("insights.rightNow"),
+              },
+              {
+                label: t("insights.kpiWatched"),
+                value: String(new Set(data.monitors.map((m) => m.serviceKey).filter(Boolean)).size),
+                deltaText: "",
+                improving: null,
+                sub: t("insights.servicesWatched"),
+              },
+            ]
+          : [
+              kpi(
+                t("insights.kpiCreated"),
+                num(data.followUps.created.value),
+                data.followUps.created,
+                "count",
+                t("insights.fromIncidents"),
+              ),
+              kpi(
+                t("insights.kpiCompleted"),
+                data.followUps.closed.value === null
+                  ? "—"
+                  : `${Math.round(data.followUps.closed.value)}`,
+                data.followUps.closed,
+                "pct",
+                t("insights.ofCreated"),
+              ),
+              kpi(
+                t("insights.kpiMedianClose"),
+                data.followUps.closureDays.value === null
+                  ? "—"
+                  : `${Math.round(data.followUps.closureDays.value)} ${t("insights.days")}`,
+                data.followUps.closureDays,
+                "days",
+                t("insights.creationToDone"),
+                true,
+              ),
+              kpi(
+                t("insights.kpiOverdue"),
+                num(data.followUps.overdue.value),
+                data.followUps.overdue,
+                "count",
+                t("insights.pastDue"),
+                true,
+              ),
+            ];
+
+  const weeks = data.incidents.weekly;
+  const maxWeek = Math.max(1, ...weeks.map((w) => w.count));
+  const maxService = Math.max(1, ...data.incidents.byService.map((s) => s.count));
+  const heatColour = (v: number) =>
     v === 0
       ? "var(--sunk)"
       : v === 1
-        ? "var(--brand-t)"
+        ? "var(--brand-b)"
         : v === 2
-          ? "var(--brand-b)"
+          ? "var(--brand-2)"
           : v === 3
-            ? "var(--brand-2)"
+            ? "var(--brand)"
             : "var(--dang)";
-  const empty = (text: string) => (
-    <div style={{ fontSize: 12.5, color: "var(--ink-3)", padding: "6px 0" }}>{text}</div>
-  );
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-      <div
-        style={{
-          flex: "none",
-          background: "var(--panel)",
-          borderBottom: "1px solid var(--line)",
-          padding: "14px 22px 0",
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <h1 className="oi-title" style={{ margin: 0 }}>
-            {t("insights.title")}
-          </h1>
-          <span style={{ flex: 1 }} />
-          {tab !== "pay" && <PeriodSelect days={days} tab={tab} compare={compare} />}
-          <Link
-            href={href({ compare: !compare })}
-            data-testid="insights-compare"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 12.5,
-              color: "var(--ink-2)",
-              textDecoration: "none",
-            }}
-          >
-            <span
-              aria-hidden
-              style={{
-                width: 38,
-                height: 22,
-                borderRadius: 999,
-                background: compare ? "var(--brand)" : "var(--line)",
-                position: "relative",
-                display: "inline-block",
-                transition: "background .15s",
-              }}
-            >
-              <span
-                style={{
-                  position: "absolute",
-                  top: 2.5,
-                  left: compare ? 18 : 3,
-                  width: 17,
-                  height: 17,
-                  borderRadius: "50%",
-                  background: "#fff",
-                  boxShadow: "0 1px 3px rgba(0,0,0,.25)",
-                  transition: "left .15s",
-                }}
-              />
-            </span>
-            {t("insights.compare")}
-          </Link>
-          <a
-            href={`/api/insights/export?tab=${tab}&days=${days}`}
-            className="oi-hover"
-            data-testid="insights-export"
-            style={{
-              height: 34,
-              padding: "0 13px",
-              border: "1px solid var(--line)",
-              borderRadius: 9,
-              background: "var(--panel)",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 13,
-              fontWeight: 500,
-              textDecoration: "none",
-              color: "inherit",
-            }}
-          >
-            ↓ {t("insights.exportCsv")}
-          </a>
-        </div>
-        <div style={{ display: "flex", gap: 2 }}>
-          {TABS.map((tb) => (
+    <div
+      style={{
+        maxWidth: 1160,
+        margin: "0 auto",
+        padding: "22px 28px 60px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <h1
+          style={{
+            margin: 0,
+            fontFamily: "var(--title)",
+            fontSize: 22,
+            fontWeight: 600,
+            letterSpacing: "-.015em",
+          }}
+        >
+          {t("nav.insights")}
+        </h1>
+        <div
+          style={{
+            display: "flex",
+            gap: 2,
+            background: "var(--sunk)",
+            borderRadius: 10,
+            padding: 3,
+          }}
+        >
+          {TABS.map((x) => (
             <Link
-              key={tb}
-              href={href({ tab: tb })}
-              data-testid={`insights-tab-${tb}`}
+              key={x}
+              href={`/app/insights?tab=${x}&days=${days}`}
               style={{
-                padding: "10px 15px",
-                fontSize: 13.5,
-                fontWeight: tb === tab ? 600 : 500,
-                color: tb === tab ? "var(--ink)" : "var(--ink-3)",
-                borderBottom: `2px solid ${tb === tab ? "var(--brand)" : "transparent"}`,
+                height: 28,
+                padding: "0 12px",
+                borderRadius: 8,
+                background: tab === x ? "var(--panel)" : "transparent",
+                color: tab === x ? "var(--ink)" : "var(--ink-3)",
+                boxShadow: tab === x ? "var(--shadow-card)" : "none",
+                display: "flex",
+                alignItems: "center",
+                fontSize: 12.5,
+                fontWeight: 600,
                 textDecoration: "none",
               }}
             >
-              {t(`insights.tab.${tb}`)}
+              {t(`insights.tab.${x}` as MessageKey)}
             </Link>
           ))}
         </div>
-      </div>
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "18px 22px 28px" }}>
+        <span style={{ flex: 1 }} />
         <div
-          className="oi-rise"
-          style={{ maxWidth: 1100, display: "flex", flexDirection: "column", gap: 14 }}
+          style={{
+            display: "flex",
+            gap: 2,
+            background: "var(--sunk)",
+            borderRadius: 9,
+            padding: 3,
+          }}
         >
-          {cards.length > 0 && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
-              {cards.map((c) => {
-                const diff =
-                  c.stat.value !== null && c.stat.prev !== null ? c.stat.value - c.stat.prev : 0;
-                const good = diff === 0 ? null : c.lowerIsBetter ? diff < 0 : diff > 0;
-                const sign = diff >= 0 ? "+" : "−";
-                const d = !compare
-                  ? null
-                  : c.unit === "minutes"
-                    ? { text: `${sign}${fmtMin(Math.abs(Math.round(diff)))}` }
-                    : c.unit === "days"
-                      ? { text: `${sign}${fmtDays(Math.abs(diff))}` }
-                      : delta(c.stat, c.unit);
-                return (
-                  <div
-                    key={c.label}
-                    data-testid="insights-stat"
-                    style={{
-                      background: "var(--panel)",
-                      border: "1px solid var(--line)",
-                      borderRadius: 13,
-                      padding: "14px 17px",
-                    }}
-                  >
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-3)" }}>
-                      {c.label}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginTop: 4 }}>
-                      <span
-                        style={{
-                          fontFamily: "var(--font-title)",
-                          fontSize: 24,
-                          fontWeight: 600,
-                          letterSpacing: "-.01em",
-                        }}
-                      >
-                        {c.value}
-                      </span>
-                      {d && (
-                        <span
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 700,
-                            color:
-                              good === null ? "var(--ink-3)" : good ? "var(--ok)" : "var(--dang)",
-                          }}
-                        >
-                          {diff === 0 ? "±0" : d.text}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 3 }}>
-                      {c.sub}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {data.incidents && (
-            <div
+          {[30, 90, 365].map((d) => (
+            <Link
+              key={d}
+              href={`/app/insights?tab=${tab}&days=${d}`}
               style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0,3fr) minmax(0,2fr)",
-                gap: 14,
+                height: 26,
+                padding: "0 10px",
+                borderRadius: 7,
+                background: days === d ? "var(--panel)" : "transparent",
+                color: days === d ? "var(--ink)" : "var(--ink-3)",
+                boxShadow: days === d ? "var(--shadow-card)" : "none",
+                display: "flex",
+                alignItems: "center",
+                fontSize: 12,
+                fontWeight: 600,
+                textDecoration: "none",
               }}
             >
-              <div style={panel}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <span style={h}>
-                    {days <= 120 ? t("insights.inc.weekly") : t("insights.inc.monthly")}
-                  </span>
-                  <span style={{ flex: 1 }} />
-                  <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                    {t("insights.inc.partialNote")}
-                  </span>
-                </div>
-                {(() => {
-                  const max = Math.max(1, ...data.incidents.weekly.map((w) => w.count));
-                  return (
-                    <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 140 }}>
-                      {data.incidents.weekly.map((w, i) => (
-                        <div
-                          key={i}
-                          title={`${t.fmt.dateShort(w.label)} — ${w.count}`}
-                          style={{
-                            flex: 1,
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 4,
-                            height: "100%",
-                            justifyContent: "flex-end",
-                            alignItems: "center",
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: 10.5,
-                              fontWeight: 600,
-                              color: "var(--ink-3)",
-                              fontVariantNumeric: "tabular-nums",
-                            }}
-                          >
-                            {w.count}
-                          </span>
-                          <div
-                            style={{
-                              width: "100%",
-                              borderRadius: "5px 5px 3px 3px",
-                              background: w.partial ? "var(--brand-t)" : "var(--brand)",
-                              height: Math.max(3, Math.round((w.count / max) * 110)),
-                              border: w.partial ? "1.5px dashed var(--brand-b)" : "none",
-                            }}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
-                <div
+              {t("insights.lastDays", { count: d })}
+            </Link>
+          ))}
+        </div>
+        <a
+          href={`/api/insights/export?tab=${tab}&days=${days}`}
+          className="oi-hover"
+          style={{
+            height: 32,
+            padding: "0 12px",
+            border: "1px solid var(--line)",
+            borderRadius: 9,
+            background: "var(--panel)",
+            display: "flex",
+            alignItems: "center",
+            fontSize: 12.5,
+            fontWeight: 600,
+            textDecoration: "none",
+            color: "inherit",
+          }}
+        >
+          {t("insights.exportCsv")}
+        </a>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+        {kpis.map((k) => (
+          <div key={k.label} style={{ ...CARD, padding: "13px 16px" }}>
+            <div
+              style={{
+                fontSize: 10.5,
+                fontWeight: 700,
+                letterSpacing: ".08em",
+                color: "var(--ink-3)",
+              }}
+            >
+              {k.label}
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 3 }}>
+              <span
+                style={{
+                  fontFamily: "var(--title)",
+                  fontSize: 24,
+                  fontWeight: 600,
+                  letterSpacing: "-.02em",
+                }}
+              >
+                {k.value}
+              </span>
+              {k.deltaText && (
+                <span
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontSize: 10.5,
-                    color: "var(--ink-3)",
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    color: k.improving ? "var(--ok)" : "var(--dang)",
                   }}
                 >
-                  {data.incidents.weekly
-                    .filter(
-                      (_, i, a) =>
-                        i % Math.max(1, Math.floor(a.length / 4)) === 0 && i < a.length - 1,
-                    )
-                    .map((w, i) => (
-                      <span key={i}>{t.fmt.dayMonth(w.label)}</span>
-                    ))}
-                  <span>{t("insights.inc.thisPeriod")}</span>
-                </div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <div style={panel}>
-                  <span style={h}>{t("insights.inc.bySeverity")}</span>
-                  {data.incidents.bySeverity.length === 0 && empty(t("insights.none"))}
-                  {(() => {
-                    const max = Math.max(1, ...data.incidents.bySeverity.map((b) => b.count));
-                    return data.incidents.bySeverity.map((b) => (
-                      <div key={b.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span
-                          style={{
-                            width: 40,
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 11.5,
-                            fontWeight: 500,
-                            color: sevTone(b.name),
-                          }}
-                        >
-                          {b.name}
-                        </span>
-                        {bar((b.count / max) * 100, sevTone(b.name))}
-                        <span
-                          style={{
-                            width: 24,
-                            fontSize: 12,
-                            fontWeight: 600,
-                            fontVariantNumeric: "tabular-nums",
-                            textAlign: "right",
-                          }}
-                        >
-                          {b.count}
-                        </span>
-                      </div>
-                    ));
-                  })()}
-                </div>
-                <div style={{ ...panel, gap: 9 }}>
-                  <span style={h}>
-                    {t("insights.inc.byService")}{" "}
-                    <span style={sub}>· {t("insights.inc.catalogDimension")}</span>
-                  </span>
-                  {data.incidents.byService.length === 0 && empty(t("insights.none"))}
-                  {data.incidents.byService.map((b) => (
-                    <div
-                      key={b.name}
-                      style={{ display: "flex", alignItems: "center", fontSize: 12.5 }}
-                    >
-                      <span style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                        {b.name}
-                      </span>
-                      <span
-                        style={{ width: 32, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}
-                      >
-                        {b.count}
-                      </span>
-                      <span
-                        style={{
-                          width: 96,
-                          color: "var(--ink-3)",
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
-                        MTTR {fmtMin(b.mttr)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                  {k.deltaText}
+                </span>
+              )}
             </div>
-          )}
+            <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
 
-          {data.alerts && (
+      {tab === "incidents" && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0,3fr) minmax(0,2fr)",
+            gap: 12,
+            alignItems: "start",
+          }}
+        >
+          <div style={{ ...CARD, padding: "14px 18px" }}>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t("insights.perWeek")}</span>
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                {t("insights.partialWeek")}
+              </span>
+            </div>
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)",
-                gap: 14,
+                display: "flex",
+                alignItems: "flex-end",
+                gap: 6,
+                height: 130,
+                marginTop: 14,
               }}
             >
-              <div style={panel}>
-                <span style={h}>{t("insights.al.bySource")}</span>
-                {data.alerts.bySource.length === 0 && empty(t("insights.none"))}
-                {(() => {
-                  const max = Math.max(1, ...data.alerts.bySource.map((b) => b.count));
-                  return data.alerts.bySource.map((b, i) => (
-                    <div key={b.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span
-                        style={{
-                          width: 96,
-                          fontSize: 12.5,
-                          fontWeight: 500,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {b.name}
-                      </span>
-                      {bar((b.count / max) * 100, i === 0 ? "var(--brand)" : "var(--brand-b)")}
-                      <span
-                        style={{
-                          width: 34,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          fontVariantNumeric: "tabular-nums",
-                          textAlign: "right",
-                        }}
-                      >
-                        {b.count}
-                      </span>
-                    </div>
-                  ));
-                })()}
-              </div>
-              <div style={panel}>
-                <span style={h}>
-                  {t("insights.al.noisy")} <span style={sub}>· {t("insights.al.noisySub")}</span>
-                </span>
-                {data.alerts.noisy.length === 0 && empty(t("insights.none"))}
-                {data.alerts.noisy.map((n, i) => (
+              {weeks.map((w) => (
+                <div
+                  key={w.label.toISOString()}
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    gap: 4,
+                    height: "100%",
+                  }}
+                >
+                  <span style={{ fontSize: 10, color: "var(--ink-3)" }}>{w.count}</span>
                   <div
-                    key={n.key}
+                    title={t.fmt.dateTime(w.label, t.timeZone)}
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      border: "1px solid var(--line)",
-                      borderRadius: 10,
-                      padding: "9px 12px",
-                      fontSize: 12.5,
+                      width: "100%",
+                      borderRadius: "5px 5px 2px 2px",
+                      height: `${Math.max(2, (w.count / maxWeek) * 100)}%`,
+                      background: w.partial
+                        ? "repeating-linear-gradient(135deg,var(--brand-b) 0 4px,var(--sunk) 4px 8px)"
+                        : "var(--brand)",
                     }}
-                  >
-                    <span
-                      style={{
-                        fontWeight: 700,
-                        fontVariantNumeric: "tabular-nums",
-                        color: i === 0 ? "var(--dang)" : "var(--wait)",
-                        flex: "none",
-                      }}
-                    >
-                      {n.count}×
-                    </span>
-                    <span
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {n.title}
-                    </span>
-                    <Link
-                      href={
-                        n.routeId
-                          ? `/app/settings/alert-routes?edit=${n.routeId}`
-                          : `/app/alerts/${n.alertId}`
-                      }
-                      className="oi-hover"
-                      style={{
-                        height: 28,
-                        padding: "0 11px",
-                        border: "1px solid var(--line)",
-                        borderRadius: 8,
-                        background: "var(--panel)",
-                        display: "flex",
-                        alignItems: "center",
-                        fontSize: 11.5,
-                        fontWeight: 600,
-                        color: "var(--brand)",
-                        textDecoration: "none",
-                        flex: "none",
-                      }}
-                    >
-                      {n.routeId ? t("insights.al.adjustRoute") : t("insights.al.openAlert")}
-                    </Link>
-                  </div>
-                ))}
-                <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
-                  {data.alerts.autoResolved.value === null
-                    ? t("insights.al.autoNoteNone")
-                    : t("insights.al.autoNote", { pct: data.alerts.autoResolved.value })}
+                  />
                 </div>
-              </div>
+              ))}
             </div>
-          )}
-
-          {data.pager && (
-            <div style={{ ...panel, gap: 12 }}>
-              <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                <span style={h}>{t("insights.pg.heatTitle")}</span>
-                <span style={{ flex: 1 }} />
-                <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                  {t("insights.pg.heatNote")}
-                </span>
-              </div>
-              <div style={{ overflowX: "auto" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 760 }}>
-                  {data.pager.heat.length === 0 && empty(t("insights.pg.none"))}
-                  {data.pager.heat.map((row) => (
-                    <div
-                      key={row.name}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "130px repeat(24, 1fr)",
-                        gap: 3,
-                        alignItems: "center",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 12.5,
-                          fontWeight: 500,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {row.name}
-                      </span>
-                      {row.hours.map((v, hr) => (
-                        <span
-                          key={hr}
-                          title={`${row.name} · ${String(hr).padStart(2, "0")}:00 — ${v}`}
-                          style={{ height: 22, borderRadius: 5, background: heatColor(v) }}
-                        />
-                      ))}
-                    </div>
-                  ))}
-                  <div
+          </div>
+          <div
+            style={{
+              ...CARD,
+              padding: "14px 18px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 9,
+            }}
+          >
+            <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t("insights.byService")}</span>
+            {data.incidents.byService.length === 0 ? (
+              <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+                {t("insights.noneInPeriod")}
+              </span>
+            ) : (
+              data.incidents.byService.map((s) => (
+                <div
+                  key={s.name}
+                  style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5 }}
+                >
+                  <span
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: "130px repeat(24, 1fr)",
-                      gap: 3,
+                      width: 120,
+                      fontFamily: "var(--mono)",
+                      fontSize: 11.5,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    <span />
-                    {["00:00", "06:00", "12:00", "18:00"].map((l) => (
-                      <span
-                        key={l}
-                        style={{ gridColumn: "span 6", fontSize: 10.5, color: "var(--ink-3)" }}
-                      >
-                        {l}
-                      </span>
-                    ))}
+                    {s.name}
+                  </span>
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 8,
+                      borderRadius: 999,
+                      background: "var(--sunk)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        background: "var(--brand)",
+                        width: `${(s.count / maxService) * 100}%`,
+                      }}
+                    />
                   </div>
+                  <span style={{ width: 24, textAlign: "right", fontWeight: 600 }}>{s.count}</span>
+                  <span style={{ width: 78, textAlign: "right", color: "var(--ink-3)" }}>
+                    {s.mttr === null ? "—" : `${t("insights.mttrShort")} ${mins(s.mttr)}`}
+                  </span>
                 </div>
-              </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === "pager" && (
+        <div
+          style={{
+            ...CARD,
+            padding: "14px 18px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t("insights.pagesByHour")}</span>
+            <span style={{ flex: 1 }} />
+            <span style={{ fontSize: 11, color: "var(--ink-3)" }}>{t("insights.twoAmNote")}</span>
+          </div>
+          {data.pager.heat.length === 0 ? (
+            <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+              {t("insights.noPagesInPeriod")}
+            </span>
+          ) : (
+            <>
+              {data.pager.heat.slice(0, 8).map((h) => (
+                <div
+                  key={h.name}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "120px repeat(24, 1fr)",
+                    gap: 3,
+                    alignItems: "center",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: 500,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {h.name}
+                  </span>
+                  {h.hours.map((v, i) => (
+                    <span
+                      key={i}
+                      title={`${String(i).padStart(2, "0")}:00 — ${v}`}
+                      style={{ height: 20, borderRadius: 4, background: heatColour(v) }}
+                    />
+                  ))}
+                </div>
+              ))}
               <div
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: 11.5,
+                  display: "grid",
+                  gridTemplateColumns: "120px repeat(4, 1fr)",
+                  gap: 3,
+                  fontSize: 10.5,
                   color: "var(--ink-3)",
                 }}
               >
-                <span>0</span>
-                {[0, 1, 2, 3, 4].map((v) => (
-                  <span
-                    key={v}
-                    style={{ width: 14, height: 14, borderRadius: 4, background: heatColor(v) }}
-                  />
-                ))}
-                <span>4+</span>
+                <span />
+                <span>00:00</span>
+                <span>06:00</span>
+                <span>12:00</span>
+                <span>18:00</span>
               </div>
-              {"coverage" in data && data.coverage && (
-                <div
-                  data-testid="insights-coverage"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    fontSize: 12.5,
-                    color: "var(--ink-2)",
-                    borderTop: "1px solid var(--line-2)",
-                    paddingTop: 10,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: data.coverage.gaps ? "var(--wait)" : "var(--ok)",
-                      flex: "none",
-                    }}
-                  />
-                  <span>
-                    {t("insights.pg.coverage", {
-                      ratio: data.coverage.ratio,
-                      gaps: data.coverage.gaps,
-                    })}
-                  </span>
-                  <Link
-                    href="/app/on-call"
-                    className="oi-link"
-                    style={{ marginLeft: "auto", fontWeight: 600 }}
-                  >
-                    {t("insights.pg.coverageLink")}
-                  </Link>
-                </div>
-              )}
-              {data.pager.worstNight && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    background: "var(--dang-t)",
-                    border: "1px solid var(--dang)",
-                    borderRadius: 11,
-                    padding: "10px 14px",
-                    fontSize: 12.5,
-                    color: "var(--ink-2)",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: "var(--dang)",
-                      flex: "none",
-                    }}
-                  />
-                  <span>
-                    <strong>
-                      {t("insights.pg.nightBanner", {
-                        name: data.pager.worstNight.name,
-                        count: data.pager.worstNight.night,
-                      })}
-                    </strong>{" "}
-                    {t("insights.pg.nightBannerNote")}
-                  </span>
-                </div>
-              )}
-            </div>
+            </>
           )}
-
-          {"pay" in data && data.pay && (
-            <PayTab
-              rules={data.pay.rules}
-              period={data.pay.period}
-              report={data.pay.report}
-              history={data.pay.history}
-              manages={isManagerRole(member)}
-              memberId={member.id}
-              saved={q.saved}
-              error={q.error}
-            />
-          )}
-          {data.followups && (
+          {data.pager.worstNight && (
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)",
-                gap: 14,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                background: "var(--dang-t)",
+                borderRadius: 10,
+                padding: "10px 13px",
+                fontSize: 12.5,
               }}
             >
-              <div style={panel}>
-                <span style={h}>
-                  {t("insights.fu.byTeam")} <span style={sub}>· {t("insights.fu.vsPolicy")}</span>
-                </span>
-                {data.followups.byTeam.length === 0 && empty(t("insights.fu.noTeam"))}
-                {data.followups.byTeam.map((b) => (
-                  <div key={b.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span
-                      style={{
-                        width: 86,
-                        fontSize: 12.5,
-                        fontWeight: 500,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {b.name}
-                    </span>
-                    {bar(b.rate, b.rate >= 75 ? "var(--ok)" : "var(--wait)")}
-                    <span
-                      style={{
-                        width: 44,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        fontVariantNumeric: "tabular-nums",
-                        textAlign: "right",
-                      }}
-                    >
-                      {b.rate} %
-                    </span>
-                  </div>
-                ))}
-                <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                  {t("insights.fu.closureLine", {
-                    days: fmtDays(data.followups.closureDays.value),
-                    target:
-                      data.followups.p1TargetDays === null
-                        ? "—"
-                        : t("insights.days", { count: data.followups.p1TargetDays }),
+              <span
+                style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--dang)" }}
+              />
+              <span>
+                <strong>
+                  {t("insights.worstNight", {
+                    name: data.pager.worstNight.name,
+                    count: data.pager.worstNight.night,
                   })}
-                </div>
-              </div>
-              <div style={panel}>
-                <span style={h}>{t("insights.fu.overdueNow")}</span>
-                {data.followups.overdueList.length === 0 && empty(t("insights.fu.overdueNone"))}
-                {data.followups.overdueList.map((o) => (
-                  <Link
-                    key={o.id}
-                    href={`/app/incidents/${o.incidentNumber}?tab=follow-ups`}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      border: "1px solid var(--dang)",
-                      background: "var(--dang-t)",
-                      borderRadius: 10,
-                      padding: "10px 13px",
-                      fontSize: 12.5,
-                      textDecoration: "none",
-                      color: "inherit",
-                    }}
-                  >
-                    <span
-                      style={{
-                        padding: "2px 8px",
-                        borderRadius: 999,
-                        background: "var(--panel)",
-                        color: "var(--dang)",
-                        fontSize: 11,
-                        fontWeight: 700,
-                      }}
-                    >
-                      {o.priority ?? "—"}
-                    </span>
-                    <span
-                      style={{
-                        flex: 1,
-                        fontWeight: 500,
-                        minWidth: 0,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {o.title}
-                    </span>
-                    <span style={{ color: "var(--dang)", fontWeight: 700, flex: "none" }}>
-                      {t("insights.fu.daysLate", { count: o.daysLate })}
-                    </span>
-                  </Link>
-                ))}
-                <Link
-                  href="/app/incidents?view=follow-ups"
-                  className="oi-link"
-                  style={{ fontSize: 12.5, fontWeight: 600 }}
-                >
-                  {t("insights.fu.openView")}
-                </Link>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "var(--ink-3)",
-                    borderTop: "1px solid var(--line-2)",
-                    paddingTop: 9,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {t("insights.footnote")}
-                </div>
-              </div>
-            </div>
-          )}
-          {!data.followups && (
-            <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
-              {t("insights.footnote")}
+                </strong>{" "}
+                {t("insights.worstNightTail")}
+              </span>
             </div>
           )}
         </div>
-      </div>
+      )}
+
+      {tab === "uptime" && (
+        <div style={{ ...CARD, padding: 0, overflow: "hidden" }}>
+          <div
+            style={{
+              padding: "12px 16px",
+              borderBottom: "1px solid var(--line)",
+              fontSize: 13.5,
+              fontWeight: 600,
+            }}
+          >
+            {t("insights.byMonitor")}
+          </div>
+          {data.monitors.length === 0 ? (
+            <div style={{ padding: 18, fontSize: 13, color: "var(--ink-2)" }}>
+              {t("insights.noMonitors")}
+            </div>
+          ) : (
+            data.monitors.map((m) => (
+              <div
+                key={m.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0,1fr) 200px 90px",
+                  gap: 12,
+                  alignItems: "center",
+                  padding: "10px 16px",
+                  borderBottom: "1px solid var(--line-2)",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {m.name}
+                </span>
+                <span style={{ display: "flex", gap: 1.5, alignItems: "flex-end" }}>
+                  {m.days.map((d) => (
+                    <span
+                      key={d.day}
+                      style={{
+                        flex: 1,
+                        height: 14,
+                        borderRadius: 1.5,
+                        background:
+                          d.state === "offline"
+                            ? "var(--dang)"
+                            : d.state === "degraded"
+                              ? "var(--wait)"
+                              : d.state === "online"
+                                ? "rgba(14,122,88,.55)"
+                                : "var(--line)",
+                      }}
+                    />
+                  ))}
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--mono)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    textAlign: "right",
+                    color: m.uptime90 === null ? "var(--ink-3)" : "var(--ok)",
+                  }}
+                >
+                  {m.uptime90 === null ? "—" : `${m.uptime90.toFixed(2)} %`}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {tab === "followups" && (
+        <div style={{ ...CARD, padding: "14px 18px", fontSize: 13, color: "var(--ink-2)" }}>
+          {t("insights.followUpsNote")}
+        </div>
+      )}
+
+      <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{t("insights.excludesTests")}</div>
     </div>
   );
 }
