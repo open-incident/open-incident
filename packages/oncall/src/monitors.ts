@@ -12,6 +12,8 @@
  * that silently never checks is worse than one that does not exist.
  */
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { createHash, randomBytes } from "node:crypto";
 import { connect as tlsConnect } from "node:tls";
 import { Socket } from "node:net";
@@ -47,7 +49,17 @@ function ingestTarget(origin: string, sourceId: string): { url: string; host: st
 const SOURCE_NAME = "Monitors";
 
 /** The kinds a worker can actually perform today. */
-export const RUNNABLE_TYPES = ["http", "api", "port", "dns", "ssl", "incoming", "manual"] as const;
+export const RUNNABLE_TYPES = [
+  "http",
+  "api",
+  "port",
+  "dns",
+  "ssl",
+  "domain",
+  "ping",
+  "incoming",
+  "manual",
+] as const;
 export type RunnableType = (typeof RUNNABLE_TYPES)[number];
 
 export type CheckSample = {
@@ -58,6 +70,8 @@ export type CheckSample = {
   headers?: Record<string, string>;
   daysToExpiry?: number;
   recordValue?: string;
+  /** Ping: share of echo requests that came back unanswered, 0–100. */
+  packetLossPct?: number;
   detail: string;
 };
 
@@ -182,6 +196,159 @@ async function checkSsl(target: string, timeoutMs: number): Promise<CheckSample>
   });
 }
 
+const run = promisify(execFile);
+
+/**
+ * Ping, through iputils rather than a raw socket.
+ *
+ * Node cannot open an ICMP socket: `dgram` does not speak IPPROTO_ICMP, and a
+ * raw socket would need CAP_NET_RAW. The system `ping` needs neither — Linux
+ * has an unprivileged ICMP datagram socket, and Docker has opened it to every
+ * container since 2020 through net.ipv4.ping_group_range. What Node cannot do,
+ * the binary next to it does, so this is a two-line dependency rather than a
+ * native module in the image.
+ *
+ * busybox's ping is NOT enough: it still wants the capability. The worker image
+ * installs iputils for this.
+ */
+async function checkPing(
+  target: string,
+  config: Record<string, unknown>,
+  timeoutMs: number,
+): Promise<CheckSample> {
+  const host = target.replace(/^\w+:\/\//, "").split("/")[0]!;
+  if (!/^[a-zA-Z0-9.:_-]+$/.test(host)) {
+    return { reachable: false, detail: "target is not a host name or address" };
+  }
+  const count = Math.min(10, Math.max(1, Number(config.count ?? 3)));
+  const waitSeconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+  // -W counts seconds on iputils (the image) and milliseconds on macOS (a
+  // developer's laptop). The same number in both would mean a one-millisecond
+  // patience on the machine where people try things out.
+  const wait = process.platform === "darwin" ? String(waitSeconds * 1000) : String(waitSeconds);
+  const started = Date.now();
+  try {
+    // -n no DNS on the output, -q summary only, -c count, -W per-reply wait.
+    const { stdout } = await run("ping", ["-n", "-q", "-c", String(count), "-W", wait, host], {
+      timeout: timeoutMs + waitSeconds * 1000,
+      maxBuffer: 64 * 1024,
+    });
+    const loss = /(\d+(?:\.\d+)?)% packet loss/.exec(stdout);
+    const rtt = /=\s*([\d.]+)\/([\d.]+)\/([\d.]+)/.exec(stdout);
+    const lossPct = loss ? Number(loss[1]) : 100;
+    const avg = rtt ? Number(rtt[2]) : undefined;
+    return {
+      reachable: lossPct < 100,
+      packetLossPct: lossPct,
+      latencyMs: avg !== undefined ? Math.round(avg) : Date.now() - started,
+      detail:
+        lossPct === 0 ? `${count}/${count} replies · ${avg ?? "?"} ms` : `${lossPct}% packet loss`,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // 100% loss makes ping exit non-zero with a normal summary: that is a
+    // result, not a failure of ours.
+    if (/packet loss/.test(message)) {
+      return { reachable: false, packetLossPct: 100, detail: "100% packet loss" };
+    }
+    return { reachable: false, detail: message.slice(0, 200) };
+  }
+}
+
+/** The IANA bootstrap: which RDAP server answers for a TLD. Cached for a day. */
+let rdapBootstrap: { at: number; byTld: Map<string, string> } | null = null;
+
+async function rdapServerFor(tld: string): Promise<string | null> {
+  const day = 24 * 3600 * 1000;
+  if (!rdapBootstrap || Date.now() - rdapBootstrap.at > day) {
+    const res = await fetch("https://data.iana.org/rdap/dns.json", {
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) throw new Error(`IANA bootstrap answered ${res.status}`);
+    const body = (await res.json()) as { services: [string[], string[]][] };
+    const byTld = new Map<string, string>();
+    for (const [tlds, urls] of body.services) {
+      const url = urls.find((u) => u.startsWith("https://")) ?? urls[0];
+      if (!url) continue;
+      for (const t of tlds) byTld.set(t.toLowerCase(), url.replace(/\/$/, ""));
+    }
+    rdapBootstrap = { at: Date.now(), byTld };
+  }
+  return rdapBootstrap.byTld.get(tld) ?? null;
+}
+
+/**
+ * When a domain name expires — read from RDAP, the registries' JSON.
+ *
+ * WHOIS on port 43 is free text in a different shape per registrar, which is
+ * exactly what made this check painful. RDAP is the same question answered in
+ * JSON, and the IANA publishes the routing table for about 1 200 TLDs.
+ *
+ * A registry that publishes neither is reported as such. A monitor that cannot
+ * read the date says so; it does not stay green.
+ */
+async function checkDomain(target: string, timeoutMs: number): Promise<CheckSample> {
+  const name = target
+    .replace(/^\w+:\/\//, "")
+    .split("/")[0]!
+    .replace(/\.$/, "")
+    .toLowerCase();
+  const tld = name.split(".").pop() ?? "";
+  const started = Date.now();
+  try {
+    const base = await rdapServerFor(tld);
+    if (!base) {
+      return {
+        reachable: false,
+        detail: `no RDAP server published for .${tld} — this registry cannot be read`,
+      };
+    }
+    const res = await fetch(`${base}/domain/${encodeURIComponent(name)}`, {
+      headers: { accept: "application/rdap+json" },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (res.status === 404) {
+      return { reachable: false, latencyMs: Date.now() - started, detail: "domain not registered" };
+    }
+    if (!res.ok) {
+      return {
+        reachable: false,
+        latencyMs: Date.now() - started,
+        detail: `registry answered ${res.status}`,
+      };
+    }
+    const body = (await res.json()) as {
+      events?: { eventAction?: string; eventDate?: string }[];
+      status?: string[];
+    };
+    const expiry = body.events?.find((e) => e.eventAction === "expiration")?.eventDate;
+    if (!expiry) {
+      return {
+        reachable: true,
+        latencyMs: Date.now() - started,
+        detail: "registry publishes no expiration date",
+      };
+    }
+    const days = Math.floor((Date.parse(expiry) - Date.now()) / 86_400_000);
+    const holds = (body.status ?? []).filter((s) => /hold|pending ?delete/i.test(s));
+    return {
+      reachable: true,
+      latencyMs: Date.now() - started,
+      daysToExpiry: days,
+      recordValue: (body.status ?? []).join(", "),
+      detail: holds.length
+        ? `expires in ${days} days · ${holds.join(", ")}`
+        : `expires in ${days} days`,
+    };
+  } catch (err) {
+    return {
+      reachable: false,
+      latencyMs: Date.now() - started,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export async function performCheck(monitor: {
   type: string;
   target: string;
@@ -198,6 +365,10 @@ export async function performCheck(monitor: {
       return checkDns(monitor.target, monitor.config);
     case "ssl":
       return checkSsl(monitor.target, timeoutMs);
+    case "ping":
+      return checkPing(monitor.target, monitor.config, timeoutMs);
+    case "domain":
+      return checkDomain(monitor.target, timeoutMs);
     default:
       return { reachable: false, detail: `type ${monitor.type} is not checked by this worker` };
   }
@@ -205,7 +376,19 @@ export async function performCheck(monitor: {
 
 /* ---------- Turning a sample into a state ---------- */
 
-function read(criterion: MonitorCriterion, sample: CheckSample): string | number | boolean | null {
+/**
+ * What a criterion can read.
+ *
+ * Wider than the stored union while `packet_loss_pct` waits for its migration:
+ * the engine can already answer it, and a stored criterion is validated against
+ * the schema before it ever reaches here.
+ */
+type CriterionInput = MonitorCriterion["on"] | "packet_loss_pct";
+
+function read(
+  criterion: { on: CriterionInput; field?: string },
+  sample: CheckSample,
+): string | number | boolean | null {
   switch (criterion.on) {
     case "status_code":
       return sample.statusCode ?? null;
@@ -222,13 +405,15 @@ function read(criterion: MonitorCriterion, sample: CheckSample): string | number
       return sample.daysToExpiry ?? null;
     case "record_value":
       return sample.recordValue ?? null;
+    case "packet_loss_pct":
+      return sample.packetLossPct ?? null;
     default:
       return null;
   }
 }
 
 function holds(criterion: MonitorCriterion, sample: CheckSample): boolean {
-  const actual = read(criterion, sample);
+  const actual = read(criterion as { on: CriterionInput; field?: string }, sample);
   if (actual === null) return false;
   const expected = criterion.value;
   switch (criterion.op) {

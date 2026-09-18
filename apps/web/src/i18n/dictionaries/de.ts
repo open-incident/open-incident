@@ -293,6 +293,25 @@ export const de: Dictionary = {
   "monitors.incident": "Incident",
   "monitors.sameThreeChoices": "Dieselben drei Entscheidungen wie bei einer Alarmquelle.",
   "monitors.service": "SERVICE",
+  "monitors.typeDomain": "Domain",
+  "monitors.typeDomainHint": "Ablauf der Registrierung",
+  "monitors.typePing": "Ping",
+  "monitors.typePingHint": "ICMP-Erreichbarkeit",
+  "monitors.typeSynthetic": "Synthetisch (Browser)",
+  "monitors.typeSyntheticHint": "Skriptierter Nutzerpfad",
+  "monitors.criteriaSentence.domain":
+    "Registriert → Online · unter 30 Tagen bis Ablauf → Degradiert · unter 7 Tagen oder nicht registriert → Offline",
+  "monitors.criteriaSentence.ping":
+    "Antwortet → Online · langsamer als 500 ms → Degradiert · 100 % Paketverlust → Offline",
+  "monitors.criteriaSentence.synthetic":
+    "Jeder Schritt besteht → Online · ein Schritt scheitert → Offline, mit Schritt und Screenshot",
+  "monitors.why.ping-missing":
+    "Auf dieser Instanz nicht verfügbar — das Image enthält kein ping-Binary. Fügen Sie iputils zum Worker-Image hinzu.",
+  "monitors.why.ping-permission":
+    "Auf dieser Instanz nicht verfügbar — ICMP wird abgelehnt. Setzen Sie net.ipv4.ping_group_range auf dem Worker-Container.",
+  "monitors.why.synthetic-service":
+    "Auf dieser Instanz nicht verfügbar — der Browser-Runner läuft nicht. Aktivieren Sie das compose-Profil synthetic.",
+  "monitors.on.packet_loss_pct": "Paketverlust (%)",
   "insights.tab.uptime": "Verfügbarkeit",
   "insights.kpiIncidents": "INCIDENTS",
   "insights.kpiTta": "ZEIT BIS QUITTUNG",

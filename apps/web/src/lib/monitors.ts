@@ -181,6 +181,21 @@ export function defaultCriteria(type: MonitorType): MonitorCriterion[] {
         { on: "days_to_expiry", op: "lt", value: "30", then: "degraded" },
         { on: "reachable", op: "eq", value: "true", then: "online" },
       ];
+    case "domain":
+      // A domain expiring is not an outage yet, so the thresholds are wider
+      // than a certificate's: a month to notice, a week to panic.
+      return [
+        { on: "reachable", op: "eq", value: "false", then: "offline" },
+        { on: "days_to_expiry", op: "lt", value: "7", then: "offline" },
+        { on: "days_to_expiry", op: "lt", value: "30", then: "degraded" },
+        { on: "reachable", op: "eq", value: "true", then: "online" },
+      ];
+    case "ping":
+      return [
+        { on: "reachable", op: "eq", value: "false", then: "offline" },
+        { on: "response_time_ms", op: "gt", value: "500", then: "degraded" },
+        { on: "reachable", op: "eq", value: "true", then: "online" },
+      ];
     default:
       return [
         { on: "reachable", op: "eq", value: "false", then: "offline" },
@@ -194,3 +209,54 @@ export const DEFAULT_ACTION: SignalAction = {
   incident: { from: "p2" },
   autoResolve: true,
 };
+
+/**
+ * What this instance can actually run.
+ *
+ * A type it cannot perform is still offered — greyed, with the reason and the
+ * way to turn it on. Hiding it taught the reader the feature did not exist;
+ * saying "not on this instance, here is why" teaches them it does.
+ *
+ * The answers are cheap and cached for the process: an image either carries
+ * `ping` or it does not, and a service either announced itself or did not.
+ */
+export type MonitorCapability = { ok: boolean; why?: string };
+
+let pingProbe: MonitorCapability | null = null;
+
+async function canPing(): Promise<MonitorCapability> {
+  if (pingProbe) return pingProbe;
+  try {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const wait = process.platform === "darwin" ? "1000" : "1";
+    await promisify(execFile)("ping", ["-n", "-q", "-c", "1", "-W", wait, "127.0.0.1"], {
+      timeout: 4000,
+    });
+    pingProbe = { ok: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    pingProbe = {
+      ok: false,
+      why: /ENOENT/.test(message) ? "ping-missing" : "ping-permission",
+    };
+  }
+  return pingProbe;
+}
+
+export async function monitorCapabilities(): Promise<Record<string, MonitorCapability>> {
+  const ping = await canPing();
+  return {
+    http: { ok: true },
+    api: { ok: true },
+    port: { ok: true },
+    dns: { ok: true },
+    ssl: { ok: true },
+    domain: { ok: true },
+    incoming: { ok: true },
+    manual: { ok: true },
+    ping,
+    // The browser runner is a separate service; until it exists, say so.
+    synthetic: { ok: false, why: "synthetic-service" },
+  };
+}

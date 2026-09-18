@@ -293,6 +293,25 @@ export const en = {
   "monitors.incident": "Incident",
   "monitors.sameThreeChoices": "The same three choices an alert source carries.",
   "monitors.service": "SERVICE",
+  "monitors.typeDomain": "Domain",
+  "monitors.typeDomainHint": "Registration expiry",
+  "monitors.typePing": "Ping",
+  "monitors.typePingHint": "ICMP reachability",
+  "monitors.typeSynthetic": "Synthetic (browser)",
+  "monitors.typeSyntheticHint": "Scripted user flow",
+  "monitors.criteriaSentence.domain":
+    "Registered → Online · under 30 days to expiry → Degraded · under 7 days or not registered → Offline",
+  "monitors.criteriaSentence.ping":
+    "Replies → Online · slower than 500 ms → Degraded · 100 % packet loss → Offline",
+  "monitors.criteriaSentence.synthetic":
+    "Every step passes → Online · a step fails → Offline, with the step and a screenshot",
+  "monitors.why.ping-missing":
+    "Unavailable on this instance — the image carries no ping binary. Add iputils to the worker image.",
+  "monitors.why.ping-permission":
+    "Unavailable on this instance — ICMP is refused. Set net.ipv4.ping_group_range on the worker container.",
+  "monitors.why.synthetic-service":
+    "Unavailable on this instance — the browser runner is not started. Enable the synthetic compose profile.",
+  "monitors.on.packet_loss_pct": "packet loss (%)",
   "insights.tab.uptime": "Uptime",
   "insights.kpiIncidents": "INCIDENTS",
   "insights.kpiTta": "TIME TO ACK",

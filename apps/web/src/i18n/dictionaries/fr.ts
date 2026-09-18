@@ -289,6 +289,25 @@ export const fr: Dictionary = {
   "monitors.incident": "Incident",
   "monitors.sameThreeChoices": "Les trois mêmes choix qu'une source d'alertes.",
   "monitors.service": "SERVICE",
+  "monitors.typeDomain": "Domaine",
+  "monitors.typeDomainHint": "Expiration de l'enregistrement",
+  "monitors.typePing": "Ping",
+  "monitors.typePingHint": "Joignabilité ICMP",
+  "monitors.typeSynthetic": "Synthétique (navigateur)",
+  "monitors.typeSyntheticHint": "Parcours utilisateur scripté",
+  "monitors.criteriaSentence.domain":
+    "Enregistré → En ligne · moins de 30 jours avant expiration → Dégradé · moins de 7 jours ou non enregistré → Hors ligne",
+  "monitors.criteriaSentence.ping":
+    "Répond → En ligne · plus lent que 500 ms → Dégradé · 100 % de perte → Hors ligne",
+  "monitors.criteriaSentence.synthetic":
+    "Toutes les étapes passent → En ligne · une étape échoue → Hors ligne, avec l'étape et une capture",
+  "monitors.why.ping-missing":
+    "Indisponible sur cette instance — l'image ne contient pas de binaire ping. Ajoutez iputils à l'image du worker.",
+  "monitors.why.ping-permission":
+    "Indisponible sur cette instance — l'ICMP est refusé. Posez net.ipv4.ping_group_range sur le conteneur du worker.",
+  "monitors.why.synthetic-service":
+    "Indisponible sur cette instance — l'exécuteur navigateur n'est pas démarré. Activez le profil compose synthetic.",
+  "monitors.on.packet_loss_pct": "perte de paquets (%)",
   "insights.tab.uptime": "Disponibilité",
   "insights.kpiIncidents": "INCIDENTS",
   "insights.kpiTta": "DÉLAI D'ACQUITTEMENT",

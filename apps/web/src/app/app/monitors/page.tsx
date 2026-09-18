@@ -2,7 +2,7 @@ import Link from "next/link";
 import { withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { canRespond, requireMember } from "@/lib/session";
-import { listMonitors } from "@/lib/monitors";
+import { listMonitors, monitorCapabilities } from "@/lib/monitors";
 import { listServices } from "@/lib/services";
 import { NewMonitor } from "./new-monitor";
 
@@ -42,6 +42,7 @@ export default async function MonitorsPage({
     monitors: await listMonitors(tx, tenant.id),
     services: await listServices(tx, tenant.id),
   }));
+  const capabilities = await monitorCapabilities();
 
   const counts = {
     online: data.monitors.filter((m) => m.state === "online").length,
@@ -98,7 +99,11 @@ export default async function MonitorsPage({
         </span>
         <span style={{ flex: 1 }} />
         {mayEdit && (
-          <NewMonitor services={data.services.map((s) => s.key)} initialOpen={!!openNew} />
+          <NewMonitor
+            services={data.services.map((s) => s.key)}
+            capabilities={capabilities}
+            initialOpen={!!openNew}
+          />
         )}
       </div>
 

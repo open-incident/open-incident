@@ -20,7 +20,17 @@ import { requireResponder } from "@/lib/session";
 import { DEFAULT_ACTION, defaultCriteria } from "@/lib/monitors";
 import { observeService } from "@/lib/services";
 
-const TYPES = ["http", "api", "port", "dns", "ssl", "incoming", "manual"] as const;
+const TYPES = [
+  "http",
+  "api",
+  "port",
+  "dns",
+  "ssl",
+  "domain",
+  "ping",
+  "incoming",
+  "manual",
+] as const;
 
 const createSchema = z.object({
   type: z.enum(TYPES),

@@ -55,6 +55,27 @@ const KINDS: Kind[] = [
     placeholder: "example.com",
   },
   {
+    id: "domain",
+    key: "DOM",
+    name: "monitors.typeDomain",
+    hint: "monitors.typeDomainHint",
+    placeholder: "example.com",
+  },
+  {
+    id: "ping",
+    key: "PING",
+    name: "monitors.typePing",
+    hint: "monitors.typePingHint",
+    placeholder: "edge.example.com",
+  },
+  {
+    id: "synthetic",
+    key: "SYN",
+    name: "monitors.typeSynthetic",
+    hint: "monitors.typeSyntheticHint",
+    placeholder: "",
+  },
+  {
     id: "incoming",
     key: "IN",
     name: "monitors.typeIncoming",
@@ -91,9 +112,12 @@ const LABEL: React.CSSProperties = {
 
 export function NewMonitor({
   services,
+  capabilities,
   initialOpen = false,
 }: {
   services: string[];
+  /** What this instance can run — a type it cannot is shown, greyed, with why. */
+  capabilities: Record<string, { ok: boolean; why?: string }>;
   initialOpen?: boolean;
 }) {
   const t = useT();
@@ -203,45 +227,51 @@ export function NewMonitor({
                   gap: 8,
                 }}
               >
-                {KINDS.map((k) => (
-                  <button
-                    key={k.id}
-                    type="button"
-                    onClick={() => setKind(k)}
-                    className="oi-hover-edge-fill"
-                    data-testid={`monitor-type-${k.id}`}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
-                      padding: "12px 11px",
-                      border: "1px solid var(--line)",
-                      borderRadius: 12,
-                      cursor: "pointer",
-                      minHeight: 92,
-                      background: "var(--panel)",
-                      color: "inherit",
-                      textAlign: "left",
-                    }}
-                  >
-                    <span
+                {KINDS.map((k) => {
+                  const cap = capabilities[k.id] ?? { ok: true };
+                  return (
+                    <button
+                      key={k.id}
+                      type="button"
+                      disabled={!cap.ok}
+                      onClick={() => cap.ok && setKind(k)}
+                      className={cap.ok ? "oi-hover-edge-fill" : undefined}
+                      data-testid={`monitor-type-${k.id}`}
+                      title={cap.ok ? undefined : t(`monitors.why.${cap.why}` as MessageKey)}
                       style={{
-                        fontFamily: "var(--mono)",
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: "var(--brand)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                        padding: "12px 11px",
+                        border: "1px solid var(--line)",
+                        borderRadius: 12,
+                        cursor: cap.ok ? "pointer" : "not-allowed",
+                        minHeight: 92,
+                        background: cap.ok ? "var(--panel)" : "var(--sunk)",
+                        color: "inherit",
+                        opacity: cap.ok ? 1 : 0.75,
+                        textAlign: "left",
                       }}
                     >
-                      {k.key}
-                    </span>
-                    <span style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.25 }}>
-                      {t(k.name)}
-                    </span>
-                    <span style={{ fontSize: 10.5, color: "var(--ink-3)", lineHeight: 1.35 }}>
-                      {t(k.hint)}
-                    </span>
-                  </button>
-                ))}
+                      <span
+                        style={{
+                          fontFamily: "var(--mono)",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: cap.ok ? "var(--brand)" : "var(--ink-3)",
+                        }}
+                      >
+                        {k.key}
+                      </span>
+                      <span style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.25 }}>
+                        {t(k.name)}
+                      </span>
+                      <span style={{ fontSize: 10.5, color: "var(--ink-3)", lineHeight: 1.35 }}>
+                        {cap.ok ? t(k.hint) : t(`monitors.why.${cap.why}` as MessageKey)}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <form action={createMonitor}>

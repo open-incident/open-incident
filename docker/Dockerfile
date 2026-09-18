@@ -41,6 +41,10 @@ CMD ["node", "apps/status/server.js"]
 # ---------- worker: BullMQ over the sources ----------
 FROM build AS worker
 ENV NODE_ENV=production
+# iputils, for the ping monitor. Node cannot open an ICMP socket itself, and
+# busybox's ping still wants CAP_NET_RAW; iputils uses the unprivileged ICMP
+# datagram socket that Docker already allows through net.ipv4.ping_group_range.
+RUN apk add --no-cache iputils
 CMD ["pnpm", "--filter", "@openincident/worker", "start"]
 
 # ---------- migrate: migrations + RLS (+ demo seed) ----------
