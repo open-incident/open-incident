@@ -19,6 +19,7 @@ import {
   templateFor,
   type Section,
 } from "@/lib/post-mortem";
+import { inboxMentions } from "@/lib/inbox";
 import { refinePostMortemSection, reviewPostMortem } from "@/lib/ai-capabilities";
 
 const numberSchema = z.coerce.number().int().positive();
@@ -207,16 +208,25 @@ export async function addPostMortemComment(formData: FormData) {
   const number = numberSchema.parse(formData.get("number"));
   const sectionKey = String(formData.get("section") ?? "") || null;
   const body = z.string().trim().min(1).max(4000).parse(formData.get("body"));
-  await withDocument(current, number, (tx, pm) =>
-    tx.insert(postMortemComments).values({
+  await withDocument(current, number, async (tx, pm) => {
+    await tx.insert(postMortemComments).values({
       tenantId: current.tenant.id,
       postMortemId: pm.id,
       sectionKey,
       body,
       memberId: current.member.id,
       memberName: current.member.name,
-    }),
-  );
+    });
+    // Anyone named with an @ hears about it in their bell. A handle that
+    // matches nobody in the workspace matches nobody — no recipient is invented.
+    await inboxMentions(tx, current.tenant.id, {
+      text: body,
+      byMemberId: current.member.id,
+      byName: current.member.name,
+      incidentId: pm.incidentId,
+      incidentNumber: number,
+    });
+  });
   revalidatePath(`/app/incidents/${number}`);
 }
 

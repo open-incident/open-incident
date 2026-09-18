@@ -15,6 +15,7 @@ import { useT } from "@/i18n/client";
 import { Sidebar, type OnCallNow, type SidebarSection } from "./sidebar";
 import { NavIcon } from "./nav-icons";
 import { CommandPalette } from "./command-palette";
+import { NotificationBell, type BellRow } from "./notification-bell";
 
 export type AppFrameProps = {
   workspaceName: string;
@@ -26,6 +27,8 @@ export type AppFrameProps = {
   canPageSelf: boolean;
   /** Really pages the reader, through the real path. Returns what to say. */
   pageMeAction: () => Promise<{ ok: boolean; message: string }>;
+  bell: { rows: BellRow[]; unread: number };
+  markBellReadAction: (id?: string) => Promise<void>;
   children: React.ReactNode;
 };
 
@@ -38,6 +41,8 @@ export function AppFrame({
   canDeclare,
   canPageSelf,
   pageMeAction,
+  bell,
+  markBellReadAction,
   children,
 }: AppFrameProps) {
   const t = useT();
@@ -179,6 +184,11 @@ export function AppFrame({
               {t("shell.testMode")}
             </span>
           )}
+          <NotificationBell
+            rows={bell.rows}
+            unread={bell.unread}
+            markReadAction={markBellReadAction}
+          />
         </header>
         <main style={{ flex: 1, minHeight: 0, position: "relative" }}>
           <div style={{ position: "absolute", inset: 0, overflow: "auto" }}>{children}</div>

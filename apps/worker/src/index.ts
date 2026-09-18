@@ -6,6 +6,7 @@ import {
   incidents,
   listLiveTenants,
   mailDeliveries,
+  memberNotifications,
   members,
   roleAssignments,
   incidentRoles,
@@ -217,19 +218,29 @@ const processors: Record<QueueName, Processor> = {
     if (n) console.log(`[update-reminders] ${n} overdue update(s) flagged`);
   },
   housekeeping: async () => {
-    // 90-day retention of the mail log, per workspace.
+    // 90-day retention, per workspace: the mail log, and the bell. Neither is
+    // an archive — the audit log is what keeps a record.
+    const cutoff = new Date(Date.now() - 90 * DAY_MS);
     for (const tenant of await listLiveTenants()) {
-      await withTenant(tenant.id, (tx) =>
-        tx
+      await withTenant(tenant.id, async (tx) => {
+        await tx
           .delete(mailDeliveries)
           .where(
             and(
               eq(mailDeliveries.tenantId, tenant.id),
-              lt(mailDeliveries.createdAt, new Date(Date.now() - 90 * DAY_MS)),
+              lt(mailDeliveries.createdAt, cutoff),
               isNull(mailDeliveries.error),
             ),
-          ),
-      );
+          );
+        await tx
+          .delete(memberNotifications)
+          .where(
+            and(
+              eq(memberNotifications.tenantId, tenant.id),
+              lt(memberNotifications.createdAt, cutoff),
+            ),
+          );
+      });
     }
     console.log("[housekeeping] purges done");
   },

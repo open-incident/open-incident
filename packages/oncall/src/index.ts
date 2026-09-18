@@ -3,6 +3,7 @@ export * from "./rotation";
 export * from "./parsers";
 export * from "./routing";
 export * from "./notify";
+export * from "./inbox";
 export * from "./engine";
 export * from "./queues";
 export * from "./ical";

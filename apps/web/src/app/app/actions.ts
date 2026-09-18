@@ -12,11 +12,13 @@
  */
 
 import { headers } from "next/headers";
+import { revalidatePath } from "next/cache";
 import { withTenant } from "@openincident/db";
 import { availableChannels, notifyMember } from "@openincident/oncall";
 import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
 import { requestOrigin } from "@/lib/tenant";
+import { markInboxRead } from "@/lib/inbox";
 
 export async function pageMeFromShell(): Promise<{ ok: boolean; message: string }> {
   const current = await requireMember();
@@ -48,4 +50,18 @@ export async function pageMeFromShell(): Promise<{ ok: boolean; message: string 
     ),
   );
   return { ok: true, message: t("shell.pageMeSent") };
+}
+
+/**
+ * Marks one line of the bell as read, or every unread line when given nothing.
+ *
+ * Reading is not a privileged gesture: any member may clear their own bell,
+ * and the tenant context makes it impossible to clear anybody else's.
+ */
+export async function markBellRead(id?: string): Promise<void> {
+  const current = await requireMember();
+  await withTenant(current.tenant.id, (tx) =>
+    markInboxRead(tx, current.tenant.id, current.member.id, id),
+  );
+  revalidatePath("/app");
 }

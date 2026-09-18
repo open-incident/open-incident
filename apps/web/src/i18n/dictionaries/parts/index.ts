@@ -21,6 +21,7 @@ import { alertsPart } from "./alerts";
 import { oncallPart } from "./oncall";
 import { statusPagesPart } from "./status-pages";
 import { settingsPart } from "./settings";
+import { bellPart } from "./bell";
 
 export const partsEn = {
   ...incidentsPart.en,
@@ -28,6 +29,7 @@ export const partsEn = {
   ...oncallPart.en,
   ...statusPagesPart.en,
   ...settingsPart.en,
+  ...bellPart.en,
 } as const;
 
 export const partsFr = {
@@ -36,6 +38,7 @@ export const partsFr = {
   ...oncallPart.fr,
   ...statusPagesPart.fr,
   ...settingsPart.fr,
+  ...bellPart.fr,
 };
 
 export const partsDe = {
@@ -44,4 +47,5 @@ export const partsDe = {
   ...oncallPart.de,
   ...statusPagesPart.de,
   ...settingsPart.de,
+  ...bellPart.de,
 };

@@ -13,7 +13,8 @@ import { countViews } from "@/lib/incidents";
 import { alertCounts } from "@/lib/alerts";
 import { onCallNow } from "@/lib/oncall";
 import { telemetryInstalled } from "@/lib/telemetry-module";
-import { pageMeFromShell } from "./actions";
+import { inboxForShell } from "@/lib/inbox";
+import { markBellRead, pageMeFromShell } from "./actions";
 
 const ROLE_LABEL = {
   owner: "member.role.owner",
@@ -103,12 +104,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const frame = await withTenant(tenant.id, async (tx) => {
-    const [views, alerts, onCall] = await Promise.all([
+    const [views, alerts, onCall, inbox] = await Promise.all([
       countViews(tx, tenant.id, member.id),
       alertCounts(tx, tenant.id),
       onCallNow(tx, tenant.id),
+      inboxForShell(tx, tenant.id, member.id),
     ]);
-    return { views, alerts, onCall };
+    return { views, alerts, onCall, inbox };
   });
 
   const sections: SidebarSection[] = [
@@ -156,6 +158,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         canDeclare={canRespond(member)}
         canPageSelf={canRespond(member)}
         pageMeAction={pageMeFromShell}
+        bell={{
+          unread: frame.inbox.unread,
+          rows: frame.inbox.rows.map((r) => ({
+            id: r.id,
+            kind: r.kind,
+            title: r.title,
+            body: r.body,
+            url: r.url,
+            count: r.count,
+            read: Boolean(r.readAt),
+            at: t.fmt.relative(r.createdAt),
+          })),
+        }}
+        markBellReadAction={markBellRead}
       >
         {children}
       </AppFrame>

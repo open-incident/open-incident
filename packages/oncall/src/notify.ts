@@ -23,6 +23,7 @@ import {
 import { sendTenantEmail } from "@openincident/mail";
 import { dmSlackUser, dmTeamsUser, slackConfigured, teamsConfigured } from "@openincident/chat";
 import { NOTIFY_QUEUE } from "./queues";
+import { recordInbox } from "./inbox";
 
 export type NotifyChannel = "email" | "sms" | "voice" | "webpush" | "slack" | "teams";
 export type Urgency = "high" | "low";
@@ -208,7 +209,31 @@ export async function notifyMember(
     const queued = await enqueueNotification(job, delayMs);
     if (!queued && delayMs === 0) deliverDirectly(job);
   }
+  // A page is also something to find again in the app afterwards. Only a page:
+  // a shift reminder and a cover request reach the person by their own
+  // channels and do not belong in the bell, which is about what happened to
+  // the things they are on.
+  if (input.kind === "escalation" || input.kind === "test") {
+    await recordInbox(tx, tenantId, member.id, {
+      kind: "paged",
+      title: input.subject,
+      body: input.text.slice(0, 400),
+      url: input.url ? relativeUrl(input.url) : null,
+      alertId: input.alertId ?? null,
+      groupKey: `paged:${input.alertId ?? input.escalationId ?? input.subject}`,
+    });
+  }
   return out;
+}
+
+/** The bell links inside the app, so an absolute origin is dropped. */
+function relativeUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.pathname}${u.search}`;
+  } catch {
+    return url;
+  }
 }
 
 /**

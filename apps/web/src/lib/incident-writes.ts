@@ -28,6 +28,7 @@ import {
 } from "@openincident/db";
 import { dispatchWebhookEvent, incidentPayload, type WebhookEvent } from "@openincident/webhooks";
 import { refreshAnnouncements } from "@/lib/announcements";
+import type { IncidentWhat } from "@/lib/inbox";
 import {
   ensureIncidentChannels,
   getBridgeTemplate,
@@ -456,7 +457,7 @@ export async function addFollowUpCore(
   input: { title: string; priorityName?: string | null; assigneeMemberId?: string | null },
 ): Promise<{ id: string } | null> {
   const [inc] = await tx
-    .select({ id: incidents.id })
+    .select({ id: incidents.id, number: incidents.number })
     .from(incidents)
     .where(and(eq(incidents.tenantId, tenantId), eq(incidents.id, incidentId)));
   if (!inc) return null;
@@ -496,7 +497,35 @@ export async function addFollowUpCore(
     occurredAt: now,
   });
   await touch(tx, tenantId, actor, inc.id, now);
+  // The bell, for the person it was handed to — never for the person handing it.
+  const assignee = input.assigneeMemberId ?? actor.memberId;
+  if (assignee) {
+    const { inboxFollowUpAssigned } = await import("./inbox");
+    await inboxFollowUpAssigned(tx, tenantId, {
+      assigneeMemberId: assignee,
+      byMemberId: actor.memberId,
+      incidentId: inc.id,
+      incidentNumber: inc.number,
+      title: input.title,
+      followUpId: row!.id,
+    });
+  }
   return { id: row!.id };
+}
+
+/**
+ * Which change is worth one line in the bell, and what it says.
+ *
+ * Deliberately short: a declaration, a published update, a resolution, and
+ * otherwise the plain fact that the incident changed. A bell that reports
+ * every field edit is a bell nobody opens.
+ */
+function bellWhat(events: WebhookEvent[]): IncidentWhat | null {
+  if (events.includes("incident.created")) return "bell.what.declared";
+  if (events.includes("incident.resolved")) return "bell.what.resolved";
+  if (events.includes("incident.update_published")) return "bell.what.updatePublished";
+  if (events.includes("incident.updated")) return "bell.what.updated";
+  return null;
 }
 
 /**
@@ -509,12 +538,20 @@ export async function afterIncidentChange(
   incidentId: string,
   events: WebhookEvent[],
   extra: Record<string, unknown> = {},
-  options: { chat?: boolean } = {},
+  options: { chat?: boolean; actorMemberId?: string | null } = {},
 ): Promise<void> {
   try {
     await syncChat(tenantId, incidentId, events, extra, options);
   } catch (err) {
     console.error("[chat] sync failed:", err);
+  }
+  // The bell: the people on this incident find out it moved. One line each,
+  // collapsing on the incident, and never a line for the person who did it.
+  // It sends nothing — paging stays the escalation policy's job.
+  const what = bellWhat(events);
+  if (what) {
+    const { inboxIncidentChanged } = await import("./inbox");
+    await inboxIncidentChanged(tenantId, incidentId, what, options.actorMemberId ?? null);
   }
   try {
     await refreshAnnouncements(tenantId, incidentId);

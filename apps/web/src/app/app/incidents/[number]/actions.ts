@@ -95,7 +95,7 @@ export async function postUpdate(formData: FormData): Promise<{ error: string } 
       outcome.id,
       events,
       { message: input.message, by: current.member.name },
-      { chat: formData.get("chat") !== "off" },
+      { chat: formData.get("chat") !== "off", actorMemberId: current.member.id },
     );
     if (formData.get("statusPage") === "on") {
       const [page] = await withTenant(tenantId, (tx) =>

@@ -2733,3 +2733,57 @@ export const alertRules = app.table(
   },
   (t) => [index("alert_rules_tenant_position").on(t.tenantId, t.position)],
 );
+
+/* ---------- The bell ---------- */
+
+export const memberNotificationKind = app.enum("member_notification_kind", [
+  "paged",
+  "incident",
+  "follow_up",
+  "mention",
+]);
+
+/**
+ * What the product has to tell one member, inside the product.
+ *
+ * Paging wakes someone up; this does not. The bell is the story of what
+ * happened to the things a member is on — they were paged, an incident they
+ * lead moved, a follow-up landed on them, someone named them in a post-mortem.
+ * It is neither a second alerting channel nor an audit log: the audit log
+ * records who changed what, this records what one person should read.
+ *
+ * `groupKey` is what keeps a busy incident from flooding the panel. The same
+ * key writes the same row again: the count grows, the wording is refreshed,
+ * and the row comes back unread. Ten events on one incident are one line that
+ * says ten, not ten lines.
+ *
+ * No partial index on the unread ones: a member's rows are bounded by the
+ * grouping above and by the ninety-day purge, so the inbox index already
+ * answers the badge in a handful of rows.
+ */
+export const memberNotifications = app.table(
+  "member_notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => members.id, { onDelete: "cascade" }),
+    kind: memberNotificationKind("kind").notNull(),
+    title: text("title").notNull(),
+    body: text("body"),
+    /** Where the row leads — relative, so it survives a domain change. */
+    url: text("url"),
+    incidentId: uuid("incident_id").references(() => incidents.id, { onDelete: "cascade" }),
+    alertId: uuid("alert_id").references(() => alerts.id, { onDelete: "cascade" }),
+    groupKey: text("group_key").notNull(),
+    count: integer("count").notNull().default(1),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("member_notifications_inbox").on(t.tenantId, t.memberId, t.createdAt),
+    uniqueIndex("member_notifications_group").on(t.tenantId, t.memberId, t.groupKey),
+  ],
+);

@@ -176,6 +176,13 @@
       "when": 1789772748854,
       "tag": "0024_status_component_monitor",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1789774912035,
+      "tag": "0025_member_notifications",
+      "breakpoints": true
     }
   ]
 }
