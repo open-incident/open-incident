@@ -102,6 +102,16 @@ button {
   background: var(--dang-t) !important;
 }
 
+/* Filled brand button: one step lighter on hover. */
+.oi-hover-brand-2:hover {
+  background: var(--brand-2) !important;
+}
+
+/* Filled brand button that also moves its border (bordered CTA). */
+.oi-hover-ok:hover {
+  background: var(--ok-t) !important;
+}
+
 /* Keyboard focus ring — 2px brand, offset 2. */
 .oi-focus:focus-visible {
   outline: 2px solid var(--brand);

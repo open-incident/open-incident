@@ -1,187 +1,75 @@
 "use client";
 
+/**
+ * ⌘K — go anywhere, do the two things worth a shortcut, or ask Atlas.
+ *
+ * The Atlas card appears once the query is long enough to be a question. It
+ * says what would happen and does not answer here: the answer belongs on a
+ * screen that can cite its sources, so pressing ↵ opens it there.
+ */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "@/i18n/client";
+import { NavIcon } from "./nav-icons";
+import type { SidebarSection } from "./sidebar";
 
-type Entry = {
-  key: string;
-  label: string;
-  hint?: string;
-  dot?: string;
-  href: string;
-  group: "actions" | "goto";
-};
-
-/**
- * ⌘K — the design's palette: 560 px, radius 16, a search row, an "Actions"
- * group with coloured dots and a two-column "Go to" grid, the key legend in the
- * footer. Opens on ⌘K / Ctrl+K, closes on Escape or a click outside.
- *
- * Only real destinations are listed: the sections that have no screen yet are
- * not offered here either.
- */
 export function CommandPalette({
-  open,
-  onOpenChange,
-  canRespond,
-  isManager,
-  currentPath,
+  sections,
+  canDeclare,
+  canPageSelf,
+  onClose,
+  onDeclare,
+  onPageMe,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  canRespond: boolean;
-  isManager: boolean;
-  currentPath: string;
+  sections: SidebarSection[];
+  canDeclare: boolean;
+  canPageSelf: boolean;
+  onClose: () => void;
+  onDeclare: () => void;
+  onPageMe: () => void;
 }) {
   const t = useT();
   const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [cursor, setCursor] = useState(0);
-  const input = useRef<HTMLInputElement>(null);
+  const [q, setQ] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        onOpenChange(!open);
-      }
-      if (e.key === "Escape" && open) onOpenChange(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onOpenChange]);
+    inputRef.current?.focus();
+  }, []);
 
-  useEffect(() => {
-    if (open) {
-      setQuery("");
-      setCursor(0);
-      setTimeout(() => input.current?.focus(), 0);
-    }
-  }, [open]);
-
-  const incidentMatch = currentPath.match(/^\/app\/incidents\/(\d+)/);
-  const entries = useMemo<Entry[]>(() => {
-    const actions: Entry[] = [];
-    if (canRespond)
-      actions.push({
-        key: "declare",
-        label: t("palette.declare"),
-        hint: "D",
-        dot: "var(--dang)",
-        href: "/app/incidents/new",
-        group: "actions",
-      });
-    if (canRespond && incidentMatch) {
-      actions.push({
-        key: "update",
-        label: t("palette.update", { number: `INC-${incidentMatch[1]}` }),
-        dot: "var(--brand)",
-        href: `${currentPath}?update=1`,
-        group: "actions",
-      });
-    }
-    const goto: Entry[] = [
-      { key: "incidents", label: t("nav.incidents"), href: "/app/incidents", group: "goto" },
-      {
-        key: "triage",
-        label: t("incidents.views.triage"),
-        href: "/app/incidents?view=triage",
-        group: "goto",
-      },
-      {
-        key: "followups",
-        label: t("incidents.views.followUps"),
-        href: "/app/incidents?view=follow-ups",
-        group: "goto",
-      },
-      { key: "catalog", label: t("nav.catalog"), href: "/app/catalog", group: "goto" },
-      { key: "account", label: t("nav.account"), href: "/app/account", group: "goto" },
-    ];
-    if (isManager)
-      goto.push({
-        key: "settings",
-        label: t("nav.settings"),
-        href: "/app/settings/general",
-        group: "goto",
-      });
-    const q = query.trim().toLowerCase();
-    const all = [...actions, ...goto];
-    return q ? all.filter((e) => e.label.toLowerCase().includes(q)) : all;
-  }, [canRespond, isManager, incidentMatch, currentPath, query, t]);
-
-  useEffect(() => setCursor(0), [query]);
-
-  if (!open) return null;
-
-  const go = (entry: Entry) => {
-    onOpenChange(false);
-    router.push(entry.href);
-  };
-  const actions = entries.filter((e) => e.group === "actions");
-  const goto = entries.filter((e) => e.group === "goto");
-  const row = (entry: Entry, index: number, grid: boolean) => (
-    <button
-      key={entry.key}
-      type="button"
-      role="option"
-      aria-selected={cursor === index}
-      onMouseEnter={() => setCursor(index)}
-      onClick={() => go(entry)}
-      className="oi-hover"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: grid ? 9 : 10,
-        padding: grid ? "8px 12px" : "9px 12px",
-        borderRadius: 8,
-        fontSize: grid ? 13 : 13.5,
-        fontWeight: 500,
-        color: "var(--ink)",
-        background: cursor === index ? "var(--sunk)" : "transparent",
-        border: 0,
-        width: "100%",
-        textAlign: "left",
-        cursor: "pointer",
-      }}
-    >
-      {entry.dot && (
-        <span style={{ width: 6, height: 6, borderRadius: "50%", background: entry.dot }} />
-      )}
-      <span style={{ flex: 1 }}>{entry.label}</span>
-      {entry.hint && (
-        <span className="oi-kbd" style={{ background: "var(--sunk)", border: 0 }}>
-          {entry.hint}
-        </span>
-      )}
-    </button>
-  );
+  const asking = q.trim().length > 2;
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return sections;
+    return sections.filter((s) => t(s.labelKey).toLowerCase().includes(needle));
+  }, [q, sections, t]);
 
   return (
     <div
-      onClick={() => onOpenChange(false)}
+      onClick={onClose}
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(8,12,14,.45)",
-        backdropFilter: "blur(2px)",
+        background: "var(--scrim)",
         display: "flex",
         alignItems: "flex-start",
         justifyContent: "center",
-        paddingTop: "13vh",
-        zIndex: 70,
+        paddingTop: "14vh",
+        zIndex: 60,
       }}
     >
       <div
-        role="dialog"
-        aria-label={t("palette.open")}
         onClick={(e) => e.stopPropagation()}
         className="oi-rise-fast"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("palette.open")}
         style={{
-          width: 560,
-          maxWidth: "94vw",
+          width: 580,
+          maxWidth: "calc(100vw - 32px)",
           background: "var(--panel)",
-          borderRadius: 16,
+          borderRadius: "var(--radius-modal)",
           boxShadow: "var(--shadow-modal)",
           overflow: "hidden",
         }}
@@ -195,56 +83,86 @@ export function CommandPalette({
             borderBottom: "1px solid var(--line)",
           }}
         >
-          <svg
-            viewBox="0 0 24 24"
-            width="16"
-            height="16"
-            fill="none"
-            stroke="var(--ink-3)"
-            strokeWidth="2"
-            aria-hidden="true"
+          <span
+            style={{
+              width: 16,
+              height: 16,
+              display: "grid",
+              placeItems: "center",
+              color: "var(--ink-3)",
+            }}
           >
-            <circle cx="11" cy="11" r="7" />
-            <path d="M20 20l-3.5-3.5" />
-          </svg>
+            <NavIcon id="search" size={16} />
+          </span>
           <input
-            ref={input}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            ref={inputRef}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setCursor((c) => Math.min(entries.length - 1, c + 1));
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setCursor((c) => Math.max(0, c - 1));
-              } else if (e.key === "Enter") {
-                const entry = entries[cursor];
-                if (entry) go(entry);
+              if (e.key === "Enter" && asking) {
+                onClose();
+                router.push(`/app/incidents?q=${encodeURIComponent(q.trim())}`);
               }
             }}
-            placeholder={t("palette.inputPlaceholder")}
-            aria-label={t("palette.inputPlaceholder")}
+            placeholder={t("palette.askPlaceholder")}
             style={{
               flex: 1,
               border: "none",
               outline: "none",
-              fontSize: 14,
+              fontSize: 14.5,
               background: "transparent",
             }}
           />
-          <span className="oi-kbd" style={{ background: "var(--sunk)", border: 0 }}>
-            esc
-          </span>
         </div>
-        <div role="listbox" style={{ padding: 8, display: "flex", flexDirection: "column" }}>
-          {actions.length > 0 && (
+        <div style={{ padding: 8, display: "flex", flexDirection: "column" }}>
+          {asking && (
+            <div
+              style={{
+                margin: "4px 4px 8px",
+                border: "1px solid var(--viol)",
+                background: "var(--viol-t)",
+                borderRadius: 12,
+                padding: "11px 13px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "var(--viol)",
+                }}
+              >
+                ✦ {t("atlas.name")}
+                <span
+                  style={{
+                    fontWeight: 600,
+                    background: "var(--panel)",
+                    borderRadius: 5,
+                    padding: "1px 6px",
+                  }}
+                >
+                  {t("atlas.draftLabel")}
+                </span>
+              </div>
+              <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+                {t("palette.askBody", { q: q.trim() })}
+              </div>
+            </div>
+          )}
+
+          {(canDeclare || canPageSelf) && (
             <>
               <div
                 style={{
                   fontSize: 10.5,
                   fontWeight: 700,
-                  letterSpacing: ".12em",
+                  letterSpacing: ".1em",
                   textTransform: "uppercase",
                   color: "var(--ink-3)",
                   padding: "8px 12px 4px",
@@ -252,39 +170,89 @@ export function CommandPalette({
               >
                 {t("palette.actions")}
               </div>
-              {actions.map((e) => row(e, entries.indexOf(e), false))}
+              {canDeclare && (
+                <button type="button" onClick={onDeclare} className="oi-hover" style={ACTION}>
+                  <span style={{ ...DOT, background: "var(--dang)" }} />
+                  {t("palette.declare")}
+                  <span style={{ flex: 1 }} />
+                  <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)" }}>
+                    D
+                  </span>
+                </button>
+              )}
+              {canPageSelf && (
+                <button type="button" onClick={onPageMe} className="oi-hover" style={ACTION}>
+                  <span style={{ ...DOT, background: "var(--brand)" }} />
+                  {t("palette.pageMeTest")}
+                </button>
+              )}
             </>
           )}
-          {goto.length > 0 && (
-            <>
-              <div
+
+          <div
+            style={{
+              fontSize: 10.5,
+              fontWeight: 700,
+              letterSpacing: ".1em",
+              textTransform: "uppercase",
+              color: "var(--ink-3)",
+              padding: "10px 12px 4px",
+            }}
+          >
+            {t("palette.goTo")}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
+            {shown.map((s) => (
+              <button
+                key={s.href}
+                type="button"
+                onClick={() => {
+                  onClose();
+                  router.push(s.href);
+                }}
+                className="oi-hover"
                 style={{
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  letterSpacing: ".12em",
-                  textTransform: "uppercase",
-                  color: "var(--ink-3)",
-                  padding: "10px 12px 4px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 9,
+                  padding: "8px 12px",
+                  borderRadius: 9,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  background: "transparent",
+                  border: 0,
+                  color: "inherit",
+                  textAlign: "left",
                 }}
               >
-                {t("palette.goTo")}
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
-                {goto.map((e) => row(e, entries.indexOf(e), true))}
-              </div>
-            </>
-          )}
-          {entries.length === 0 && (
-            <div style={{ padding: "14px 12px", fontSize: 13, color: "var(--ink-3)" }}>
+                <span
+                  style={{
+                    width: 14,
+                    height: 14,
+                    display: "grid",
+                    placeItems: "center",
+                    color: "var(--ink-3)",
+                  }}
+                >
+                  <NavIcon id={s.id} size={14} />
+                </span>
+                {t(s.labelKey)}
+              </button>
+            ))}
+          </div>
+          {shown.length === 0 && !asking && (
+            <div style={{ padding: "10px 12px", fontSize: 13, color: "var(--ink-3)" }}>
               {t("palette.empty")}
             </div>
           )}
+
           <div
             style={{
               display: "flex",
               alignItems: "center",
               gap: 14,
-              borderTop: "1px solid var(--line-2)",
+              borderTop: "1px solid var(--line)",
               marginTop: 8,
               padding: "9px 12px",
               fontSize: 11,
@@ -300,3 +268,21 @@ export function CommandPalette({
     </div>
   );
 }
+
+const ACTION: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  padding: "9px 12px",
+  borderRadius: 9,
+  fontSize: 13.5,
+  fontWeight: 500,
+  cursor: "pointer",
+  background: "transparent",
+  border: 0,
+  color: "inherit",
+  textAlign: "left",
+  width: "100%",
+};
+
+const DOT: React.CSSProperties = { width: 7, height: 7, borderRadius: "50%", flex: "none" };

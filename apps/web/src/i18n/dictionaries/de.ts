@@ -24,10 +24,64 @@ export const de: Dictionary = {
   "nav.onCall": "Bereitschaft",
   "nav.statusPages": "Statusseiten",
   "nav.catalog": "Katalog",
-  "nav.insights": "Berichte",
+  "nav.insights": "Analysen",
   "nav.settings": "Einstellungen",
   /* ---------- Benutzerhandbuch ---------- */
   "nav.guide": "Handbuch",
+  "nav.home": "Start",
+  "nav.monitors": "Monitore",
+  "nav.services": "Services",
+  "nav.telemetry": "Telemetrie",
+  "nav.notInstalled": "nicht installiert",
+  "nav.declare": "Incident melden",
+  "nav.onCallNow": "{name} hat Bereitschaft",
+  "nav.onCallUntil": "{schedule} · bis {until}",
+  "nav.onCallNobody": "Niemand hat Bereitschaft",
+  "nav.onCallNobodyHint": "Kein veröffentlichter Plan deckt diesen Moment ab.",
+  "nav.pageMe": "Mich alarmieren",
+  "guide.eyebrow": "Leitfaden · Erste Schritte",
+  "guide.startTitle": "Ihr erster Alarm in 3 Schritten",
+  "guide.atAGlance": "AUF EINEN BLICK",
+  "guide.terms": "BEGRIFFE",
+  "guide.whereItLives": "WO ES LEBT",
+  "guide.next": "WEITER",
+  "guide.startAtAGlance": "Wen alarmieren → woher Alarme kommen → ein echter Test.",
+  "guide.startTerms": "Alarmquelle · Monitor · Plan",
+  "guide.startWhere": "Auf der Startseite, solange der Arbeitsbereich leer ist, danach hier.",
+  "guide.startNext": "Geben Sie Ihren Services einen Verantwortlichen.",
+  "guide.startBody":
+    "Open Incident alarmiert die richtige Person, wenn etwas kaputtgeht. Sie müssen Ihre Organisation nie zuerst beschreiben: Services erscheinen, sobald ein Alarm sie nennt, und Sie geben ihnen mit einem Klick einen Verantwortlichen. Regeln sind für Ausnahmen, nie Voraussetzung.",
+  "guide.languages": "Verfügbar auf Englisch, Französisch, Deutsch.",
+  "guide.allChapters": "Alle Kapitel",
+  "telemetry.receiving":
+    "Telemetrie wird empfangen. Services, Traces, Logs und Metriken erscheinen auf diesem Bildschirm.",
+  "telemetry.notInstalledTitle": "Telemetrie ist auf dieser Instanz nicht installiert",
+  "telemetry.notInstalledBody":
+    "Logs, Traces und Metriken kommen mit dem optionalen OpenTelemetry-Modul. Nichts hier ist simuliert: einmal installiert, zeigen Services ihren Verkehr, Incidents zeigen, was sich geändert hat, und Atlas zitiert Spans und Logs.",
+  "telemetry.installTitle": "Auf dieser Instanz installieren",
+  "telemetry.installMeta": "· Admin · etwa 10 Min.",
+  "telemetry.step1":
+    "Modul aktivieren: es fügt einen ClickHouse-Speicher und den OTLP-Empfänger hinzu.",
+  "telemetry.step2":
+    "Richten Sie Ihren OpenTelemetry-Collector oder Ihre SDKs auf {endpoint} mit dem einmalig gezeigten Arbeitsbereichs-Token.",
+  "telemetry.step3":
+    "In service.name genannte Services erscheinen automatisch unter Services — kein Katalog zum Ausfüllen.",
+  "telemetry.footnote":
+    "Daten bleiben in der EU · Aufbewahrung und Sampling werden pro Service gesetzt.",
+  "palette.searchOrAsk": "Suchen oder Atlas fragen…",
+  "palette.askPlaceholder": "Incidents, Services, Personen suchen — oder Atlas fragen",
+  "palette.askBody":
+    "« {q} » fragen — Atlas antwortet mit Quellen aus Ihren Incidents, Monitoren und Änderungen. ↵ zum Fragen.",
+  "palette.pageMeTest": "Mich alarmieren (Test)",
+  "atlas.name": "ATLAS",
+  "atlas.draftLabel": "Entwurf · Atlas",
+  "shell.testMode": "Testmodus",
+  "shell.pageMeSent":
+    "Test-Alarm an Sie gesendet — über den echten Weg, als Test markiert. Nichts ist simuliert.",
+  "shell.pageMeUnavailable":
+    "Auf dieser Instanz nicht verfügbar — kein Benachrichtigungskanal konfiguriert.",
+  "shell.pageMeSubject": "Open Incident — Test-Alarm",
+  "shell.pageMeBody": "{name}, das ist der angeforderte Test-Alarm. Es brennt nichts.",
   "nav.postMortems": "Post-mortems",
   "docs.title": "Benutzerhandbuch",
   "docs.subtitle":

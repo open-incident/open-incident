@@ -1,17 +1,35 @@
 import { headers } from "next/headers";
+import { withTenant } from "@openincident/db";
+import { getEdition } from "@openincident/config";
 import { canOpenSettings, canRespond, requireMember } from "@/lib/session";
-import { requireTenant } from "@/lib/tenant";
+import { getWorkspace, requireTenant } from "@/lib/tenant";
 import { I18nProvider } from "@/i18n/client";
 import { getT } from "@/i18n/server";
-import { RailNav } from "@/components/shell/rail-nav";
-import { ShellTopBar } from "@/components/shell/shell-top-bar";
+import { AppFrame } from "@/components/shell/app-frame";
+import type { SidebarSection } from "@/components/shell/sidebar";
 import { ThemeSync } from "@/components/theme-sync";
-import { getEdition } from "@openincident/config";
+import { initials } from "@/lib/avatar";
+import { countViews } from "@/lib/incidents";
+import { alertCounts } from "@/lib/alerts";
+import { onCallNow } from "@/lib/oncall";
+import { telemetryInstalled } from "@/lib/telemetry-module";
+import { pageMeFromShell } from "./actions";
+
+const ROLE_LABEL = {
+  owner: "member.role.owner",
+  admin: "member.role.admin",
+  responder: "member.role.responder",
+  viewer: "member.role.viewer",
+} as const;
 
 /**
- * Shared shell of the responder space: the 56 px top bar spans the full width,
- * the 60 px rail sits under it, the screen fills the rest. Every screen under
- * /app renders inside it, under one I18nProvider.
+ * Shared frame of the responder space: a 228 px rail on the left, a 50 px
+ * header, the screen filling the rest. Every screen under /app renders inside
+ * it, under one I18nProvider.
+ *
+ * The rail's two badges and its on-call line are read here, once, rather than
+ * by each screen: they belong to the frame and must say the same thing on every
+ * page.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Ahead of requireMember, which would send an invented subdomain to /login
@@ -19,6 +37,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   await requireTenant();
   const { tenant, member } = await requireMember();
   const t = await getT();
+  const workspace = await getWorkspace();
 
   // Suspended workspace: everything is blocked. The wording follows the reason
   // the directory gives; an unknown reason keeps the generic one.
@@ -83,34 +102,63 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     }
   }
 
+  const frame = await withTenant(tenant.id, async (tx) => {
+    const [views, alerts, onCall] = await Promise.all([
+      countViews(tx, tenant.id, member.id),
+      alertCounts(tx, tenant.id),
+      onCallNow(tx, tenant.id),
+    ]);
+    return { views, alerts, onCall };
+  });
+
+  const sections: SidebarSection[] = [
+    { id: "home", href: "/app", labelKey: "nav.home" },
+    { id: "incidents", href: "/app/incidents", labelKey: "nav.incidents", badge: frame.views.open },
+    { id: "alerts", href: "/app/alerts", labelKey: "nav.alerts", badge: frame.alerts.firing },
+    { id: "monitors", href: "/app/monitors", labelKey: "nav.monitors" },
+    { id: "onCall", href: "/app/on-call", labelKey: "nav.onCall" },
+    { id: "statusPages", href: "/app/status-pages", labelKey: "nav.statusPages" },
+    { id: "services", href: "/app/services", labelKey: "nav.services" },
+    { id: "insights", href: "/app/insights", labelKey: "nav.insights" },
+    {
+      id: "telemetry",
+      href: "/app/telemetry",
+      labelKey: "nav.telemetry",
+      ...(telemetryInstalled() ? {} : { tag: "nav.notInstalled" as const }),
+    },
+  ];
+
+  // The first schedule that actually has someone is the one the rail names:
+  // saying "nobody" while another schedule is covered would be a lie of omission.
+  const covered = frame.onCall.find((s) => s.memberName) ?? null;
+
   return (
     <I18nProvider locale={t.locale} dict={t.dict} timeZone={t.timeZone}>
-      <div
-        style={{
-          height: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          background: "var(--canvas)",
-          color: "var(--ink)",
-          overflow: "hidden",
+      <ThemeSync theme={member.theme ?? null} />
+      <AppFrame
+        workspaceName={workspace?.name ?? tenant.slug}
+        workspaceAccent={workspace?.branding.accentColor ?? "var(--brand)"}
+        member={{
+          name: member.name,
+          roleLabel: t(ROLE_LABEL[member.role]),
+          initials: initials(member.name),
         }}
+        sections={sections}
+        onCall={
+          covered
+            ? {
+                name: covered.memberName!,
+                scheduleName: covered.scheduleName,
+                until: t.fmt.time(covered.until, t.timeZone),
+              }
+            : null
+        }
+        canDeclare={canRespond(member)}
+        canPageSelf={canRespond(member)}
+        pageMeAction={pageMeFromShell}
       >
-        <ThemeSync theme={member.theme ?? null} />
-        <ShellTopBar
-          slug={tenant.slug}
-          member={{
-            name: member.name,
-            email: member.email,
-            role: member.role,
-            canRespond: canRespond(member),
-            isManager: canOpenSettings(member),
-          }}
-        />
-        <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
-          <RailNav />
-          {children}
-        </div>
-      </div>
+        {children}
+      </AppFrame>
     </I18nProvider>
   );
 }

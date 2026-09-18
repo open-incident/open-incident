@@ -44,15 +44,27 @@
   /* Code block of the alert payload. */
   --topbar-dark: #0d1213;
   --code-blue: #8fb6c4;
-  /* Typography — the faces are shipped by fonts.css, not merely named here. */
+  /* Typography — the faces are shipped by fonts.css, not merely named here.
+     `--title` and `--mono` are the names the V2 design writes; the `--font-*`
+     spellings are the first design's and stay valued so both read the same
+     faces. */
   --font-ui: "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --font-title: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
-  /* Elevation — the design's four shadows and its focus halo. */
+  --title: var(--font-title);
+  --mono: var(--font-mono);
+  /* Radii — one per kind of surface, from the V2 design. */
+  --radius-control: 9px;
+  --radius-input: 10px;
+  --radius-kpi: 13px;
+  --radius-card: 14px;
+  --radius-modal: 18px;
+  /* Elevation — the design's shadows and its focus halo. */
   --shadow-card: 0 1px 2px rgba(13, 22, 28, 0.03);
   --shadow-card-hover: 0 1px 2px rgba(13, 22, 28, 0.03), 0 8px 20px -12px rgba(13, 22, 28, 0.15);
   --shadow-modal: 0 32px 80px rgba(0, 0, 0, 0.35);
   --shadow-login: 0 2px 4px rgba(13, 22, 28, 0.04), 0 24px 48px -20px rgba(11, 74, 111, 0.25);
+  --shadow-pop: 0 2px 4px rgba(13, 22, 28, 0.05), 0 22px 48px -18px rgba(13, 22, 28, 0.3);
   --focus-ring: 0 0 0 4px var(--brand-t);
   /* Scrims — the design's modal and palette veil. */
   --scrim: rgba(8, 12, 14, 0.45);
@@ -90,6 +102,7 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-card-hover: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 20px -12px rgba(0, 0, 0, 0.6);
   --shadow-login: 0 2px 4px rgba(0, 0, 0, 0.4), 0 24px 48px -20px rgba(0, 0, 0, 0.7);
+  --shadow-pop: 0 2px 4px rgba(0, 0, 0, 0.4), 0 22px 48px -18px rgba(0, 0, 0, 0.7);
   --scrim: rgba(0, 0, 0, 0.6);
   --scrim-dialog: rgba(0, 0, 0, 0.65);
 }

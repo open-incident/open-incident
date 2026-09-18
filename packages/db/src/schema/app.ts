@@ -2434,3 +2434,290 @@ export const runbooks = app.table(
   },
   (t) => [index("runbooks_tenant_service").on(t.tenantId, t.serviceEntryId)],
 );
+
+/* ---------- Monitors, probes, services ---------- */
+
+/**
+ * What a monitor watches. The ten the product checks itself; anything else
+ * arrives as an alert from a tool that already watches it.
+ *
+ * `incoming` is the one that waits rather than calls: a webhook that must be
+ * pinged, and whose silence past its window is the signal (a dead-man's switch).
+ */
+export type MonitorType =
+  "http" | "api" | "ping" | "port" | "dns" | "ssl" | "domain" | "synthetic" | "incoming" | "manual";
+
+/**
+ * The state a monitor is in, as the reader sees it.
+ *
+ * `waiting` is its own state rather than a null status: a monitor created a
+ * minute ago has not failed, it has not answered yet, and a screen that showed
+ * it as offline would page for nothing.
+ */
+export type MonitorState = "online" | "degraded" | "offline" | "paused" | "waiting";
+
+/** One rule of a monitor: what makes it online, degraded or offline. */
+export type MonitorCriterion = {
+  /** What is read on each check. */
+  on:
+    | "status_code"
+    | "response_time_ms"
+    | "body_contains"
+    | "body_matches"
+    | "header"
+    | "reachable"
+    | "days_to_expiry"
+    | "record_value"
+    | "ping_received_in";
+  op: "eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "contains" | "not_contains" | "matches";
+  value: string;
+  /** The header or record this reads, when `on` needs one. */
+  field?: string;
+  /** What holding this rule means. */
+  then: MonitorState;
+  /** Consecutive checks that must agree before the state changes. */
+  forChecks?: number;
+};
+
+/**
+ * The three choices a monitor carries, the same three an alert source carries:
+ * who gets paged, whether an incident opens, and whether recovery closes it.
+ *
+ * `owner` resolves at paging time to the owner team's policy — which is why a
+ * service with an owner needs no rule at all.
+ */
+export type SignalAction = {
+  page:
+    | { kind: "owner" }
+    | { kind: "member"; memberId: string }
+    | { kind: "team"; teamId: string }
+    | { kind: "schedule"; scheduleId: string }
+    | { kind: "policy"; pathId: string }
+    | { kind: "nobody" };
+  /** From which alert severity an incident opens — "never" opens none. */
+  incident: { from: "p1" | "p2" | "p3" | "p4" | "triage" | "never" };
+  autoResolve: boolean;
+};
+
+export const monitorState = app.enum("monitor_state", [
+  "online",
+  "degraded",
+  "offline",
+  "paused",
+  "waiting",
+]);
+
+/**
+ * A probe: where a check is made from.
+ *
+ * Managed probes belong to the instance and are shared by every workspace;
+ * a custom probe is a container the workspace runs itself, which is the only
+ * way to watch something on a private network.
+ */
+export const probes = app.table(
+  "probes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Null for the instance's own probes: they are not a workspace's property. */
+    tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    region: text("region").notNull(),
+    managed: boolean("managed").notNull().default(true),
+    /** Compared in constant time when a custom probe reports; never shown again. */
+    secretHash: text("secret_hash"),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    version: text("version"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("probes_tenant").on(t.tenantId)],
+);
+
+/**
+ * A service, as the product learns it exists.
+ *
+ * It is created the first time a signal names it — an alert label, a monitor,
+ * later a trace — and not a moment earlier: nobody fills a catalogue before
+ * their first page. `confirmed` marks the ones a human has adopted; the rest
+ * are shown as "seen in traffic" and are one click from an owner.
+ */
+export const services = app.table(
+  "services",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    /** The name signals use: `checkout-api`. Unique per workspace, immutable. */
+    key: text("key").notNull(),
+    name: text("name"),
+    /** The team paged when this service is named and no rule says otherwise. */
+    ownerTeamId: uuid("owner_team_id"),
+    labels: jsonb("labels").$type<Record<string, string>>().notNull().default({}),
+    confirmed: boolean("confirmed").notNull().default(false),
+    /** Where it was seen: source names, monitor ids — for "seen in 4 sources". */
+    seenIn: jsonb("seen_in").$type<string[]>().notNull().default([]),
+    firstSeenAt: createdAt(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("services_tenant_key").on(t.tenantId, t.key),
+    index("services_tenant_owner").on(t.tenantId, t.ownerTeamId),
+  ],
+);
+
+/**
+ * A team: people, and the policy that pages them.
+ *
+ * It replaces the catalogue's team entries with a table the routing can join
+ * against, because "page the owner" must resolve in one hop rather than three.
+ */
+export const teams = app.table(
+  "teams",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    name: text("name").notNull(),
+    /** The escalation path used when this team is paged. */
+    policyPathId: uuid("policy_path_id").references(() => escalationPaths.id, {
+      onDelete: "set null",
+    }),
+    chatChannel: text("chat_channel"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("teams_tenant_name").on(t.tenantId, t.name)],
+);
+
+export const teamMembers = app.table(
+  "team_members",
+  {
+    tenantId: tenantId(),
+    teamId: uuid("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => members.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.teamId, t.memberId] }),
+    index("team_members_tenant").on(t.tenantId),
+  ],
+);
+
+/** A repeated check, its criteria, and the three choices it carries. */
+export const monitors = app.table(
+  "monitors",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    name: text("name").notNull(),
+    type: text("type").$type<MonitorType>().notNull(),
+    /** URL, host, host:port, domain — what the type expects. */
+    target: text("target").notNull().default(""),
+    /** Per-type detail: method, headers, body, steps, record type, port. */
+    config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
+    intervalSeconds: integer("interval_seconds").notNull().default(60),
+    /** Checks that must agree before a state change is published. */
+    criteria: jsonb("criteria").$type<MonitorCriterion[]>().notNull().default([]),
+    action: jsonb("action").$type<SignalAction>().notNull(),
+    serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
+    state: monitorState("state").notNull().default("waiting"),
+    stateSince: timestamp("state_since", { withTimezone: true }),
+    lastCheckAt: timestamp("last_check_at", { withTimezone: true }),
+    lastLatencyMs: integer("last_latency_ms"),
+    lastDetail: text("last_detail"),
+    /** Incoming-request monitors: the path segment, and the silence that alerts. */
+    incomingToken: text("incoming_token"),
+    expectEverySeconds: integer("expect_every_seconds"),
+    /** The alert this monitor has open, so recovery resolves that one. */
+    openAlertId: uuid("open_alert_id"),
+    paused: boolean("paused").notNull().default(false),
+    createdByMemberId: uuid("created_by_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("monitors_tenant_state").on(t.tenantId, t.state),
+    index("monitors_tenant_service").on(t.tenantId, t.serviceId),
+    uniqueIndex("monitors_incoming_token").on(t.incomingToken),
+  ],
+);
+
+/**
+ * One result of one check, kept raw for the recent list and the latency chart.
+ *
+ * Old rows are rolled up into `monitor_days` and dropped: a minute-by-minute
+ * history of a year is millions of rows nobody reads, while the day rollup is
+ * what the 90-day bars and the uptime figure are made of.
+ */
+export const monitorChecks = app.table(
+  "monitor_checks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    monitorId: uuid("monitor_id")
+      .notNull()
+      .references(() => monitors.id, { onDelete: "cascade" }),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    state: monitorState("state").notNull(),
+    latencyMs: integer("latency_ms"),
+    detail: text("detail"),
+    probeId: uuid("probe_id").references(() => probes.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("monitor_checks_monitor_at").on(t.monitorId, t.at)],
+);
+
+/** A day of a monitor's life, in seconds — the bars, the uptime, the downtime. */
+export const monitorDays = app.table(
+  "monitor_days",
+  {
+    tenantId: tenantId(),
+    monitorId: uuid("monitor_id")
+      .notNull()
+      .references(() => monitors.id, { onDelete: "cascade" }),
+    /** Calendar day in the workspace's timezone, as YYYY-MM-DD. */
+    day: text("day").notNull(),
+    onlineSeconds: integer("online_seconds").notNull().default(0),
+    degradedSeconds: integer("degraded_seconds").notNull().default(0),
+    offlineSeconds: integer("offline_seconds").notNull().default(0),
+    checks: integer("checks").notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.monitorId, t.day] }),
+    index("monitor_days_tenant").on(t.tenantId, t.day),
+  ],
+);
+
+/**
+ * A rule: the exception to what a source or a monitor already decided.
+ *
+ * Ordered, and the first match wins — two rules never page twice for the same
+ * alert. Without a rule nothing is lost: the signal's own three choices apply.
+ */
+export const alertRules = app.table(
+  "alert_rules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    position: integer("position").notNull().default(0),
+    /** Read back as a sentence, so it is stored as conditions rather than prose. */
+    conditions: jsonb("conditions").$type<ConditionGroup[]>().notNull().default([]),
+    actions: jsonb("actions")
+      .$type<SignalAction & { labels?: Record<string, string>; mute?: boolean }>()
+      .notNull(),
+    active: boolean("active").notNull().default(true),
+    /** Logs what it would have done and acts on nothing. */
+    testMode: boolean("test_mode").notNull().default(false),
+    matchedCount: integer("matched_count").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("alert_rules_tenant_position").on(t.tenantId, t.position)],
+);

@@ -92,6 +92,58 @@ export async function myOnCall(tx: Tx, tenantId: string, memberId: string, now =
   return null;
 }
 
+/**
+ * Who carries the pager right now, per published schedule.
+ *
+ * The frame and the home screen both ask this question, and both need the name
+ * rather than the id: a rail that says "Jordan is on call" is read at a glance,
+ * one that says a uuid is read by nobody. An empty rotation is kept with a null
+ * member — a schedule covering nobody is exactly what the reader must see.
+ */
+export type OnCallSlot = {
+  scheduleId: string;
+  scheduleName: string;
+  rotationName: string;
+  memberId: string | null;
+  memberName: string | null;
+  override: boolean;
+  until: Date;
+};
+
+export async function onCallNow(tx: Tx, tenantId: string, now = new Date()): Promise<OnCallSlot[]> {
+  const scheds = await tx
+    .select()
+    .from(schedules)
+    .where(and(eq(schedules.tenantId, tenantId), eq(schedules.status, "published")))
+    .orderBy(asc(schedules.createdAt), asc(schedules.name));
+  if (scheds.length === 0) return [];
+  const people = await tx
+    .select({ id: members.id, name: members.name })
+    .from(members)
+    .where(eq(members.tenantId, tenantId));
+  const byId = new Map(people.map((m) => [m.id, m.name]));
+  const out: OnCallSlot[] = [];
+  for (const s of scheds) {
+    const rots = await tx.select().from(rotations).where(eq(rotations.scheduleId, s.id));
+    const ovs = await tx
+      .select()
+      .from(scheduleOverrides)
+      .where(eq(scheduleOverrides.scheduleId, s.id));
+    for (const hit of onCallAt(s, rots, ovs, now)) {
+      out.push({
+        scheduleId: s.id,
+        scheduleName: s.name,
+        rotationName: hit.rotationName,
+        memberId: hit.memberId,
+        memberName: hit.memberId ? (byId.get(hit.memberId) ?? null) : null,
+        override: hit.override,
+        until: hit.until,
+      });
+    }
+  }
+  return out;
+}
+
 /** The member's next own shift on a schedule (for "cover me"), looking two weeks ahead. */
 export function nextOwnShift(detail: ScheduleDetail, memberId: string, now: Date): Shift | null {
   const all = Object.values(detail.shifts)
