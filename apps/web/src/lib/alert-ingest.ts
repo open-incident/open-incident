@@ -52,6 +52,7 @@ import {
   coerceCustomFields,
   declareIncidentCore,
 } from "@/lib/incident-writes";
+import { observeService } from "./services";
 
 export type IngestOutcome = {
   alertId: string;
@@ -644,6 +645,11 @@ async function ingestOne(
       })
       .returning({ id: alerts.id });
     const alertId = row!.id;
+    // The service learns it exists here: the first alert naming it is enough,
+    // and nobody had to fill a catalogue for that to happen.
+    if (attributes.service) {
+      await observeService(tx, tenantId, attributes.service, source.name, now);
+    }
     await event(
       tx,
       tenantId,

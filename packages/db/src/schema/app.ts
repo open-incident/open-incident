@@ -515,10 +515,12 @@ export const incidents = app.table(
     phase: incidentPhase("phase").notNull().default("active"),
     /** Meaningful in the active phase only. */
     statusId: uuid("status_id").references(() => incidentStatuses.id, { onDelete: "set null" }),
-    /** The catalog Service entry the incident is about — drives routing and reporting. */
+    /** The catalog Service entry the incident is about — superseded by serviceId. */
     serviceEntryId: uuid("service_entry_id").references(() => catalogEntries.id, {
       onDelete: "set null",
     }),
+    /** The service the incident is about — the one paging and reporting read. */
+    serviceId: uuid("service_id"),
     creatorMemberId: uuid("creator_member_id").references(() => members.id, {
       onDelete: "set null",
     }),
