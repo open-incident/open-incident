@@ -24,7 +24,17 @@ const connectionString =
 const POOL = Symbol.for("openincident.db.pool");
 type PoolHolder = { [POOL]?: ReturnType<typeof postgres> };
 const holder = globalThis as unknown as PoolHolder;
-const queryClient = (holder[POOL] ??= postgres(connectionString, { prepare: false }));
+/**
+ * Ten connections is postgres.js's default and it was not a choice anyone made.
+ * It is the ceiling a request hits when something takes a second connection
+ * while holding the first, and the number an operator needs to raise when they
+ * run more concurrency than the default worker does.
+ */
+const POOL_SIZE = Number(process.env.DATABASE_POOL_SIZE ?? 10);
+const queryClient = (holder[POOL] ??= postgres(connectionString, {
+  prepare: false,
+  max: Number.isFinite(POOL_SIZE) && POOL_SIZE > 0 ? POOL_SIZE : 10,
+}));
 
 /**
  * The whole schema, for THIS package: seeds, the workspace command, the tests.

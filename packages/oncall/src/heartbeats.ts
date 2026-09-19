@@ -43,7 +43,7 @@ export async function ensureHeartbeatSource(
     );
   if (existing) {
     // The ingest endpoint finds the workspace through the directory lookup: keep it registered.
-    await registerApiKeyLookup(`src:${existing.id}`, tenantId);
+    await registerApiKeyLookup(`src:${existing.id}`, tenantId, tx);
     const secret = decryptSecret(existing.encryptedSecret);
     if (secret) return { id: existing.id, secret };
     // A managed source without a readable secret gets a new one — the product is its only caller.
@@ -55,7 +55,7 @@ export async function ensureHeartbeatSource(
         encryptedSecret: encryptSecret(fresh),
       })
       .where(eq(alertSources.id, existing.id));
-    await registerApiKeyLookup(`src:${existing.id}`, tenantId);
+    await registerApiKeyLookup(`src:${existing.id}`, tenantId, tx);
     return { id: existing.id, secret: fresh };
   }
   const secret = randomBytes(24).toString("hex");
@@ -71,7 +71,7 @@ export async function ensureHeartbeatSource(
       active: true,
     })
     .returning({ id: alertSources.id });
-  await registerApiKeyLookup(`src:${created!.id}`, tenantId);
+  await registerApiKeyLookup(`src:${created!.id}`, tenantId, tx);
   return { id: created!.id, secret };
 }
 

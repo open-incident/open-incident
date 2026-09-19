@@ -43,12 +43,29 @@ export async function getTenantIdForApiKeyHash(keyHash: string): Promise<string 
  * the directory. A key already known follows the latest registration: a Slack
  * workspace re-installed on another Open Incident workspace moves with it.
  */
-export async function registerApiKeyLookup(keyHash: string, tenantId: string): Promise<void> {
-  await db.delete(apiKeyLookup).where(eq(apiKeyLookup.keyHash, keyHash));
-  await db.insert(apiKeyLookup).values({ keyHash, tenantId }).onConflictDoNothing();
+/**
+ * The directory row that lets a request find its workspace before any tenant
+ * context exists.
+ *
+ * `on` takes the caller's transaction when there is one. Without it this took a
+ * second connection from the pool while the caller still held the first, and a
+ * process gets ten: ten callers doing that at once wait on each other for a
+ * connection none of them will release. The same shape, in the status page
+ * publish path, was measured hanging forever — no error, no timeout.
+ */
+export async function registerApiKeyLookup(
+  keyHash: string,
+  tenantId: string,
+  on: Pick<typeof db, "delete" | "insert"> = db,
+): Promise<void> {
+  await on.delete(apiKeyLookup).where(eq(apiKeyLookup.keyHash, keyHash));
+  await on.insert(apiKeyLookup).values({ keyHash, tenantId }).onConflictDoNothing();
 }
-export async function forgetApiKeyLookup(keyHash: string): Promise<void> {
-  await db.delete(apiKeyLookup).where(eq(apiKeyLookup.keyHash, keyHash));
+export async function forgetApiKeyLookup(
+  keyHash: string,
+  on: Pick<typeof db, "delete"> = db,
+): Promise<void> {
+  await on.delete(apiKeyLookup).where(eq(apiKeyLookup.keyHash, keyHash));
 }
 
 /** The public snapshot of a status page, by host — what apps/status serves. */

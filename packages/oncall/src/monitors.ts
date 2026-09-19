@@ -501,7 +501,7 @@ export async function ensureMonitorSource(
       ),
     );
   if (existing) {
-    await registerApiKeyLookup(`src:${existing.id}`, tenantId);
+    await registerApiKeyLookup(`src:${existing.id}`, tenantId, tx);
     const secret = decryptSecret(existing.encryptedSecret);
     if (secret) return { id: existing.id, secret };
     const fresh = randomBytes(24).toString("hex");
@@ -524,7 +524,7 @@ export async function ensureMonitorSource(
       secretHash: hashSecret(secret),
     })
     .returning({ id: alertSources.id });
-  await registerApiKeyLookup(`src:${created!.id}`, tenantId);
+  await registerApiKeyLookup(`src:${created!.id}`, tenantId, tx);
   return { id: created!.id, secret };
 }
 
@@ -766,30 +766,47 @@ export async function sweepMonitors(tenantIds: string[], now = new Date()): Prom
     );
     if (due.length === 0) continue;
 
-    for (const m of due) {
-      // A manual monitor is set by a human; an incoming one is judged by its
-      // silence, which the heartbeat sweep already watches.
-      if (m.type === "manual") continue;
-
-      // A browser is not this process's to run: the job goes to the runner,
-      // which writes its result back through applyCheckResult like the rest.
-      if (m.type === "synthetic") {
-        if ((await dispatchSynthetic(tenantId, m)) !== "queued") unrunnable++;
-        continue;
+    // Checked a few at a time rather than one after another. Seven monitors
+    // were taking up to 32 seconds against a 30 second period — long enough for
+    // one sweep to still be running when the next was due — and a check is
+    // almost entirely waiting on somebody else's network. The width is small on
+    // purpose: a hundred monitors on one host should not look like a flood to
+    // that host, and each check already carries its own timeout.
+    const WIDTH = 6;
+    const runnable = due.filter((m) => m.type !== "manual");
+    for (let i = 0; i < runnable.length; i += WIDTH) {
+      const slice = runnable.slice(i, i + WIDTH);
+      const results = await Promise.all(
+        slice.map(async (m) => {
+          // A browser is not this process's to run: the job goes to the runner,
+          // which writes its result back through applyCheckResult like the rest.
+          if (m.type === "synthetic") {
+            const queued = (await dispatchSynthetic(tenantId, m)) === "queued";
+            return { m, queued, sample: null as Awaited<ReturnType<typeof performCheck>> | null };
+          }
+          const sample =
+            m.type === "incoming"
+              ? {
+                  reachable:
+                    !!m.lastCheckAt &&
+                    m.lastCheckAt.getTime() + (m.expectEverySeconds ?? 86_400) * 1000 >
+                      now.getTime(),
+                  detail: "waiting for a ping",
+                }
+              : await performCheck({ type: m.type, target: m.target, config: m.config });
+          return { m, queued: true, sample };
+        }),
+      );
+      // The writes stay serial: they are short, and a burst of them is how the
+      // pool runs out of connections.
+      for (const r of results) {
+        if (!r.sample) {
+          if (!r.queued) unrunnable++;
+          continue;
+        }
+        const outcome = await applyCheckResult(tenantId, r.m.id, r.sample, { now });
+        if (outcome?.published) changes++;
       }
-
-      const sample =
-        m.type === "incoming"
-          ? {
-              reachable:
-                !!m.lastCheckAt &&
-                m.lastCheckAt.getTime() + (m.expectEverySeconds ?? 86_400) * 1000 > now.getTime(),
-              detail: "waiting for a ping",
-            }
-          : await performCheck({ type: m.type, target: m.target, config: m.config });
-
-      const outcome = await applyCheckResult(tenantId, m.id, sample, { now });
-      if (outcome?.published) changes++;
     }
   }
   if (unrunnable)
