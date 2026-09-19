@@ -39,6 +39,9 @@ import {
   escalationEvents,
   escalationPathVersions,
   escalationPaths,
+  services,
+  teamMembers,
+  teams,
   escalations,
   notificationDeliveries,
   notificationMethods,
@@ -127,6 +130,7 @@ try {
     await ensureAnnouncements(tx, ctx);
     await ensureApiAndWebhooks(tx, ctx);
     await ensureOnCall(tx, ctx);
+    await ensureServicesAndTeams(tx, ctx);
     await ensureHeartbeats(tx, ctx);
     await ensurePayRules(tx);
     await ensureStatusPage(tx, ctx);
@@ -3046,6 +3050,108 @@ async function ensureAiAndChanges(tx: Tx, ctx: Ctx) {
 }
 
 /** Two heartbeats and the managed source that carries their alerts: one healthy, one waiting for its first ping. */
+/**
+ * The new model, seeded from the one the catalog already describes.
+ *
+ * Services are normally *observed*: they appear the moment a signal names one.
+ * A fresh demo has no live traffic, so the four services its alerts talk about
+ * would exist nowhere, and the screens built on them — Services, the owner of
+ * an incident, the unowned list on Home — would be empty on an instance whose
+ * history is full. Seeding them from the catalog entries is not a shortcut
+ * around observation: it is the same fact, written in the table the product
+ * now reads.
+ *
+ * Runs after the escalation paths exist, because a team is only useful once it
+ * has the policy it is paged through — the link the product had no way to
+ * write until recently.
+ */
+async function ensureServicesAndTeams(tx: Tx, ctx: Ctx) {
+  const entries = await tx
+    .select({
+      id: catalogEntries.id,
+      name: catalogEntries.name,
+      typeId: catalogEntries.typeId,
+      attributes: catalogEntries.attributes,
+    })
+    .from(catalogEntries)
+    .where(eq(catalogEntries.tenantId, tenantId));
+  const paths = await tx
+    .select({ id: escalationPaths.id, name: escalationPaths.name })
+    .from(escalationPaths)
+    .where(eq(escalationPaths.tenantId, tenantId));
+  const pathByName = new Map(paths.map((p) => [p.name, p.id]));
+
+  // Team entries first: a service points at one.
+  const teamIdByEntry = new Map<string, string>();
+  for (const e of entries.filter((x) => x.typeId === ctx.catType.team)) {
+    const attrs = (e.attributes ?? {}) as Record<string, unknown>;
+    const pathName = typeof attrs.escalation_path === "string" ? attrs.escalation_path : null;
+    const [row] = await tx
+      .insert(teams)
+      .values({
+        tenantId,
+        name: e.name,
+        policyPathId: pathName ? (pathByName.get(pathName) ?? null) : null,
+        chatChannel: typeof attrs.chat_channel === "string" ? attrs.chat_channel : null,
+      })
+      .onConflictDoUpdate({
+        target: [teams.tenantId, teams.name],
+        set: {
+          policyPathId: pathName ? (pathByName.get(pathName) ?? null) : null,
+          chatChannel: typeof attrs.chat_channel === "string" ? attrs.chat_channel : null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning({ id: teams.id });
+    teamIdByEntry.set(e.id, row!.id);
+    const memberIds = Array.isArray(attrs.members) ? attrs.members.filter(isUuid) : [];
+    for (const memberId of memberIds) {
+      await tx
+        .insert(teamMembers)
+        .values({ tenantId, teamId: row!.id, memberId })
+        .onConflictDoNothing();
+    }
+  }
+
+  for (const e of entries.filter((x) => x.typeId === ctx.catType.service)) {
+    const attrs = (e.attributes ?? {}) as Record<string, unknown>;
+    const ownerEntry = typeof attrs.owner === "string" ? attrs.owner : null;
+    const ownerTeamId = ownerEntry ? (teamIdByEntry.get(ownerEntry) ?? null) : null;
+    // When it was seen is read from the alerts that name it, not invented: the
+    // "last signal" column has to mean what it says.
+    const [seen] = await tx
+      .select({
+        // Aggregates come back as text from the driver, so they are coerced
+        // here rather than handed to the column as-is.
+        first: sql<string | null>`min(${alerts.createdAt})`,
+        last: sql<string | null>`max(${alerts.createdAt})`,
+      })
+      .from(alerts)
+      .where(
+        and(eq(alerts.tenantId, tenantId), sql`${alerts.attributes} ->> 'service' = ${e.name}`),
+      );
+    await tx
+      .insert(services)
+      .values({
+        tenantId,
+        key: e.name,
+        ownerTeamId,
+        confirmed: true,
+        seenIn: [],
+        ...(seen?.first ? { firstSeenAt: new Date(seen.first) } : {}),
+        lastSeenAt: seen?.last ? new Date(seen.last) : null,
+      })
+      .onConflictDoUpdate({
+        target: [services.tenantId, services.key],
+        set: { ownerTeamId, confirmed: true, updatedAt: new Date() },
+      });
+  }
+}
+
+function isUuid(v: unknown): v is string {
+  return typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
+}
+
 async function ensureHeartbeats(tx: Tx, ctx: Ctx) {
   const [present] = await tx
     .select({ id: heartbeats.id })
