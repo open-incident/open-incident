@@ -3,7 +3,7 @@
  * one-click path that pages a person or a schedule, and the reads the setup
  * screens share.
  */
-import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import {
   alertAttributes,
   alertEvents,
@@ -15,6 +15,7 @@ import {
   escalationPaths,
   escalations,
   members,
+  notificationDeliveries,
   schedules,
   type EscalationGraph,
   type EscalationRule,
@@ -106,6 +107,26 @@ export async function alertingSetupStatus(tx: Tx, tenantId: string): Promise<Set
     .from(escalations)
     .where(and(eq(escalations.tenantId, tenantId), sql`${escalations.alertId} is not null`))
     .limit(1);
+  /*
+   * The third step asks for a test page and is finished by one.
+   *
+   * It used to be finished only by a real alert that escalated, which meant a
+   * workspace that had done everything right sat at two thirds until something
+   * actually broke — a checklist nobody could complete, on the screen whose
+   * whole job is to say the chain works. A delivered test page is the proof
+   * the step asked for.
+   */
+  const [tested] = await tx
+    .select({ id: notificationDeliveries.id })
+    .from(notificationDeliveries)
+    .where(
+      and(
+        eq(notificationDeliveries.tenantId, tenantId),
+        eq(notificationDeliveries.kind, "test"),
+        ne(notificationDeliveries.status, "failed"),
+      ),
+    )
+    .limit(1);
   const [routed] = await tx
     .select({ id: alertEvents.id })
     .from(alertEvents)
@@ -134,7 +155,7 @@ export async function alertingSetupStatus(tx: Tx, tenantId: string): Promise<Set
     pager: paging,
     source: sources.length > 0,
     firstAlert: (alertStats?.n ?? 0) > 0,
-    verified: Boolean(escalated),
+    verified: Boolean(escalated) || Boolean(tested),
   };
   return {
     sources: { count: sources.length, lastAlertAt, ids: sources.map((s) => s.id) },
@@ -149,7 +170,16 @@ export async function alertingSetupStatus(tx: Tx, tenantId: string): Promise<Set
     priorities: prio?.n ?? 0,
     attributes: attrs?.n ?? 0,
     steps,
-    complete: steps.pager && steps.source && steps.firstAlert && steps.verified,
+    /*
+     * The three the home shows, and only those.
+     *
+     * `firstAlert` — a real alert has arrived — used to be a fourth condition
+     * nobody was told about: a workspace could finish every step the screen
+     * listed, read 100 %, and keep the checklist until something broke on its
+     * own. The arrival of real alerts is not a setup task; it is what the
+     * setup is for.
+     */
+    complete: steps.pager && steps.source && steps.verified,
   };
 }
 
