@@ -113,7 +113,7 @@ test.describe("Microsoft Teams", () => {
     await page.goto("/app/incidents/new");
     const title = `[teams ${Date.now().toString(36)}] Erreurs 5xx checkout`;
     await page.locator('input[name="name"]').fill(title);
-    await page.locator('select[name="serviceEntryId"]').selectOption({ index: 1 });
+    await page.locator('select[name="serviceId"]').selectOption({ index: 1 });
     await page.locator('select[name="field.region"]').selectOption({ index: 1 });
     await page.locator('form[data-testid="declare-form"] button[type=submit]').click();
     await page.waitForURL(/\/app\/incidents\/\d+$/);
@@ -183,13 +183,17 @@ test.describe("Microsoft Teams", () => {
 
   test("a responder links Teams for pages and acknowledges from the card", async ({ page }) => {
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/on-call/notifications");
+    await page.goto("/app/on-call?tab=notifications");
     const link = page.getByTestId("teams-link");
     if ((await link.count()) > 0) {
       await link.click();
       await page.waitForURL(/verified=1/);
     }
-    await expect(page.getByText("Teams DM").first()).toBeVisible();
+    // The contact row names the channel and the linked account; "Teams DM" is
+    // the masked target, which belongs to the delivery log further down.
+    await expect(
+      page.getByTestId("contact-row").filter({ hasText: /Teams/i }).first(),
+    ).toBeVisible();
     // A test notification goes out on every verified method — Teams DM included.
     const before = mock.activities.length;
     await page.getByTestId("notif-test").click();

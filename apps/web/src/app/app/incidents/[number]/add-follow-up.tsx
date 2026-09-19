@@ -13,6 +13,7 @@ export function AddFollowUp({ number }: { number: number }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
+        data-testid="follow-up-add"
         className="oi-hover"
         style={{
           height: 32,
@@ -35,6 +36,7 @@ export function AddFollowUp({ number }: { number: number }) {
         await addFollowUp(fd);
         setOpen(false);
       }}
+      data-testid="follow-up-form"
       style={{ display: "flex", gap: 6 }}
     >
       <input type="hidden" name="number" value={number} />

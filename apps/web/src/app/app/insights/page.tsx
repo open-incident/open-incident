@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
-import { requireMember } from "@/lib/session";
+import { isManager, requireMember } from "@/lib/session";
 import { getWorkspace } from "@/lib/tenant";
 import {
   delta,
@@ -12,9 +12,15 @@ import {
   type Stat,
 } from "@/lib/insights";
 import { listMonitors } from "@/lib/monitors";
+import { getPayReport, getPayRules, listPayReports, previousPeriod } from "@/lib/pay";
+import { PayTab } from "./pay-tab";
 import type { MessageKey } from "@/i18n/dictionaries/en";
 
-const TABS = ["incidents", "pager", "uptime", "followups"] as const;
+// "pay" is the standby compensation report. The design does not draw it, and
+// it is not a chart like the other four — but the rules are configurable, the
+// report is generated monthly and frozen, and a screen that exists nowhere is
+// a feature nobody can use.
+const TABS = ["incidents", "pager", "uptime", "followups", "pay"] as const;
 type Tab = (typeof TABS)[number];
 
 const CARD: React.CSSProperties = {
@@ -34,9 +40,15 @@ const CARD: React.CSSProperties = {
 export default async function InsightsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; days?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    days?: string;
+    period?: string;
+    saved?: string;
+    error?: string;
+  }>;
 }) {
-  const { tenant } = await requireMember();
+  const { tenant, member } = await requireMember();
   const t = await getT();
   const sp = await searchParams;
   const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? "")
@@ -45,6 +57,20 @@ export default async function InsightsPage({
   const days = sp.days === "30" ? 30 : sp.days === "365" ? 365 : 90;
   const period = periodOf(days);
   const workspace = await getWorkspace();
+
+  // The pay tab reads a month, not a window of days, and nothing else on this
+  // screen needs it: it is loaded only when it is the one being shown.
+  const payPeriod = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.period ?? "")
+    ? sp.period!
+    : previousPeriod(new Date(), workspace?.timezone ?? "Europe/Paris");
+  const pay =
+    tab === "pay"
+      ? await withTenant(tenant.id, async (tx) => ({
+          rules: await getPayRules(tx, tenant.id),
+          report: await getPayReport(tx, tenant.id, payPeriod),
+          history: await listPayReports(tx, tenant.id),
+        }))
+      : null;
 
   const data = await withTenant(tenant.id, async (tx) => ({
     incidents: await incidentInsights(tx, tenant.id, period),
@@ -279,6 +305,7 @@ export default async function InsightsPage({
           {TABS.map((x) => (
             <Link
               key={x}
+              data-testid={`insights-tab-${x}`}
               href={`/app/insights?tab=${x}&days=${days}`}
               style={{
                 height: 28,
@@ -351,9 +378,22 @@ export default async function InsightsPage({
         </a>
       </div>
 
+      {pay && (
+        <PayTab
+          rules={pay.rules}
+          period={payPeriod}
+          report={pay.report}
+          history={pay.history}
+          manages={isManager(member)}
+          memberId={member.id}
+          saved={sp.saved}
+          error={sp.error}
+        />
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
         {kpis.map((k) => (
-          <div key={k.label} style={{ ...CARD, padding: "13px 16px" }}>
+          <div key={k.label} data-testid="insights-stat" style={{ ...CARD, padding: "13px 16px" }}>
             <div
               style={{
                 fontSize: 10.5,

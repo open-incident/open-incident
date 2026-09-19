@@ -163,7 +163,7 @@ test.describe("API & webhooks", () => {
       await page.goto("/app/incidents/new");
       const title = `[smoke hook ${new Date().toISOString().slice(11, 19)}] Webhook check`;
       await page.locator('input[name="name"]').fill(title);
-      await page.locator('select[name="serviceEntryId"]').selectOption({ index: 1 });
+      await page.locator('select[name="serviceId"]').selectOption({ index: 1 });
       await page.locator('select[name="field.region"]').selectOption({ index: 1 });
       await page.locator('form[data-testid="declare-form"] button[type=submit]').click();
       await page.waitForURL(/\/app\/incidents\/\d+$/);

@@ -128,7 +128,9 @@ export async function SchedulesTab({ q }: { q: Record<string, string | undefined
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{summary}</div>
+                <div data-testid="coverage-summary" style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                  {summary}
+                </div>
               </div>
               <span style={{ flex: 1 }} />
               {manages && s.status !== "published" && (

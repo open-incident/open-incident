@@ -10,6 +10,7 @@ import {
   type IncidentRow,
 } from "@/lib/incidents";
 import { listServices } from "@/lib/services";
+import { liveAnnouncements } from "@/lib/announcements";
 import { aiAllowance } from "@/lib/ai-capabilities";
 import { connectedTrackers } from "@/lib/trackers";
 import { avatarTone, initials } from "@/lib/avatar";
@@ -65,6 +66,10 @@ export default async function IncidentsPage({
         tenant.id,
         rows.map((r) => r.id),
       ),
+      // The banner the announcement rules publish. It belongs above the list
+      // the reader already opens, and the rules are configurable in Settings:
+      // dropping it would leave a feature with nowhere to appear.
+      announcements: followUpsView ? [] : await liveAnnouncements(tx, tenant.id),
       followUps: followUpsView ? await listFollowUps(tx, tenant.id) : [],
       policy: followUpsView ? await followUpPolicy(tx, tenant.id) : null,
       trackers: followUpsView ? await connectedTrackers(tx, tenant.id) : [],
@@ -187,6 +192,71 @@ export default async function IncidentsPage({
           </Link>
         )}
       </div>
+
+      {data.announcements.length > 0 && (
+        <section
+          aria-label={t("incidents.announcementsLabel")}
+          style={{ display: "flex", flexDirection: "column", gap: 6 }}
+        >
+          {data.announcements.map((a) => (
+            <Link
+              key={a.id}
+              href={`/app/incidents/${a.incidentNumber}`}
+              data-testid="announcement"
+              className="oi-hover-edge"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                background: "var(--brand-t)",
+                border: "1px solid var(--brand-b)",
+                borderRadius: "var(--radius-card)",
+                padding: "10px 14px",
+                fontSize: 13,
+                color: "inherit",
+                textDecoration: "none",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  letterSpacing: ".08em",
+                  color: "var(--brand)",
+                  background: "var(--panel)",
+                  borderRadius: 6,
+                  padding: "2px 7px",
+                  flex: "none",
+                }}
+              >
+                {t("incidents.announcementTag")}
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--mono)",
+                  fontSize: 11.5,
+                  color: "var(--ink-3)",
+                  flex: "none",
+                }}
+              >
+                INC-{a.incidentNumber}
+                {a.severity ? ` · ${a.severity}` : ""}
+              </span>
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {a.body}
+              </span>
+            </Link>
+          ))}
+        </section>
+      )}
 
       {q.length > 0 && !followUpsView && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5 }}>

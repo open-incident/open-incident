@@ -53,7 +53,10 @@ test.describe("Custom roles", () => {
 
     // The holder: alerting settings open, the general settings closed, incidents still theirs.
     await signIn(page, MEMBERS.responder);
-    await page.goto("/app/settings/alert-sources");
+    // Sources moved into the Alerts section and are no longer behind the
+    // alerting permission — every member reads them, every change still asks
+    // for a manager. Rules is the screen that permission opens now.
+    await page.goto("/app/settings/alert-routes");
     await expect(page.getByTestId("role-restricted")).toHaveCount(0);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await page.goto("/app/settings/heartbeats");
@@ -64,7 +67,7 @@ test.describe("Custom roles", () => {
     await expect(page.getByTestId("role-restricted")).toBeVisible();
     // The settings index lands on the first screen they hold.
     await page.goto("/app/settings");
-    await page.waitForURL(/\/app\/settings\/alert-sources/);
+    await page.waitForURL(/\/app\/settings\/alert-routes/);
     await page.goto("/app/incidents/new");
     await expect(page).toHaveURL(/\/app\/incidents\/new/);
     await signOut(page);

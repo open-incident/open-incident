@@ -13,7 +13,12 @@ test.describe("User guide", () => {
     await signIn(page, MEMBERS.viewer);
     await page.goto("/app/docs");
     await page.waitForURL(/\/app\/docs\/[a-z-]+/);
-    const nav = page.getByRole("complementary").first();
+    // The shell's own rail is a complementary too now: pick the one that
+    // actually holds chapter links.
+    const nav = page
+      .getByRole("complementary")
+      .filter({ has: page.locator("a[href^='/app/docs/']") })
+      .first();
     expect(await nav.locator("a[href^='/app/docs/']").count()).toBeGreaterThanOrEqual(20);
     await expect(page.locator("article h1")).toBeVisible();
 

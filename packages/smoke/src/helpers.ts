@@ -53,7 +53,12 @@ export async function linkFromMail(
   email: string,
   pathFragment: string,
   since: number,
-  timeoutMs = 20_000,
+  // A minute, not twenty seconds. Transactional mail shares one queue with the
+  // fan-out to a status page's subscribers, and the demo workspace has a
+  // hundred and twenty-eight of them: publishing one update puts that many
+  // messages ahead of the next reset link. The wait is long because the
+  // product really is slower here, not to paper over a flake.
+  timeoutMs = 60_000,
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {

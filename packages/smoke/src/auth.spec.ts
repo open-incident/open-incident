@@ -9,7 +9,9 @@ test.describe("Authentication", () => {
   test("sign in, land on the incidents, sign out", async ({ page }) => {
     await signIn(page, MEMBERS.owner);
     await expect(page).toHaveURL(/\/app\/incidents/);
-    await expect(page.getByText("INC-217")).toBeVisible();
+    // The list opens on "Open", which carries the two live incidents of the
+    // demo data set; INC-217 is resolved and lives under "All".
+    await expect(page.getByText("INC-221")).toBeVisible();
     await signOut(page);
     await page.goto("/app/incidents");
     await expect(page).toHaveURL(/\/login/);

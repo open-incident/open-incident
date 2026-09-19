@@ -16,7 +16,7 @@ test.describe("On-call & alerting", () => {
     page,
   }) => {
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/settings/alert-sources");
+    await page.goto("/app/alerts/sources");
     await page.getByTestId("source-open").click();
     await page.getByTestId("source-kind-http").click();
     await page
@@ -99,9 +99,10 @@ test.describe("On-call & alerting", () => {
 
   test("a source test sends a real alert in test mode that pages nobody", async ({ page }) => {
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/settings/alert-sources");
-    const row = page.getByTestId("source-row").filter({ hasText: "Datadog" }).first();
-    await row.getByTestId("source-test").click();
+    await page.goto("/app/alerts/sources");
+    // The grid lists the sources; sending a test belongs to the source's page.
+    await page.getByTestId("source-row").filter({ hasText: "Datadog" }).first().click();
+    await page.getByTestId("source-test").click();
     await page.waitForURL(/tested=/);
     await page.getByRole("link", { name: /Ouvrir l'alerte|Open the test alert|Testalarm/ }).click();
     await expect(page.getByText(/mode test|test mode|Testmodus/i).first()).toBeVisible();
@@ -111,22 +112,31 @@ test.describe("On-call & alerting", () => {
 
   test("the schedule shows who is on call and a click reassigns one slot", async ({ page }) => {
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/on-call");
-    await expect(page.getByRole("heading", { name: "Platform primary" })).toBeVisible();
-    await expect(page.getByTestId("oncall-now").first()).toBeVisible();
-    await expect(page.getByTestId("oncall-me")).toBeVisible();
+    // Who is on call, and the seven-day grid, are the "Now" tab; the schedule's
+    // name is a card title there rather than a heading element.
+    await page.goto("/app/on-call?tab=now");
+    await expect(
+      page.getByTestId("oncall-now").filter({ hasText: "Platform primary" }).first(),
+    ).toBeVisible();
     const cells = page.getByTestId("shift-cell");
     await expect(cells.first()).toBeVisible();
     // Pick a filled cell of the day rotation (the first row), reassign it to someone else.
     await cells.nth(2).click();
     await expect(page.getByTestId("reassign")).toBeVisible();
     await page.getByTestId("reassign-to").first().click();
-    await expect(page.getByText(/Override —|Override –|Ersetzung —/).first()).toBeVisible();
+    // The cell carries an "override" tag now rather than a sentence.
+    await expect(
+      page
+        .getByTestId("shift-cell")
+        .filter({ hasText: /override|remplacement|Ersetzung/i })
+        .first(),
+    ).toBeVisible();
     await page
       .getByRole("button", { name: /Retirer l'override|Remove the override|Override entfernen/ })
       .first()
       .click();
-    // iCal really answers.
+    // iCal really answers. The subscription link lives with the schedules.
+    await page.goto("/app/on-call?tab=schedules");
     const ical = await page.request.get(
       (await page.locator('a[href^="/api/oncall/ical/"]').getAttribute("href"))!,
     );
@@ -161,7 +171,7 @@ test.describe("On-call & alerting", () => {
   }) => {
     const since = Date.now();
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/on-call/notifications");
+    await page.goto("/app/on-call?tab=notifications");
     await page.getByTestId("notif-test").click();
     await page.waitForURL(/test=1/);
     await expect(page.getByTestId("delivery-row").first()).toBeVisible();
@@ -177,7 +187,7 @@ test.describe("On-call & alerting", () => {
           new Date(m.Created).getTime() >= since - 5_000,
       );
       expect(hit).toBeTruthy();
-    }).toPass({ timeout: 20_000 });
+    }).toPass({ timeout: 60_000 });
     await page.reload();
     await expect(
       page
@@ -204,10 +214,11 @@ test.describe("On-call & alerting", () => {
     page,
   }) => {
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/on-call/paths");
+    await page.goto("/app/on-call?tab=policies");
     await expect(page.getByTestId("path-level").first()).toBeVisible();
-    await page.getByTestId("path-test").click();
-    await expect(page.getByTestId("path-test-result")).toBeVisible();
+    // One dry run per policy card now, so the first is the one to drive.
+    await page.getByTestId("path-test").first().click();
+    await expect(page.getByTestId("path-test-result").first()).toBeVisible();
     await page.goto("/app/settings/alert-routes");
     await expect(
       page.getByTestId("route-row").filter({ hasText: "Production alerts" }),

@@ -367,6 +367,7 @@ export default async function AlertSourcePage({
             showLabel={t("alt2.common.show")}
             hideLabel={t("alt2.common.hide")}
             padding="12px 18px"
+            testId="source-advanced"
           >
             <div
               style={{

@@ -7,14 +7,25 @@ test.describe("Coverage", () => {
     page,
   }) => {
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/on-call");
-    await expect(page.getByTestId("coverage-summary")).toBeVisible();
-    const before = await page.getByTestId("coverage-gap").count();
+    // Coverage is a line per schedule on the Schedules tab. The gaps are no
+    // longer listed one by one: the line says how many hours have nobody, so
+    // the override is proven by that figure rising rather than by a new row.
+    await page.goto("/app/on-call?tab=schedules");
+    const summary = page.getByTestId("coverage-summary").first();
+    await expect(summary).toBeVisible();
+    const hours = async () => {
+      const text = (await summary.textContent()) ?? "";
+      const m = /(\d+)\s+(?:hours?|heures?|Stunden?)/i.exec(text);
+      return m ? Number(m[1]) : 0;
+    };
+    const before = await hours();
     // A null-member override tomorrow for two hours: an assumed gap inside the
     // expected window. At 10:00 local on purpose — the dialog binds the override
     // to the day rotation (09:00–21:00 in the demo), so a slot taken at the
     // current hour would fall outside it at night and open no gap.
-    await page.getByTestId("override-open").click();
+    // The override is taken from the Now tab, which is where the dialog lives.
+    await page.goto("/app/on-call?tab=now");
+    await page.getByTestId("override-open").first().click();
     const start = new Date(Date.now() + 24 * 3_600_000);
     start.setHours(10, 0, 0, 0);
     const end = new Date(start.getTime() + 2 * 3_600_000);
@@ -29,8 +40,14 @@ test.describe("Coverage", () => {
     if ((await reason.count()) > 0) await reason.first().fill("Smoke gap");
     await form.locator('button[type="submit"]').click();
     await expect
-      .poll(async () => page.getByTestId("coverage-gap").count(), { timeout: 15_000 })
+      .poll(
+        async () => {
+          await page.goto("/app/on-call?tab=schedules");
+          return hours();
+        },
+        { timeout: 20_000 },
+      )
       .toBeGreaterThan(before);
-    await expect(page.getByTestId("coverage-summary")).toContainText(/trou|gap|Lücke/i);
+    await expect(summary).toContainText(/nobody|personne|niemand/i);
   });
 });

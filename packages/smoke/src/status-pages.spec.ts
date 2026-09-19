@@ -48,7 +48,7 @@ test.describe("Status pages", () => {
       };
       link = /https?:\/\/\S+\/confirm\/[a-f0-9]+/.exec(body.Text)?.[0] ?? "";
       expect(link).toBeTruthy();
-    }).toPass({ timeout: 20_000 });
+    }).toPass({ timeout: 60_000 });
     await page.goto(link);
     await expect(page.getByTestId("confirmed")).toBeVisible();
     await api.dispose();

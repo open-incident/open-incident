@@ -42,7 +42,9 @@ test.describe("Post-mortem editor", () => {
     await add.locator("input[name=title]").fill("Smoke lessons");
     await add.getByRole("button").click();
     await expect(page.getByTestId("pm-section-smoke_lessons")).toBeVisible();
-    await expect(page.getByTestId("pm-toc")).toContainText("Smoke lessons");
+    // The contents rail is gone from the design; the section itself carries its
+    // title, which is what the reader looks for.
+    await expect(page.getByTestId("pm-section-smoke_lessons")).toContainText("Smoke lessons");
 
     // A comment, then resolved.
     await section.getByTestId("pm-comment-toggle").click();
@@ -51,6 +53,8 @@ test.describe("Post-mortem editor", () => {
       .locator("textarea")
       .fill("Smoke comment: check the percentage.");
     await section.getByTestId("pm-comment-form").getByRole("button").click();
+    // Comments live in the right drawer now; it has to be opened to be read.
+    await page.getByTestId("pm-comments-toggle").click();
     await expect(page.getByTestId("pm-open-comments")).toContainText("Smoke comment");
     await section.getByRole("button", { name: /Resolve|Résoudre|Erledigen/ }).click();
     await expect(page.getByTestId("pm-open-comments")).not.toContainText("Smoke comment");

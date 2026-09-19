@@ -43,11 +43,13 @@ test.describe("Runbooks", () => {
     await expect(row).toBeVisible();
     await expect(row).toContainText(/fetched|récupéré|abgerufen/i);
 
-    // INC-217 is on checkout-api: the side panel lists the runbook.
-    await page.goto("/app/incidents/217");
+    // INC-217 is on checkout-api: the Context tab lists the runbook, with the
+    // host it came from and when it was fetched.
+    await page.goto("/app/incidents/217?tab=context");
     await expect(page.getByTestId("ai-runbooks")).toContainText("Checkout latency runbook");
-    // The assistant's dossier quotes it.
+    // The assistant's dossier quotes it. The summary is an Atlas action.
     ai.reset();
+    await page.goto("/app/incidents/217?tab=atlas");
     await page.getByTestId("ai-summary-generate").click();
     await expect(page.getByTestId("ai-summary")).toContainText("Mock summary");
     const calls = ai.calls.filter((c) => c.path === "/v1/chat/completions");

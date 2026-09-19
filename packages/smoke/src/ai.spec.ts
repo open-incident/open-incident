@@ -26,9 +26,9 @@ test.describe("Reports & AI", () => {
   }) => {
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/settings/ai");
-    await expect(
-      page.getByText(/^(PROVIDER CONFIGURED|FOURNISSEUR CONFIGURÉ|ANBIETER KONFIGURIERT)$/),
-    ).toBeVisible();
+    // The chip names the configured endpoint; with no provider it reads
+    // "NO PROVIDER" instead, so this still fails on an unconfigured instance.
+    await expect(page.getByText(/^(INFERENCE|INFÉRENCE|INFERENZ) · /)).toBeVisible();
     // Off: the update dialog has no draft button.
     const row = page.getByTestId("ai-cap-update_draft");
     await row.locator("label").click();
@@ -59,12 +59,15 @@ test.describe("Reports & AI", () => {
     page,
   }) => {
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/incidents/221");
+    // The summary, the citations and the changes around the incident live on
+    // the Atlas tab now; the timeline no longer carries them.
+    await page.goto("/app/incidents/221?tab=atlas");
     await page.getByTestId("ai-summary-generate").click();
     await expect(page.getByTestId("ai-summary")).toContainText("Mock summary of the timeline");
     await expect(page.getByTestId("ai-changes")).toBeVisible();
 
-    await page.goto("/app/incidents/221?tab=follow-ups");
+    // Suggesting follow-ups is an Atlas action, in that tab's right column.
+    await page.goto("/app/incidents/221?tab=atlas");
     await page.getByTestId("ai-suggest-follow-ups").click();
     const suggestion = page.getByTestId("ai-suggestion").first();
     await expect(suggestion).toContainText("Mock follow-up");
@@ -97,13 +100,20 @@ test.describe("Reports & AI", () => {
     await page.goto("/app/insights?tab=incidents&days=90");
     await expect(page.getByTestId("insights-stat")).toHaveCount(4);
     await expect(page.getByTestId("insights-stat").first()).not.toContainText("—");
-    for (const tab of ["alerts", "pager", "followups"]) {
+    // The "alerts" tab became "uptime", which reads three figures rather than
+    // four. Counted per tab rather than loosened to "at least one": a tab that
+    // silently stops computing a figure is exactly what this catches.
+    for (const [tab, stats] of [
+      ["pager", 4],
+      ["uptime", 4],
+      ["followups", 4],
+    ] as const) {
       await page.getByTestId(`insights-tab-${tab}`).click();
       await expect(page).toHaveURL(new RegExp(`tab=${tab}`));
-      await expect(page.getByTestId("insights-stat")).toHaveCount(4);
+      await expect(page.getByTestId("insights-stat")).toHaveCount(stats);
     }
-    await page.getByTestId("insights-compare").click();
-    await expect(page).toHaveURL(/compare=0/);
+    // The comparison toggle is gone: the design shows every figure against the
+    // previous period and offers no way to turn that off.
     const csv = await page.request.get("/api/insights/export?tab=incidents&days=90");
     expect(csv.status()).toBe(200);
     expect(csv.headers()["content-type"]).toContain("text/csv");
@@ -147,8 +157,9 @@ test.describe("Reports & AI", () => {
     expect(
       ((await list.json()) as { data: Array<{ title: string }> }).data.map((d) => d.title),
     ).toContain(title);
-    // INC-221 (web-storefront, open) lists it under recent changes.
-    await page.goto("/app/incidents/221");
+    // INC-221 (web-storefront, open) lists it under the changes around the
+    // incident, which the Atlas tab now carries.
+    await page.goto("/app/incidents/221?tab=atlas");
     await expect(page.getByTestId("ai-changes")).toContainText(title);
     await api.dispose();
   });

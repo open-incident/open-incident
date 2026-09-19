@@ -36,7 +36,9 @@ test.describe("Alert configuration", () => {
     await expect(page.getByTestId("source-title")).toHaveText(name);
     await expect(page.getByTestId("source-waiting")).toHaveAttribute("data-state", "waiting");
 
-    // The tester says what a payload would do before anything is sent.
+    // The tester says what a payload would do before anything is sent. It
+    // lives behind the source's "advanced" disclosure now.
+    await page.getByTestId("source-advanced").click();
     const tester = page.getByTestId("payload-tester");
     await tester.locator("textarea").fill(
       JSON.stringify({
@@ -60,6 +62,8 @@ test.describe("Alert configuration", () => {
     await expect(tester.getByRole("status")).toContainText(/created|grouped|deduplicated/);
     await page.reload();
     await expect(page.getByTestId("source-waiting")).toHaveAttribute("data-state", "received");
+    // The reload closed the advanced disclosure the mapping rows live in.
+    await page.getByTestId("source-advanced").click();
     await expect(page.getByTestId("mapping-preview").first()).toBeVisible();
 
     // The real thing: posted to the endpoint with the secret, routed and paging.

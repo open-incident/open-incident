@@ -13,6 +13,8 @@ type Line = { text: string; source: string; when: string; href?: string };
 type Card = {
   title: string;
   note: string;
+  /** Names the card so a journey can find it without reading its heading. */
+  testId?: string;
   ai?: boolean;
   /** Set when the capability cannot run here: the card says so instead of guessing. */
   unavailable?: string;
@@ -125,6 +127,7 @@ export async function ContextTab({
     },
     {
       title: t("inc2.ctx.runbooks"),
+      testId: "ai-runbooks",
       note: String(runbooks.length),
       lines: runbooks.map((r) => ({
         text: r.title,
@@ -195,6 +198,7 @@ export async function ContextTab({
         {cards.map((c) => (
           <div
             key={c.title}
+            data-testid={c.testId}
             style={{
               background: "var(--panel)",
               border: "1px solid var(--line)",

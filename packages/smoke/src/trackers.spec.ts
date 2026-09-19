@@ -42,13 +42,14 @@ test.describe("Issue trackers", () => {
 
     // A fresh follow-up on INC-217, exported from its row.
     await page.goto("/app/incidents/217?tab=follow-ups");
-    await page
-      .getByRole("button", { name: /suivi|follow-up|Folgeaufgabe/i })
-      .first()
-      .click();
+    // Named rather than matched on wording: the tab also carries "suggest
+    // follow-ups", and a name match picked that one.
+    await page.getByTestId("follow-up-add").first().click();
     const title = `Smoke export ${Date.now().toString(36)}`;
-    await page.locator('input[name="title"]').fill(title);
-    await page.locator("form button[type=submit]", { hasText: /Ajouter|Add|Hinzufügen/ }).click();
+    // Scoped to the form: the post-mortem document has a title field of its own.
+    const addForm = page.getByTestId("follow-up-form");
+    await addForm.locator('input[name="title"]').fill(title);
+    await addForm.locator("button[type=submit]").click();
     const row = page.locator(".oi-card").filter({ hasText: title });
     await expect(row).toBeVisible();
     await row.getByTestId("follow-up-export").click();

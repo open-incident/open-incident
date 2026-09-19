@@ -13,6 +13,7 @@ export function Fold({
   showLabel,
   hideLabel,
   padding,
+  testId,
   children,
 }: {
   title: string;
@@ -21,6 +22,8 @@ export function Fold({
   hideLabel: string;
   /** The header's padding — 12px 16px on the alert, 12px 18px on the source. */
   padding: string;
+  /** Names the disclosure so a journey can open it without reading its label. */
+  testId?: string;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -38,6 +41,7 @@ export function Fold({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        data-testid={testId}
         style={{
           width: "100%",
           display: "flex",

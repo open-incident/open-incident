@@ -24,24 +24,31 @@ test.describe("Incidents", () => {
     const title = `[smoke ${new Date().toISOString().slice(11, 19)}] Latence API`;
     await page.locator('input[name="name"]').fill(title);
     // The default type requires the affected service and the region: pick the first of each.
-    await page.locator('select[name="serviceEntryId"]').selectOption({ index: 1 });
+    // The declaration form picks from the workspace's services (`serviceId`);
+    // it falls back to the catalog entries only when no service exists.
+    await page.locator('select[name="serviceId"]').selectOption({ index: 1 });
     await page.locator('select[name="field.region"]').selectOption({ index: 1 });
     await page.locator('form[data-testid="declare-form"] button[type=submit]').click();
     await page.waitForURL(/\/app\/incidents\/\d+$/);
     await expect(page.getByRole("heading", { name: title })).toBeVisible();
 
-    const before = await page.getByTestId("timeline-event").count();
+    // Counted on the update rows rather than on every row: declaring also
+    // starts the root cause analysis, which writes its own entry when it lands,
+    // and that arrival is not what this test is about.
+    const updates = page.locator('[data-testid="timeline-event"][data-kind="update"]');
+    const before = await updates.count();
     await page.getByTestId("update-open").click();
     await page.locator('textarea[name="message"]').fill("Smoke update — investigating.");
     await page.locator('form[data-testid="update-form"] button[type=submit]').click();
-    await expect(page.getByTestId("timeline-event")).toHaveCount(before + 1);
+    await expect(updates).toHaveCount(before + 1);
     await expect(page.getByText("Smoke update — investigating.")).toBeVisible();
     await signOut(page);
   });
 
   test("a viewer sees incidents but cannot declare", async ({ page }) => {
     await signIn(page, MEMBERS.viewer);
-    await page.goto("/app/incidents");
+    // "All" is the tab that carries every phase, INC-217 included.
+    await page.goto("/app/incidents?tab=all");
     await expect(page.getByText("INC-217")).toBeVisible();
     await expect(page.getByTestId("declare-open")).toHaveCount(0);
     const res = await page.request.get("/app/incidents/new", {
