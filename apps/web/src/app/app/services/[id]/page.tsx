@@ -9,6 +9,7 @@ import { getService, listTeams } from "@/lib/services";
 import { telemetryInstalled } from "@/lib/telemetry-module";
 import {
   assignOwner,
+  clearOwner,
   createRunbook,
   deleteRunbook,
   deleteService,
@@ -492,7 +493,7 @@ export default async function ServiceDetailPage({
                   >
                     {svc.ownerTeamName.slice(0, 2).toUpperCase()}
                   </span>
-                  <div style={{ lineHeight: 1.25 }}>
+                  <div style={{ lineHeight: 1.25, flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 600 }}>{svc.ownerTeamName}</div>
                     <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
                       {svc.ownerPolicyName
@@ -501,6 +502,35 @@ export default async function ServiceDetailPage({
                       {svc.ownerChannel ? ` · ${svc.ownerChannel}` : ""}
                     </div>
                   </div>
+                  {/* The undo of the click that assigned it. Handing a service
+                      to the wrong team was a one-way gesture until now. */}
+                  {mayEdit && (
+                    <form action={clearOwner}>
+                      <input type="hidden" name="serviceId" value={svc.id} />
+                      <button
+                        type="submit"
+                        data-testid="owner-clear"
+                        aria-label={t("services.clearOwner")}
+                        title={t("services.clearOwner")}
+                        className="oi-hover"
+                        style={{
+                          width: 24,
+                          height: 24,
+                          border: "1px solid var(--line)",
+                          borderRadius: 7,
+                          background: "var(--panel)",
+                          color: "var(--ink-3)",
+                          display: "grid",
+                          placeItems: "center",
+                          fontSize: 11,
+                          cursor: "pointer",
+                          flex: "none",
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </form>
+                  )}
                 </div>
                 {!svc.ownerPolicyName && mayEdit && paths.length > 0 && svc.ownerTeamId && (
                   <form

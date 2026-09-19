@@ -142,6 +142,7 @@ export const de: Dictionary = {
   "services.setPolicy": "Wählen Sie die Richtlinie, über die dieses Team gerufen wird",
   "services.usePolicy": "Verwenden",
   "services.noOwner": "Ohne Verantwortlichen — niemand wird für diesen Service alarmiert.",
+  "services.clearOwner": "Verantwortliches Team entfernen",
   "services.seenIn": "GESEHEN IN",
   "services.seenNowhere": "Bisher nirgends gesehen.",
   "services.lastSignal": "letztes Signal {when}",

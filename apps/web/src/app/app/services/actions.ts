@@ -172,7 +172,15 @@ export async function deleteService(formData: FormData) {
   redirect(`/app/services/${serviceId}?error=${outcome}`);
 }
 
-/** Undo — the service goes back to "seen in traffic", nothing else changes. */
+/**
+ * Undo — the service goes back to "seen in traffic", nothing else changes.
+ *
+ * There used to be a third action beside these two, "adopt without naming an
+ * owner". It was removed rather than given the button it never had: adopting a
+ * service nobody is paged for takes it out of the list whose whole job is to
+ * say nobody is paged for it. A workspace with no team to hand it to now makes
+ * one, which is what that action was quietly standing in for.
+ */
 export async function clearOwner(formData: FormData) {
   const current = await requireResponder();
   const serviceId = uuid.parse(formData.get("serviceId"));
@@ -187,19 +195,6 @@ export async function clearOwner(formData: FormData) {
   });
   revalidatePath("/app/services");
   revalidatePath("/app");
-}
-
-/** Adopting a service without naming an owner yet — it leaves the traffic list. */
-export async function confirmService(formData: FormData) {
-  const current = await requireResponder();
-  const serviceId = uuid.parse(formData.get("serviceId"));
-  await withTenant(current.tenant.id, (tx) =>
-    tx
-      .update(services)
-      .set({ confirmed: true, updatedAt: new Date() })
-      .where(and(eq(services.tenantId, current.tenant.id), eq(services.id, serviceId))),
-  );
-  revalidatePath("/app/services");
 }
 
 /**

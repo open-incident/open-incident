@@ -145,6 +145,7 @@ export const en = {
   "services.setPolicy": "Choose the policy this team is paged through",
   "services.usePolicy": "Use",
   "services.noOwner": "No owner — nobody is paged for this service.",
+  "services.clearOwner": "Remove the owner",
   "services.seenIn": "SEEN IN",
   "services.seenNowhere": "Not seen anywhere yet.",
   "services.lastSignal": "last signal {when}",

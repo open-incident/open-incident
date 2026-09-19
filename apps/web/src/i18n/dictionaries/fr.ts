@@ -141,6 +141,7 @@ export const fr: Dictionary = {
   "services.setPolicy": "Choisissez la politique par laquelle cette équipe est appelée",
   "services.usePolicy": "Utiliser",
   "services.noOwner": "Sans propriétaire — personne n'est pagé pour ce service.",
+  "services.clearOwner": "Retirer le propriétaire",
   "services.seenIn": "VU DANS",
   "services.seenNowhere": "Vu nulle part pour l'instant.",
   "services.lastSignal": "dernier signal {when}",
