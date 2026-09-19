@@ -1224,10 +1224,18 @@ export const workingHoursSets = app.table(
   (t) => [uniqueIndex("working_hours_sets_tenant_name").on(t.tenantId, t.name)],
 );
 
-/** Who a level pages. */
+/**
+ * Who a level pages.
+ *
+ * A team is named by its row in `app.teams`, which is where the product now
+ * keeps teams and their members. The older spelling points at a catalog entry
+ * instead: it is still read, so a path written before the move keeps paging the
+ * same people, and it is never written again.
+ */
 export type EscalationTarget =
   | { kind: "member"; memberId: string }
   | { kind: "schedule"; scheduleId: string; mode: "current" | "next" | "everyone" }
+  | { kind: "team"; teamId: string }
   | { kind: "team"; teamEntryId: string };
 
 /**

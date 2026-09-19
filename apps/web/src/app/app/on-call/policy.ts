@@ -62,7 +62,9 @@ export function mainChain(graph: EscalationGraph): ChainStep[] {
 export function targetText(t: Translate, target: EscalationTarget, names: Names): string {
   if (target.kind === "member") return names.member(target.memberId);
   if (target.kind === "team")
-    return t("oc2.pol.targetTeam", { name: names.team(target.teamEntryId) });
+    return t("oc2.pol.targetTeam", {
+      name: names.team("teamId" in target ? target.teamId : target.teamEntryId),
+    });
   const schedule = names.schedule(target.scheduleId);
   if (target.mode === "everyone") return t("oc2.pol.targetEveryone", { schedule });
   if (target.mode === "next") return t("oc2.pol.targetNext", { schedule });
@@ -160,7 +162,9 @@ export async function loadNameSource(
       graphs.flatMap((g) =>
         g.nodes.flatMap((n) =>
           n.kind === "level"
-            ? n.targets.flatMap((tg) => (tg.kind === "team" ? [tg.teamEntryId] : []))
+            ? n.targets.flatMap((tg) =>
+                tg.kind === "team" ? ["teamId" in tg ? tg.teamId : tg.teamEntryId] : [],
+              )
             : [],
         ),
       ),

@@ -21,6 +21,7 @@ import {
   escalationPathVersions,
   escalationPaths,
   services,
+  teamMembers,
   teams,
   escalations,
   incidentEvents,
@@ -101,12 +102,22 @@ export async function resolveTargets(
   for (const t of targets) {
     if (t.kind === "member") ids.add(t.memberId);
     if (t.kind === "team") {
-      const [entry] = await tx
-        .select({ attributes: catalogEntries.attributes })
-        .from(catalogEntries)
-        .where(and(eq(catalogEntries.tenantId, tenantId), eq(catalogEntries.id, t.teamEntryId)));
-      const list = entry?.attributes?.members;
-      if (Array.isArray(list)) for (const m of list) if (typeof m === "string") ids.add(m);
+      if ("teamId" in t) {
+        // The team as the product now keeps it: a row and its memberships.
+        const rows = await tx
+          .select({ memberId: teamMembers.memberId })
+          .from(teamMembers)
+          .where(and(eq(teamMembers.tenantId, tenantId), eq(teamMembers.teamId, t.teamId)));
+        for (const r of rows) ids.add(r.memberId);
+      } else {
+        // A path written before the move still names a catalog entry.
+        const [entry] = await tx
+          .select({ attributes: catalogEntries.attributes })
+          .from(catalogEntries)
+          .where(and(eq(catalogEntries.tenantId, tenantId), eq(catalogEntries.id, t.teamEntryId)));
+        const list = entry?.attributes?.members;
+        if (Array.isArray(list)) for (const m of list) if (typeof m === "string") ids.add(m);
+      }
     }
     if (t.kind === "schedule") {
       const [sched] = await tx

@@ -46,14 +46,19 @@ export default async function PathsPage({
     : null;
   const memberName = (id: string) => data.labels.members.find((m) => m.id === id)?.name ?? "—";
   const scheduleName = (id: string) => data.labels.schedules.find((s) => s.id === id)?.name ?? "—";
-  const teamName = (id: string) => `#${id.slice(0, 6)}`;
+  // Read from the workspace's teams. It used to print six characters of the
+  // identifier, which told a reader nothing about who would be paged.
+  const teamName = (id: string) =>
+    data.labels.teams.find((x) => x.id === id)?.name ??
+    data.labels.legacyTeams.find((x) => x.id === id)?.name ??
+    t("oncall.targetTeamUnknown");
   const setName = (id: string) => data.labels.workingHours.find((w) => w.id === id)?.name ?? "—";
   const targetLabel = (tg: Extract<EscalationNode, { kind: "level" }>["targets"][number]) =>
     tg.kind === "member"
       ? memberName(tg.memberId)
       : tg.kind === "schedule"
         ? `${t("oncall.targetSchedule")} · ${scheduleName(tg.scheduleId)} — ${t(`oncall.mode.${tg.mode}`)}`
-        : `${t("oncall.targetTeam")} · ${teamName(tg.teamEntryId)}`;
+        : `${t("oncall.targetTeam")} · ${teamName("teamId" in tg ? tg.teamId : tg.teamEntryId)}`;
   const condLabel = (n: Extract<EscalationNode, { kind: "condition" }>) =>
     n.test.type === "working_hours"
       ? t("oncall.condHours", { set: setName(n.test.setId) })
@@ -905,7 +910,11 @@ export default async function PathsPage({
                               ? selected.targets[0].kind === "member"
                                 ? `member:${selected.targets[0].memberId}`
                                 : selected.targets[0].kind === "team"
-                                  ? `team:${selected.targets[0].teamEntryId}`
+                                  ? `team:${
+                                      "teamId" in selected.targets[0]
+                                        ? selected.targets[0].teamId
+                                        : selected.targets[0].teamEntryId
+                                    }`
                                   : `schedule:${selected.targets[0].scheduleId}:${selected.targets[0].mode}`
                               : ""
                           }
@@ -936,6 +945,20 @@ export default async function PathsPage({
                               </option>
                             ))}
                           </optgroup>
+                          {/*
+                            A team was storable and unselectable: the graph has
+                            always had the target, the seed writes one, and this
+                            list offered no way to pick it.
+                          */}
+                          {data.labels.teams.length > 0 && (
+                            <optgroup label={t("oncall.teams")}>
+                              {data.labels.teams.map((x) => (
+                                <option key={x.id} value={`team:${x.id}`}>
+                                  {x.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
                         </select>
                       </label>
                       <div
