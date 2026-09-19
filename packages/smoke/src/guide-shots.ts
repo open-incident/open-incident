@@ -120,34 +120,7 @@ async function main() {
     { file: "oncall-schedule.png", path: "/app/on-call" },
     { file: "oncall-paths.png", path: "/app/on-call/paths" },
     { file: "oncall-notifications.png", path: "/app/on-call/notifications" },
-    { file: "catalog.png", path: "/app/catalog?type=service&entry=checkout-api" },
-    {
-      file: "catalog-entry-dialog.png",
-      path: "/app/catalog?type=service",
-      act: async (p) => {
-        await p.getByTestId("entry-open").click();
-        await p.getByTestId("entry-form").waitFor();
-      },
-    },
-    {
-      file: "catalog-type-dialog.png",
-      path: "/app/catalog",
-      act: async (p) => {
-        await p.getByTestId("type-open").click();
-        await p.getByTestId("type-form").waitFor();
-        await p.getByTestId("type-form").locator('input[name="name"]').fill("Squads");
-        await p.getByTestId("attr-add").click();
-        await p.getByTestId("attr-row").first().locator("input").first().fill("Lead");
-      },
-    },
-    {
-      file: "catalog-import-dialog.png",
-      path: "/app/catalog?type=service",
-      act: async (p) => {
-        await p.getByTestId("import-open").click();
-        await p.getByTestId("import-form").waitFor();
-      },
-    },
+    { file: "services.png", path: "/app/services" },
     { file: "status-pages-admin.png", path: "/app/status-pages" },
     { file: "insights-incidents.png", path: "/app/insights?tab=incidents&days=90" },
     { file: "insights-alerts.png", path: "/app/insights?tab=alerts&days=90" },
@@ -222,7 +195,6 @@ async function main() {
       .locator('input[name="description"]')
       .fill("Tunes routes and sources; runs incidents.");
     await roleForm.locator('input[value="incidents.respond"]').check();
-    await roleForm.locator('input[value="catalog.entries"]').check();
     await roleForm.locator('input[value="settings.alerting"]').check();
     await page.getByTestId("role-save").click();
     await page.waitForURL(/saved=1/);

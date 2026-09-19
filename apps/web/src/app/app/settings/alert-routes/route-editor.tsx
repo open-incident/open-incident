@@ -178,7 +178,7 @@ const dashed: React.CSSProperties = {
  * not draw — every decision the route actually carries.
  *
  * The chip row is a summary, not a second editor. Each chip opens the section
- * that owns the choice: an escalation rule over a catalog attribute or an
+ * that owns the choice: an escalation rule over an attribute or an
  * incident template with its type, severity, visibility and custom fields does
  * not fit in a dropdown, and a chip that pretended otherwise would either lose
  * the choice or lie about it.
@@ -200,7 +200,7 @@ export function RouteEditor({
   index,
 }: {
   route: RouteRow | null;
-  attributes: Array<{ key: string; label: string; type: string; catalogTypeKey: string | null }>;
+  attributes: Array<{ key: string; label: string; type: string }>;
   sources: Array<Named & { kind: string }>;
   paths: Array<Named & { published: boolean }>;
   types: Array<Named & { isDefault: boolean }>;
@@ -240,7 +240,8 @@ export function RouteEditor({
   const [preview, setPreview] = useState<RulePreview | null>(null);
   const [pending, start] = useTransition();
   const [paths2, setPaths] = useState(paths);
-  const catalogAttrs = attributes.filter((a) => a.type === "catalog");
+  // Only two attribute types name a row the routing can follow to a policy.
+  const routableAttrs = attributes.filter((a) => a.type === "service" || a.type === "team");
 
   // The sections the chips jump to.
   const condRef = useRef<HTMLElement | null>(null);
@@ -661,7 +662,7 @@ export function RouteEditor({
                           ? { kind: "path", pathId: paths2[0]?.id ?? "" }
                           : {
                               kind: "attribute",
-                              attribute: catalogAttrs[0]?.key ?? "service",
+                              attribute: routableAttrs[0]?.key ?? "service",
                               fallbackPathId: null,
                             },
                     ),
@@ -704,12 +705,12 @@ export function RouteEditor({
                     }
                     style={control}
                   >
-                    {catalogAttrs.map((a) => (
+                    {routableAttrs.map((a) => (
                       <option key={a.key} value={a.key}>
-                        {a.label} → {a.catalogTypeKey}
+                        {a.label} → {a.type}
                       </option>
                     ))}
-                    {catalogAttrs.length === 0 && (
+                    {routableAttrs.length === 0 && (
                       <option value={rule.attribute}>{rule.attribute}</option>
                     )}
                   </select>
@@ -806,7 +807,7 @@ export function RouteEditor({
                 + {t("settings.routes.addPathRule")}
               </button>
             )}
-            {catalogAttrs.length > 0 && (
+            {routableAttrs.length > 0 && (
               <button
                 type="button"
                 style={small}
@@ -815,7 +816,7 @@ export function RouteEditor({
                     ...rs,
                     {
                       kind: "attribute",
-                      attribute: catalogAttrs[0]!.key,
+                      attribute: routableAttrs[0]!.key,
                       fallbackPathId: paths2[0]?.id ?? null,
                     },
                   ])

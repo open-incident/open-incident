@@ -10,10 +10,10 @@ import { and, eq, isNotNull, ne } from "drizzle-orm";
 import { decryptSecret, encryptSecret } from "@openincident/crypto";
 import {
   alertSources,
-  catalogEntries,
   getTenantById,
   heartbeats,
   registerApiKeyLookup,
+  services,
   withTenant,
   type Tx,
 } from "@openincident/db";
@@ -154,9 +154,9 @@ export async function recordHeartbeatPing(
 ): Promise<boolean> {
   const state = await withTenant(tenantId, async (tx) => {
     const [row] = await tx
-      .select({ hb: heartbeats, serviceName: catalogEntries.name })
+      .select({ hb: heartbeats, serviceName: services.key })
       .from(heartbeats)
-      .leftJoin(catalogEntries, eq(catalogEntries.id, heartbeats.serviceEntryId))
+      .leftJoin(services, eq(services.id, heartbeats.serviceId))
       .where(and(eq(heartbeats.tenantId, tenantId), eq(heartbeats.id, id)));
     if (!row) return null;
     const stored = decryptSecret(row.hb.encryptedToken) ?? "";
@@ -192,9 +192,9 @@ export async function sweepHeartbeats(tenantIds: string[], now = new Date()): Pr
   for (const tenantId of tenantIds) {
     const late = await withTenant(tenantId, async (tx) => {
       const rows = await tx
-        .select({ hb: heartbeats, serviceName: catalogEntries.name })
+        .select({ hb: heartbeats, serviceName: services.key })
         .from(heartbeats)
-        .leftJoin(catalogEntries, eq(catalogEntries.id, heartbeats.serviceEntryId))
+        .leftJoin(services, eq(services.id, heartbeats.serviceId))
         .where(
           and(
             eq(heartbeats.tenantId, tenantId),

@@ -2,10 +2,9 @@ import { createServer, type Server } from "node:http";
 
 /**
  * A mock of the trackers' APIs for the smoke suite — GitHub REST, GitLab, Jira
- * Cloud REST, Linear GraphQL, Confluence, Notion — plus a Backstage catalog,
- * enough for create / read state / test / import. Issues
- * live in memory; `POST /_close/<id>` closes one so the status sync has
- * something to bring back.
+ * Cloud REST, Linear GraphQL, Confluence, Notion — enough for create / read
+ * state / test. Issues live in memory; `POST /_close/<id>` closes one so the
+ * status sync has something to bring back.
  */
 export type TrackerCall = { method: string; path: string; body: Record<string, unknown> };
 
@@ -43,36 +42,6 @@ export function startTrackersMock(port = 3199): Promise<{
         const it = issues.get(id);
         if (it) it.closed = true;
         return json({ ok: Boolean(it) });
-      }
-      // Backstage catalog API (the importer's `backstage` source): two groups, two components.
-      if (url.pathname === "/api/catalog/entities/by-query") {
-        const entity = (kind: string, name: string, spec: Record<string, unknown>, extra = {}) => ({
-          apiVersion: "backstage.io/v1alpha1",
-          kind,
-          metadata: { name, namespace: "default", ...extra },
-          spec,
-        });
-        return json({
-          items: [
-            entity("Group", "search", { type: "team", profile: { displayName: "Search" } }),
-            entity("Group", "ranking", { type: "team", profile: { displayName: "Ranking" } }),
-            entity(
-              "Component",
-              "search-indexer",
-              { type: "service", owner: "group:default/search", lifecycle: "production" },
-              {
-                description: "Indexes the catalog for search",
-                annotations: {
-                  "github.com/project-slug": "skylark/search-indexer",
-                  "openincident.dev/tier": "tier 2",
-                },
-              },
-            ),
-            entity("Component", "ranking-api", { type: "service", owner: "ranking" }),
-            entity("API", "search-openapi", { type: "openapi", owner: "search" }),
-          ],
-          pageInfo: {},
-        });
       }
       const publicRead =
         req.method === "GET" &&

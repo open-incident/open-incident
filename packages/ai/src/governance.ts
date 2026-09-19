@@ -39,7 +39,7 @@ export const AI_CAPABILITIES: AiCapability[] = [
 export type AiSettingsView = {
   enabled: boolean;
   capabilities: Partial<Record<AiCapability, boolean>>;
-  sources: { catalog: boolean; incidents: boolean; changeEvents: boolean; docs: boolean };
+  sources: { services: boolean; incidents: boolean; changeEvents: boolean; docs: boolean };
   privateOptIn: boolean;
   provider: string | null;
 };
@@ -47,7 +47,7 @@ export type AiSettingsView = {
 export const DEFAULT_AI_SETTINGS: AiSettingsView = {
   enabled: true,
   capabilities: {},
-  sources: { catalog: true, incidents: true, changeEvents: true, docs: false },
+  sources: { services: true, incidents: true, changeEvents: true, docs: false },
   privateOptIn: false,
   provider: null,
 };
@@ -58,7 +58,9 @@ export async function getAiSettings(tx: Tx, tenantId: string): Promise<AiSetting
   return {
     enabled: row.enabled,
     capabilities: row.capabilities,
-    sources: row.sources,
+    // A workspace whose settings predate the `services` key keeps the default
+    // for it rather than reading `undefined` as "switched off".
+    sources: { ...DEFAULT_AI_SETTINGS.sources, ...row.sources },
     privateOptIn: row.privateOptIn,
     provider: row.provider,
   };
@@ -150,7 +152,7 @@ export async function ask(
 export async function upsertAtlasDocument(
   tenantId: string,
   doc: {
-    source: "incident" | "post_mortem" | "catalog" | "change_event" | "runbook";
+    source: "incident" | "post_mortem" | "change_event" | "runbook";
     refId: string;
     title: string;
     summary: string;
@@ -196,7 +198,7 @@ export async function similarDocuments(
   tenantId: string,
   text: string,
   opts: {
-    source: "incident" | "post_mortem" | "catalog" | "change_event" | "runbook";
+    source: "incident" | "post_mortem" | "change_event" | "runbook";
     excludeRefId?: string;
     limit?: number;
   },

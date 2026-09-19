@@ -29,7 +29,6 @@ const nextConfig: NextConfig = {
     "@openincident/storage",
     "@openincident/trackers",
     "@openincident/docs",
-    "@openincident/catalog",
     "@openincident/ee-web",
     "@openincident/qa",
     "@openincident/investigations",

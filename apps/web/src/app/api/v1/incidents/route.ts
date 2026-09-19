@@ -110,7 +110,7 @@ export async function POST(request: Request) {
     const service = await resolveService(tx, tenantId, input.service);
     if (input.service && !service)
       return {
-        error: apiError(422, "unknown_service", `No service "${input.service}" in the catalog.`),
+        error: apiError(422, "unknown_service", `No service "${input.service}" in this workspace.`),
       };
     const requiredMissing = type.declareForm.filter(
       (f) =>
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
         mode: input.mode,
         typeId: type.id,
         severityId: sev?.id ?? null,
-        serviceEntryId: service?.id ?? null,
+        serviceId: service?.id ?? null,
         customFields: await coerceCustomFields(tx, tenantId, input.custom_fields),
         declaredAt: input.declared_at ? new Date(input.declared_at) : undefined,
         source: "api",

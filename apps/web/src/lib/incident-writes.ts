@@ -7,7 +7,6 @@
  */
 import { and, asc, eq, sql } from "drizzle-orm";
 import {
-  catalogEntries,
   followUpPriorities,
   followUps,
   incidentEvents,
@@ -48,14 +47,15 @@ export type DeclareInput = {
   mode: "live" | "retrospective" | "test";
   typeId: string;
   severityId?: string | null;
-  serviceEntryId?: string | null;
   /**
-   * The observed service, by its key — the model the screens write to.
+   * The service the incident is about, by id when the caller picked one from a
+   * list, by key when a signal named it.
    *
    * It is resolved here rather than by each caller, so the one column every
    * per-service figure reads is filled whichever road the incident came in
    * by: the screen, the API, chat, or an alert being promoted.
    */
+  serviceId?: string | null;
   serviceKey?: string | null;
   customFields: Record<string, unknown>;
   declaredAt?: Date;
@@ -130,25 +130,20 @@ export async function declareIncidentCore(
         .from(severities)
         .where(and(eq(severities.tenantId, tenantId), eq(severities.id, input.severityId)))
     : [];
-  const [service] = input.serviceEntryId
-    ? await tx
-        .select({ id: catalogEntries.id, name: catalogEntries.name })
-        .from(catalogEntries)
-        .where(
-          and(eq(catalogEntries.tenantId, tenantId), eq(catalogEntries.id, input.serviceEntryId)),
-        )
-    : [];
-  // The observed service: by key when the caller knows one, otherwise by the
-  // name of the catalog entry it picked — the two models name the same thing.
-  const serviceName = input.serviceKey ?? service?.name ?? null;
-  const [observed] = serviceName
-    ? await tx
-        .select({ id: services.id })
-        .from(services)
-        .where(
-          and(eq(services.tenantId, tenantId), sql`lower(${services.key}) = lower(${serviceName})`),
-        )
-    : [];
+  const [service] =
+    input.serviceId || input.serviceKey
+      ? await tx
+          .select({ id: services.id, key: services.key })
+          .from(services)
+          .where(
+            and(
+              eq(services.tenantId, tenantId),
+              input.serviceId
+                ? eq(services.id, input.serviceId)
+                : sql`lower(${services.key}) = lower(${input.serviceKey})`,
+            ),
+          )
+      : [];
   const declaredAt =
     input.mode === "retrospective" && input.declaredAt ? input.declaredAt : new Date();
   const now = new Date();
@@ -170,8 +165,7 @@ export async function declareIncidentCore(
           severityId: sev?.id ?? null,
           phase: input.phase ?? "active",
           statusId: input.phase === "triage" ? null : (first?.id ?? null),
-          serviceEntryId: service?.id ?? null,
-          serviceId: observed?.id ?? null,
+          serviceId: service?.id ?? null,
           creatorMemberId: actor.memberId,
           source: input.source,
           customFields: input.customFields,
@@ -198,13 +192,13 @@ export async function declareIncidentCore(
               title: input.alertRef.title,
               alertId: input.alertRef.id,
               phase: input.phase ?? "active",
-              service: service?.name ?? null,
+              service: service?.key ?? null,
             }
           : {
               source: input.source,
               mode: input.mode,
               severity: sev?.name ?? null,
-              service: service?.name ?? null,
+              service: service?.key ?? null,
             },
         occurredAt: declaredAt,
       });

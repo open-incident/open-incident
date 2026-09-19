@@ -30,7 +30,7 @@ export async function GET(request: Request) {
       kind: r.kind,
       title: r.title,
       description: r.description,
-      service_id: r.serviceEntryId,
+      service_id: r.serviceId,
       environment: r.environment,
       actor: r.actorName,
       external_ref: r.externalRef,
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     const service = await resolveService(tx, tenantId, input.service);
     if (input.service && !service)
       return {
-        error: apiError(422, "unknown_service", `No service "${input.service}" in the catalog.`),
+        error: apiError(422, "unknown_service", `No service "${input.service}" in this workspace.`),
       };
     const [row] = await tx
       .insert(changeEvents)
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
         kind: input.kind,
         title: input.title,
         description: input.description ?? null,
-        serviceEntryId: service?.id ?? null,
+        serviceId: service?.id ?? null,
         environment: input.environment ?? null,
         actorName: input.actor ?? auth.ctx.key.name,
         externalRef: input.external_ref ?? null,
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
   });
   if ("error" in created) return created.error;
   void indexChangeEvent(tenantId, created.row.id).catch(() => {});
-  void signalOpenIncidents(auth.ctx.tenant, created.row.serviceEntryId).catch(() => {});
+  void signalOpenIncidents(auth.ctx.tenant, created.row.serviceId).catch(() => {});
   return apiJson(
     {
       id: created.row.id,

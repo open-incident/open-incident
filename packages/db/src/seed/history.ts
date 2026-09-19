@@ -61,7 +61,7 @@ type Ctx = {
   typeId: Record<string, string>;
   statusId: Record<string, string>;
   roleLead: string;
-  entryId: Record<string, string>;
+  serviceId: Record<string, string>;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -133,7 +133,7 @@ export async function installDemoHistory(tx: any, tenantId: string, ctx: Ctx): P
         typeId: ctx.typeId.default,
         severityId: ctx.sevId[sev],
         phase: "closed",
-        serviceEntryId: ctx.entryId[svc] ?? null,
+        serviceId: ctx.serviceId[svc] ?? null,
         source: fromAlert ? "alert" : "web",
         creatorMemberId: fromAlert ? null : ctx.memberId(lead),
         customFields: { region: rnd.next() < 0.8 ? "eu-west-1" : "us-east-1" },

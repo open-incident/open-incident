@@ -145,7 +145,7 @@ export function NewTypeDialog({
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <span style={label}>{t("settings.types.declarableBy")}</span>
-                  <select name="teamEntryId" defaultValue="" className="oi-field" style={control}>
+                  <select name="teamId" defaultValue="" className="oi-field" style={control}>
                     <option value="">{t("settings.types.everyone")}</option>
                     {teams.map((tm) => (
                       <option key={tm.id} value={tm.id}>

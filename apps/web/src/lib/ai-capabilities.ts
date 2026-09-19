@@ -19,13 +19,13 @@ import {
 } from "@openincident/ai";
 import {
   atlasDocuments,
-  catalogEntries,
   changeEvents,
   followUpPriorities,
   followUps,
   incidentEvents,
   incidents,
   postMortems,
+  services,
   severities,
   withTenant,
   type AiCapability,
@@ -47,22 +47,22 @@ export async function aiAllowance(tenantId: string, cap: AiCapability): Promise<
 export async function recentChanges(
   tx: Tx,
   tenantId: string,
-  inc: { serviceEntryId: string | null; declaredAt: Date; resolvedAt: Date | null },
+  inc: { serviceId: string | null; declaredAt: Date; resolvedAt: Date | null },
   limit = 5,
 ) {
   const from = new Date(inc.declaredAt.getTime() - DAY);
   const to = inc.resolvedAt ?? new Date();
   const rows = await tx
-    .select({ ev: changeEvents, serviceName: catalogEntries.name })
+    .select({ ev: changeEvents, serviceName: services.key })
     .from(changeEvents)
-    .leftJoin(catalogEntries, eq(catalogEntries.id, changeEvents.serviceEntryId))
+    .leftJoin(services, eq(services.id, changeEvents.serviceId))
     .where(
       and(
         eq(changeEvents.tenantId, tenantId),
         gte(changeEvents.occurredAt, from),
         lte(changeEvents.occurredAt, to),
-        inc.serviceEntryId
-          ? sql`(${changeEvents.serviceEntryId} = ${inc.serviceEntryId} or ${changeEvents.serviceEntryId} is null)`
+        inc.serviceId
+          ? sql`(${changeEvents.serviceId} = ${inc.serviceId} or ${changeEvents.serviceId} is null)`
           : sql`true`,
       ),
     )
@@ -76,7 +76,7 @@ type Dossier = {
   number: number;
   name: string;
   visibility: string;
-  serviceEntryId: string | null;
+  serviceId: string | null;
   declaredAt: Date;
   resolvedAt: Date | null;
   text: string;
@@ -85,10 +85,10 @@ type Dossier = {
 /** The incident as text: header, summary, timeline, follow-ups, recent changes. */
 async function dossier(tx: Tx, tenantId: string, number: number): Promise<Dossier | null> {
   const [row] = await tx
-    .select({ inc: incidents, sevName: severities.name, serviceName: catalogEntries.name })
+    .select({ inc: incidents, sevName: severities.name, serviceName: services.key })
     .from(incidents)
     .leftJoin(severities, eq(severities.id, incidents.severityId))
-    .leftJoin(catalogEntries, eq(catalogEntries.id, incidents.serviceEntryId))
+    .leftJoin(services, eq(services.id, incidents.serviceId))
     .where(and(eq(incidents.tenantId, tenantId), eq(incidents.number, number)));
   if (!row) return null;
   const inc = row.inc;
@@ -104,7 +104,7 @@ async function dossier(tx: Tx, tenantId: string, number: number): Promise<Dossie
     .leftJoin(followUpPriorities, eq(followUpPriorities.id, followUps.priorityId))
     .where(eq(followUps.incidentId, inc.id));
   const changes = await recentChanges(tx, tenantId, inc, 8);
-  const runbooks = await runbookExcerpts(tx, tenantId, inc.serviceEntryId);
+  const runbooks = await runbookExcerpts(tx, tenantId, inc.serviceId);
   const fmt = (d: Date) => d.toISOString().slice(0, 16).replace("T", " ");
   const lines: string[] = [
     `INC-${inc.number} — ${inc.name}`,
@@ -137,7 +137,7 @@ async function dossier(tx: Tx, tenantId: string, number: number): Promise<Dossie
     number: inc.number,
     name: inc.name,
     visibility: inc.visibility,
-    serviceEntryId: inc.serviceEntryId,
+    serviceId: inc.serviceId,
     declaredAt: inc.declaredAt,
     resolvedAt: inc.resolvedAt,
     text: lines
@@ -388,7 +388,7 @@ export async function indexIncidentForKnowledge(
     number: row.number,
     name: row.name,
     visibility: row.visibility,
-    serviceEntryId: null,
+    serviceId: null,
     declaredAt: new Date(),
     resolvedAt: null,
     text: "",

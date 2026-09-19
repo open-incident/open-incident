@@ -46,7 +46,7 @@ export async function AtlasTab({
       .select({
         aiSummary: incidents.aiSummary,
         aiSummaryAt: incidents.aiSummaryAt,
-        serviceEntryId: incidents.serviceEntryId,
+        serviceId: incidents.serviceId,
       })
       .from(incidents)
       .where(and(eq(incidents.tenantId, tenantId), eq(incidents.id, inc.row.id))),
@@ -60,7 +60,7 @@ export async function AtlasTab({
   });
   const changes = await withTenant(tenantId, (tx) =>
     recentChanges(tx, tenantId, {
-      serviceEntryId: row?.serviceEntryId ?? null,
+      serviceId: row?.serviceId ?? null,
       declaredAt: inc.row.declaredAt,
       resolvedAt: inc.row.resolvedAt,
     }),

@@ -2,7 +2,7 @@
 title: Status pages
 section: daily-use
 order: 10
-summary: A public or internal page per workspace; components bound to the catalog; incidents and maintenances published from the product; subscribers, feeds, brand, domain.
+summary: A public or internal page per workspace; components bound to services; incidents and maintenances published from the product; subscribers, feeds, brand, domain.
 ---
 
 ## Two applications
@@ -13,13 +13,13 @@ Pages answer on `{slug}.<STATUS_BASE_DOMAIN>` at once (`skylark.status.localhost
 
 ## Creating and shaping a page
 
-![Status pages, admin side](img/status-pages-admin.png "Components with their catalog service and state, recent incidents and maintenances, subscribers, templates, brand and domain.")
+![Status pages, admin side](img/status-pages-admin.png "Components with their service and state, recent incidents and maintenances, subscribers, templates, brand and domain.")
 
 **Status pages → + New page** asks for an address (slug). The page is `noindex` until you launch it.
 
 ### Components
 
-**+ Component** with a name, an optional group, and a **catalog service**. Bound to a service, the component is affected automatically when an incident on that service is published: the impact is derived from the incident's severity (degraded, partial outage, major outage). Each component shows 30-day bars and a 90-day uptime from the impact history.
+**+ Component** with a name, an optional group, and a **service** picked among the workspace's own. Bound to a service, the component is affected automatically when an incident on that service is published: the impact is derived from the incident's severity (degraded, partial outage, major outage). Each component shows 30-day bars and a 90-day uptime from the impact history.
 
 ### Visibility
 

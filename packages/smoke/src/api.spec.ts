@@ -48,8 +48,9 @@ test.describe("API & webhooks", () => {
     expect(body.data[0]!.reference).toMatch(/^INC-\d+$/);
     expect(body.next_cursor).toBeTruthy();
 
-    const services = await api.get("/api/v1/catalog/entries?type=service");
-    const service = ((await services.json()) as { data: Array<{ name: string }> }).data[0]!.name;
+    // The API takes a service by key. There is no read endpoint for services,
+    // so the demo workspace's own is named here rather than discovered.
+    const service = "checkout-api";
     const name = `[smoke api ${new Date().toISOString().slice(11, 19)}] Erreurs 5xx sur ${service}`;
     const created = await api.post("/api/v1/incidents", {
       data: { name, severity: "SEV3", service, custom_fields: { region: "eu-west-1" } },

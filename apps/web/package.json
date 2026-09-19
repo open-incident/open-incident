@@ -13,7 +13,6 @@
     "@openincident/ai": "workspace:*",
     "@openincident/api-spec": "workspace:*",
     "@openincident/auth": "workspace:*",
-    "@openincident/catalog": "workspace:*",
     "@openincident/chat": "workspace:*",
     "@openincident/config": "workspace:*",
     "@openincident/crypto": "workspace:*",

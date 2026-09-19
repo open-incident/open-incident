@@ -75,7 +75,7 @@ export default async function IncidentPage({
 
   const data = await withTenant(tenant.id, async (tx) => {
     const [row] = await tx
-      .select({ serviceEntryId: incidents.serviceEntryId })
+      .select({ serviceId: incidents.serviceId })
       .from(incidents)
       .where(eq(incidents.id, inc.row.id));
     const [page] = await tx
@@ -108,7 +108,7 @@ export default async function IncidentPage({
         ),
       );
     return {
-      serviceEntryId: row?.serviceEntryId ?? null,
+      serviceId: row?.serviceId ?? null,
       services: (await servicesOfIncidents(tx, tenant.id, [inc.row.id])).get(inc.row.id) ?? [],
       page: page ?? null,
       published: Boolean(published),
@@ -509,7 +509,7 @@ export default async function IncidentPage({
           inc={inc}
           tenantId={tenant.id}
           services={data.services}
-          serviceEntryId={data.serviceEntryId}
+          serviceId={data.serviceId}
         />
       )}
 

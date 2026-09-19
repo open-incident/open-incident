@@ -5,7 +5,6 @@
  */
 import { and, asc, desc, eq, gte, inArray, isNull, ne, sql } from "drizzle-orm";
 import {
-  catalogEntries,
   debriefs,
   followUpPriorities,
   followUps,
@@ -20,6 +19,7 @@ import {
   postIncidentTasks,
   postMortems,
   roleAssignments,
+  services,
   severities,
   type Tx,
 } from "@openincident/db";
@@ -75,13 +75,13 @@ async function baseRows(
       statusName: incidentStatuses.name,
       severityName: severities.name,
       severityRank: severities.rank,
-      serviceName: catalogEntries.name,
+      serviceName: services.key,
       creatorName: members.name,
     })
     .from(incidents)
     .leftJoin(incidentStatuses, eq(incidentStatuses.id, incidents.statusId))
     .leftJoin(severities, eq(severities.id, incidents.severityId))
-    .leftJoin(catalogEntries, eq(catalogEntries.id, incidents.serviceEntryId))
+    .leftJoin(services, eq(services.id, incidents.serviceId))
     .leftJoin(members, eq(members.id, incidents.creatorMemberId))
     .where(and(eq(incidents.tenantId, tenantId), isNull(incidents.mergedIntoId), where))
     .orderBy(desc(incidents.lastActivityAt))
@@ -463,7 +463,7 @@ export async function getIncident(
   };
 }
 
-/** Everything the declaration form offers: types, severities, services, the responders. */
+/** Everything the declaration form offers: types, severities, the custom fields. */
 export async function declareOptions(tx: Tx, tenantId: string) {
   const types = await tx
     .select({
@@ -487,26 +487,12 @@ export async function declareOptions(tx: Tx, tenantId: string) {
     .from(severities)
     .where(eq(severities.tenantId, tenantId))
     .orderBy(asc(severities.rank));
-  const services = await tx
-    .select({
-      id: catalogEntries.id,
-      name: catalogEntries.name,
-      typeKey: sql<string>`(select key from app.catalog_types ct where ct.id = ${catalogEntries.typeId})`,
-    })
-    .from(catalogEntries)
-    .where(eq(catalogEntries.tenantId, tenantId))
-    .orderBy(asc(catalogEntries.name));
   const fields = await tx
     .select()
     .from(incidentFields)
     .where(eq(incidentFields.tenantId, tenantId))
     .orderBy(asc(incidentFields.position));
-  return {
-    types,
-    severities: sevs,
-    services: services.filter((s) => s.typeKey === "service"),
-    fields,
-  };
+  return { types, severities: sevs, fields };
 }
 
 /** Open incidents whose name resembles the title being typed — the anti-duplicate hint. */

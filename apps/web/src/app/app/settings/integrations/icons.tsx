@@ -203,19 +203,7 @@ const ICONS: Record<string, ReactNode> = {
     </Glyph>
   ),
 
-  // ---------- Catalog and infrastructure as code ----------
-  backstage: (
-    <Glyph>
-      <rect x="3" y="5" width="18" height="14" rx="2.5" {...S} />
-      <path d="M3 9.5h18M8 9.5V19" {...S} />
-    </Glyph>
-  ),
-  cli: (
-    <Glyph>
-      <rect x="2.8" y="4.5" width="18.4" height="15" rx="2.5" {...S} />
-      <path d="m6.5 10 2.4 2.2-2.4 2.2M11.5 14.6h5" {...S} strokeLinejoin="round" />
-    </Glyph>
-  ),
+  // ---------- Infrastructure as code ----------
   terraform: (
     <Glyph>
       <path d="M9.2 4.6 14 7.2v5.2L9.2 9.8z" {...S} strokeLinejoin="round" />

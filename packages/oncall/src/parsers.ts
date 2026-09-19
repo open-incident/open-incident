@@ -254,14 +254,14 @@ export function defaultMappings(kind: AlertSourceKind): AttributeMapping[] {
   switch (kind) {
     case "datadog":
       return [
-        { attribute: "service", path: "scope.service", catalogTypeKey: "service" },
+        { attribute: "service", path: "scope.service" },
         { attribute: "priority", path: "priority" },
         { attribute: "environment", path: "scope.env" },
       ];
     case "prometheus":
     case "grafana":
       return [
-        { attribute: "service", path: "labels.service", catalogTypeKey: "service" },
+        { attribute: "service", path: "labels.service" },
         { attribute: "environment", path: "labels.env" },
         { attribute: "region", path: "labels.region" },
       ];
@@ -274,7 +274,7 @@ export function defaultMappings(kind: AlertSourceKind): AttributeMapping[] {
       return [{ attribute: "environment", path: "", value: "production" }];
     default:
       return [
-        { attribute: "service", path: "service", catalogTypeKey: "service" },
+        { attribute: "service", path: "service" },
         { attribute: "environment", path: "environment" },
         { attribute: "priority", path: "priority" },
       ];

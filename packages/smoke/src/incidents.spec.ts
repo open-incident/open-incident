@@ -24,8 +24,7 @@ test.describe("Incidents", () => {
     const title = `[smoke ${new Date().toISOString().slice(11, 19)}] Latence API`;
     await page.locator('input[name="name"]').fill(title);
     // The default type requires the affected service and the region: pick the first of each.
-    // The declaration form picks from the workspace's services (`serviceId`);
-    // it falls back to the catalog entries only when no service exists.
+    // The declaration form picks from the services the workspace has observed.
     await page.locator('select[name="serviceId"]').selectOption({ index: 1 });
     await page.locator('select[name="field.region"]').selectOption({ index: 1 });
     await page.locator('form[data-testid="declare-form"] button[type=submit]').click();

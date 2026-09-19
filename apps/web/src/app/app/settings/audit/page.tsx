@@ -52,8 +52,6 @@ export default async function AuditPage() {
         return t("audit.memberReactivated", { actor: a, member: s(tg.member) });
       case "member.invite_revoked":
         return t("audit.inviteRevoked", { actor: a, email: s(tg.email) });
-      case "catalog.entry_created":
-        return t("audit.catalogEntryCreated", { actor: a, name: s(tg.name) });
       case "severity.updated":
         return t("audit.severityUpdated", { actor: a, name: s(tg.to) });
       case "incident_status.updated":

@@ -64,7 +64,7 @@ export type Offer = {
   entitlements: Record<string, unknown>;
 };
 
-/** The public catalog. Empty without a control plane — the screen then shows no offers. */
+/** The offers on sale. Empty without a control plane — the screen then shows none. */
 export async function fetchOffers(): Promise<Offer[]> {
   const res = await call<{ offers: Offer[] }>("/api/gateway/offers", {});
   return res?.offers ?? [];

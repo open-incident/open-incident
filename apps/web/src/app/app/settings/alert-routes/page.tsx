@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { eq } from "drizzle-orm";
-import { alertRoutes, alertSources, escalationPaths, withTenant } from "@openincident/db";
+import {
+  alertAttributeTypeOf,
+  alertRoutes,
+  alertSources,
+  escalationPaths,
+  withTenant,
+} from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { isManager, requireMember } from "@/lib/session";
 import { describeRoute } from "@/lib/route-summary";
@@ -403,8 +409,7 @@ export default async function RulesPage({
           attributes={editor.attributes.map((a) => ({
             key: a.key,
             label: a.label,
-            type: a.type,
-            catalogTypeKey: a.catalogTypeKey,
+            type: alertAttributeTypeOf(a),
           }))}
           sources={editor.sources}
           paths={editor.paths.map((p) => ({

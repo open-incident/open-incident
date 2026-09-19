@@ -18,8 +18,7 @@ const schema = z.object({
     .regex(/^[a-z][a-z0-9_]{0,39}$/),
   label: z.string().trim().min(1).max(60),
   description: z.string().trim().max(300).optional(),
-  type: z.enum(["text", "list", "priority", "catalog"]),
-  catalogTypeKey: z.string().trim().max(60).optional(),
+  type: z.enum(["text", "list", "priority", "service", "team"]),
   required: z.string().optional(),
   mergeStrategy: z.enum(["first", "last", "accumulate", "max"]),
 });
@@ -34,7 +33,6 @@ export async function saveAttribute(formData: FormData) {
     label: input.label,
     description: input.description || null,
     type: input.type,
-    catalogTypeKey: input.type === "catalog" ? input.catalogTypeKey || null : null,
     required: input.required === "on",
     mergeStrategy:
       input.type === "list" && input.mergeStrategy === "max"

@@ -121,9 +121,8 @@ test.describe("SCIM provisioning", () => {
     expect(
       ((await removed.json()) as { members: Array<{ value: string }> }).members.map((m) => m.value),
     ).toEqual([owner.Resources[0]!.id]);
-    // The team shows in the catalog with its member count.
-    await page.goto("/app/catalog?type=team&entry=Okta%20squad");
-    await expect(page.getByRole("complementary", { name: "Okta squad" })).toBeVisible();
+    // No screen lists teams, so the provider's own read is what proves the
+    // team is there — the group filter every identity provider re-syncs with.
     const byName = await scim.get('/scim/v2/Groups?filter=displayName eq "Okta squad"');
     expect(((await byName.json()) as { totalResults: number }).totalResults).toBe(1);
     expect((await scim.delete(`/scim/v2/Groups/${g.id}`)).status()).toBe(204);

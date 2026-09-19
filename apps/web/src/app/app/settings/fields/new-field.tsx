@@ -21,7 +21,7 @@ const control: React.CSSProperties = {
   background: "var(--panel)",
   width: "100%",
 };
-const KINDS = ["text", "select", "number", "link", "catalog_entry"] as const;
+const KINDS = ["text", "select", "number", "link"] as const;
 
 /** The design's field modal: api name in mono, incident type, the kind as a segmented control, a required switch. */
 export function NewFieldDialog({

@@ -12,7 +12,7 @@ boundary does. Today it carries:
 - `sso/` — the connections (`app.sso_connections` + `auth.sso_provider`) and
   Settings → Single sign-on.
 - `scim/` — the SCIM 2.0 endpoint (`/scim/v2`: Users ↔ members, Groups ↔
-  catalog teams) and Settings → Provisioning.
+  teams) and Settings → Provisioning.
 - `roles/` — custom roles as permission sets (`app.custom_roles`) and
   Settings → Custom roles. The permission vocabulary itself lives in the core
   (`@openincident/config`), since every check in the product goes through it.

@@ -43,7 +43,7 @@ Ordered and shared. Each carries a description, a colour, and the **post-inciden
 A field exists to be read: the declaration form of its type reads it, the incident shows it, the API and the webhook payloads carry it under `custom_fields`.
 
 - **API name**: lowercase letters, digits and underscores (`region`, `customer_impact`).
-- **Type**: text, long text, select (options one per line), number, link, **catalog** (a reference to entries of a catalog type — a squad, a region, a customer).
+- **Type**: text, long text, select (options one per line), number, link.
 - **Incident type**: one type, or all types.
 - **Required at declaration** or optional.
 

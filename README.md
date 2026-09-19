@@ -37,11 +37,11 @@ Europe or on your own servers, with the whole core under AGPL.
   severity and reminders, roles, a live timeline (server-sent events), pinned
   events, follow-ups with priorities and deadlines, the post-incident flow with
   its tasks and post-mortem.
-- **Catalog** — teams, services and environments, the ownership chain the
-  routing follows; your own types with their own attributes; entries edited on
-  screen, imported from CSV, or fed by the API and the `catalog-importer` CLI
-  from Backstage, a `catalog-info.yaml` or a file, with a lock for what code
-  owns. Nothing referenced can be deleted: the usages are listed instead.
+- **Services and teams** — a service appears the first time a signal names it,
+  and one click gives it an owner team; the team carries its people, its chat
+  channel and the escalation path it is paged through. That chain — service →
+  owner team → policy — is the ownership the routing follows. Nothing to
+  declare in advance, and everything else a signal carries is a label.
 - **Settings** — workspace identity, members and roles with email invitations,
   incident types with their lifecycle, severities, a human-readable audit log.
 - **Account** — language and timezone per member, email change, password
@@ -146,27 +146,6 @@ pnpm dev
 ```
 
 Then open http://skylark.localhost:3100. See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-### Feeding the catalog from code
-
-The importer is a client of the public API: an API key with the `write` scope
-is all it needs, from anywhere.
-
-```bash
-pnpm catalog:import -- --source backstage --url http://backstage:7007 \
-  --api https://acme.example.com --key oi_live_…
-pnpm catalog:import -- --source github --repo acme/platform --path catalog-info.yaml \
-  --api … --key …
-pnpm catalog:import -- --source local --file ./catalog.yaml --lock --api … --key …
-pnpm catalog:import -- --source local --file ./squads.csv --type squad --api … --key …
-```
-
-Backstage groups become teams and components become services (owner,
-repository, tier). A local or inline document is either Backstage entities or
-an Open Incident bundle — `{ types: [...], entries: [...] }` — and `--lock`
-makes the declared types read-only on screen. `--dry-run` parses and prints
-without sending; a bundle with one invalid item writes nothing and lists
-every problem.
 
 ## Licensing
 

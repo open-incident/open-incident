@@ -7,8 +7,6 @@
 import { canRespond } from "@openincident/config";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import {
-  catalogEntries,
-  catalogTypes,
   escalationPaths,
   getTenantById,
   getTenantIdForApiKeyHash,
@@ -18,6 +16,7 @@ import {
   incidentTypes,
   incidents,
   roleAssignments,
+  services,
   severities,
   withTenant,
   workspaces,
@@ -125,21 +124,17 @@ async function declareOptions(tx: Tx, tenantId: string) {
     .from(severities)
     .where(eq(severities.tenantId, tenantId))
     .orderBy(asc(severities.rank));
-  const [svcType] = await tx
-    .select({ id: catalogTypes.id })
-    .from(catalogTypes)
-    .where(and(eq(catalogTypes.tenantId, tenantId), eq(catalogTypes.key, "service")));
-  const services = svcType
-    ? await tx
-        .select({ id: catalogEntries.id, name: catalogEntries.name })
-        .from(catalogEntries)
-        .where(eq(catalogEntries.typeId, svcType.id))
-        .orderBy(asc(catalogEntries.name))
-    : [];
+  // Only the services the workspace has adopted: the card is a short list to
+  // pick from, not everything a signal has ever named.
+  const svcRows = await tx
+    .select({ id: services.id, name: services.key })
+    .from(services)
+    .where(and(eq(services.tenantId, tenantId), eq(services.confirmed, true)))
+    .orderBy(asc(services.key));
   return {
     types,
     severities: sevs,
-    services,
+    services: svcRows,
     defaultTypeId: types.find((t) => t.isDefault)?.id ?? types[0]?.id ?? null,
   };
 }
@@ -426,7 +421,7 @@ async function handleSubmit(
           mode: "live",
           typeId,
           severityId: str("severityId") || undefined,
-          serviceEntryId: str("serviceEntryId") || undefined,
+          serviceId: str("serviceId") || undefined,
           customFields: {},
           source: "chat",
         });

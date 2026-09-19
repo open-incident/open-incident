@@ -49,16 +49,14 @@ export default async function PathsPage({
   // Read from the workspace's teams. It used to print six characters of the
   // identifier, which told a reader nothing about who would be paged.
   const teamName = (id: string) =>
-    data.labels.teams.find((x) => x.id === id)?.name ??
-    data.labels.legacyTeams.find((x) => x.id === id)?.name ??
-    t("oncall.targetTeamUnknown");
+    data.labels.teams.find((x) => x.id === id)?.name ?? t("oncall.targetTeamUnknown");
   const setName = (id: string) => data.labels.workingHours.find((w) => w.id === id)?.name ?? "—";
   const targetLabel = (tg: Extract<EscalationNode, { kind: "level" }>["targets"][number]) =>
     tg.kind === "member"
       ? memberName(tg.memberId)
       : tg.kind === "schedule"
         ? `${t("oncall.targetSchedule")} · ${scheduleName(tg.scheduleId)} — ${t(`oncall.mode.${tg.mode}`)}`
-        : `${t("oncall.targetTeam")} · ${teamName("teamId" in tg ? tg.teamId : tg.teamEntryId)}`;
+        : `${t("oncall.targetTeam")} · ${teamName(tg.teamId)}`;
   const condLabel = (n: Extract<EscalationNode, { kind: "condition" }>) =>
     n.test.type === "working_hours"
       ? t("oncall.condHours", { set: setName(n.test.setId) })
@@ -910,11 +908,7 @@ export default async function PathsPage({
                               ? selected.targets[0].kind === "member"
                                 ? `member:${selected.targets[0].memberId}`
                                 : selected.targets[0].kind === "team"
-                                  ? `team:${
-                                      "teamId" in selected.targets[0]
-                                        ? selected.targets[0].teamId
-                                        : selected.targets[0].teamEntryId
-                                    }`
+                                  ? `team:${selected.targets[0].teamId}`
                                   : `schedule:${selected.targets[0].scheduleId}:${selected.targets[0].mode}`
                               : ""
                           }

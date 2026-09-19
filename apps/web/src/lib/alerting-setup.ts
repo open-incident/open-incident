@@ -1,7 +1,7 @@
 /**
  * Alerting, from the workspace's point of view: where its setup stands, the
  * one-click path that pages a person or a schedule, and the reads the setup
- * screens share. Nothing here needs the catalog.
+ * screens share.
  */
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import {

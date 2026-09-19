@@ -28,7 +28,6 @@ export const fr: Dictionary = {
   "nav.alerts": "Alertes",
   "nav.onCall": "Astreinte",
   "nav.statusPages": "Pages de statut",
-  "nav.catalog": "Catalogue",
   "nav.insights": "Analyses",
   "nav.settings": "Paramètres",
   /* ---------- Guide d'utilisation ---------- */
@@ -69,7 +68,7 @@ export const fr: Dictionary = {
   "telemetry.step2":
     "Pointez votre collecteur OpenTelemetry ou vos SDK vers {endpoint} avec le jeton de l'espace, montré une seule fois.",
   "telemetry.step3":
-    "Les services nommés dans service.name apparaissent seuls dans Services — aucun catalogue à remplir.",
+    "Les services nommés dans service.name apparaissent seuls dans Services — rien à remplir d'avance.",
   "telemetry.footnote":
     "Les données restent en UE · rétention et échantillonnage se règlent par service.",
   "services.tabConfirmed": "Confirmés",
@@ -97,7 +96,7 @@ export const fr: Dictionary = {
     other: "{team} ? — {count} répondeurs de cette équipe ont acquitté ses alertes",
   },
   "services.noSuggestion": "Aucun signal pour suggérer un propriétaire.",
-  "services.noTeams": "Aucune équipe — créez-en une dans Réglages › Membres et rôles.",
+  "services.noTeams": "Aucune équipe — il en apparaît une quand votre annuaire la provisionne.",
   "services.confirmed": "confirmé",
   "services.seenOnly": "vu dans le trafic",
   "services.seenInCount": { one: "vu dans {count} source", other: "vu dans {count} sources" },
@@ -174,7 +173,7 @@ export const fr: Dictionary = {
     "Une personne appelée, une source d'alertes, et la preuve que la chaîne fonctionne — de bout en bout.",
   "home.youDontNeed": "CE DONT VOUS N'AVEZ PAS BESOIN",
   "home.youDontNeedBody":
-    "Pas de catalogue, pas de règles de routage, pas de schéma. Les services apparaissent seuls quand les alertes les nomment.",
+    "Pas de règles de routage, pas de schéma, rien à remplir. Les services apparaissent seuls quand les alertes les nomment.",
   "home.alreadySetUp": "DÉJÀ CONFIGURÉ AILLEURS ?",
   "home.skip": "Passer pour l'instant → explorer l'espace",
   "home.stepsDisappear":
@@ -398,7 +397,6 @@ export const fr: Dictionary = {
   "docs.section.operations": "Exploitation",
   "docs.section.use-cases": "Cas d'usage",
   "docs.section.reference": "Référence",
-  /* ---------- QA ---------- */
   /* ---------- Abonnement & factures (édition cloud) ---------- */
   "settings.nav.billing": "Abonnement & factures",
   "shell.suspendedBillingCta": "Ouvrir Abonnement & factures",
@@ -522,10 +520,10 @@ export const fr: Dictionary = {
   "qa.suites": "Suites",
   "qa.suite.smoke.name": "Smoke (bout en bout)",
   "qa.suite.smoke.desc":
-    "Playwright contre cette instance : connexion, incidents, alertes, astreinte, catalogue, pages de statut, intégrations avec leurs mocks, édition entreprise — sur un espace jetable.",
+    "Playwright contre cette instance : connexion, incidents, alertes, astreinte, services, pages de statut, intégrations avec leurs mocks, édition entreprise — sur un espace jetable.",
   "qa.suite.unit.name": "Tests unitaires",
   "qa.suite.unit.desc":
-    "vitest dans chaque package : parseurs, rotation, paie, chiffrement, catalogue, SCIM, isolation des espaces.",
+    "vitest dans chaque package : parseurs, rotation, paie, chiffrement, routage, SCIM, isolation des espaces.",
   "qa.suite.typecheck.name": "Typage",
   "qa.suite.typecheck.desc":
     "tsc dans chaque package et application, parité des dictionnaires comprise.",
@@ -720,7 +718,6 @@ export const fr: Dictionary = {
   "incidents.declare.type": "Type d'incident",
   "incidents.declare.severity": "Sévérité",
   "incidents.declare.service": "Service affecté",
-  "incidents.declare.fromCatalog": "depuis le catalogue",
   "incidents.declare.summary": "Résumé",
   "incidents.declare.summaryPlaceholder": "Que sait-on pour l'instant ?",
   "incidents.declare.startedAt": "Début ({timeZone})",
@@ -986,7 +983,7 @@ export const fr: Dictionary = {
   "timeline.acceptedDesc": "{severity} posée · statut {status}.",
   "timeline.declined": "Refusé par {actor}",
   "timeline.roleAssigned": "{member} nommé·e {role}",
-  "timeline.autoOnCall": "Automatique — d'astreinte pour {service} (catalogue).",
+  "timeline.autoOnCall": "Automatique — d'astreinte pour {service}.",
   "timeline.byActor": "par {actor}",
   "timeline.roleUnassigned": "{member} n'est plus {role}",
   "timeline.updateTag": "Mise à jour",
@@ -1026,139 +1023,6 @@ export const fr: Dictionary = {
   "timeline.madePublic": "Incident rendu visible à l'espace",
   "timeline.renamed": "Renommé par {actor}",
   "timeline.merged": "Fusionné dans {target}",
-
-  /* ---------- Catalog ---------- */
-  "catalog.typesLabel": "Types",
-  "catalog.type.service": "Service",
-  "catalog.type.team": "Équipe",
-  "catalog.type.environment": "Environnement",
-  "catalog.typesIntro":
-    "Squads, domaines, piliers : ajoutez vos propres types. L'importeur et l'API les alimentent depuis le code.",
-  "catalog.newType": "+ Nouveau type",
-  "catalog.newTypeTitle": "Nouveau type",
-  "catalog.typeSettings": "Réglages du type",
-  "catalog.editTypeTitle": "Réglages du type — {type}",
-  "catalog.field.key": "Clé",
-  "catalog.field.keyHint":
-    "Minuscules, chiffres et _ — ce qu'utilisent l'API et les en-têtes CSV. Figée après création.",
-  "catalog.typeAttributes": "Attributs",
-  "catalog.attrsEmpty":
-    "Aucun attribut pour l'instant — le nom et la description sont toujours là.",
-  "catalog.attr.label": "Libellé",
-  "catalog.attr.type": "Nature",
-  "catalog.attr.refType": "Pointe vers",
-  "catalog.attr.options": "Valeurs",
-  "catalog.attr.add": "+ Ajouter un attribut",
-  "catalog.attr.kind.text": "Texte",
-  "catalog.attr.kind.link": "Lien",
-  "catalog.attr.kind.select": "Choix",
-  "catalog.attr.kind.entry": "Entrée du catalogue",
-  "catalog.attr.kind.member_list": "Membres",
-  "catalog.attr.kind.escalation_path": "Chemin d'escalade",
-  "catalog.createType": "Créer le type",
-  "catalog.saveType": "Enregistrer le type",
-  "catalog.deleteType": "Supprimer le type",
-  "catalog.deleteTypeBlocked": "Suppression bloquée — encore utilisé : {usages}",
-  "catalog.typeInvalid": "Vérifiez le nom, la clé et les attributs.",
-  "catalog.typeDuplicate": "Un type avec la clé « {key} » existe déjà.",
-  "catalog.coreType": "Type natif : le routage s'appuie dessus. Il peut être étendu, pas supprimé.",
-  "catalog.locked": "Géré par le code",
-  "catalog.lockedNote":
-    "Ce type est alimenté par l'importeur ou l'API. Ses entrées sont en lecture seule ici : le prochain import annulerait une modification manuelle.",
-  "catalog.lockedError": "Ce type est géré par le code ; modifiez-le à la source.",
-  "catalog.editEntry": "Modifier",
-  "catalog.editEntryTitle": "Modifier — {name}",
-  "catalog.saveEntry": "Enregistrer l'entrée",
-  "catalog.deleteEntry": "Supprimer l'entrée",
-  "catalog.deleteBlocked": "Suppression bloquée — encore référencée par : {usages}",
-  "catalog.entryInvalid": "Vérifiez les valeurs.",
-  "catalog.usage.incidents": { one: "{count} incident", other: "{count} incidents" },
-  "catalog.usage.incident_fields": {
-    one: "{count} valeur de champ d'incident",
-    other: "{count} valeurs de champ d'incident",
-  },
-  "catalog.usage.follow_ups": { one: "{count} action de suivi", other: "{count} actions de suivi" },
-  "catalog.usage.status_components": {
-    one: "{count} composant de page de statut",
-    other: "{count} composants de page de statut",
-  },
-  "catalog.usage.change_events": {
-    one: "{count} événement de changement",
-    other: "{count} événements de changement",
-  },
-  "catalog.usage.heartbeats": { one: "{count} heartbeat", other: "{count} heartbeats" },
-  "catalog.usage.runbooks": { one: "{count} runbook", other: "{count} runbooks" },
-  "catalog.usage.entries": {
-    one: "{count} entrée du catalogue",
-    other: "{count} entrées du catalogue",
-  },
-  "catalog.usage.types": {
-    one: "{count} type le référence",
-    other: "{count} types le référencent",
-  },
-  "catalog.import": "Importer un CSV",
-  "catalog.importTitle": "Import — {type}",
-  "catalog.importHint":
-    "Une ligne par entrée. Les lignes sont rapprochées par external_id, puis par nom ; une référence nomme l'entrée visée ; les membres sont des e-mails. Rien n'est écrit si une seule ligne est fausse.",
-  "catalog.importColumns": "En-tête attendu",
-  "catalog.importFile": "Fichier CSV",
-  "catalog.importRun": "Importer",
-  "catalog.importResult": "{created} créées · {updated} mises à jour · {unchanged} inchangées",
-  "catalog.importErrors": {
-    one: "{count} problème — rien n'a été écrit :",
-    other: "{count} problèmes — rien n'a été écrit :",
-  },
-  "catalog.importInvalid": "Choisissez un fichier CSV (5 Mo au plus).",
-  "catalog.meta.references": { one: "{count} référence", other: "{count} références" },
-  "catalog.ref.entries": "Entrées qui pointent ici",
-  "catalog.spineTitle": "Optionnel — le routage fonctionne sans lui.",
-  "catalog.spineBody":
-    "Liez un attribut d'alerte à un type quand vous voulez qu'une route appelle le chemin d'escalade propre à l'entrée.",
-  "catalog.filterPlaceholder": "Filtrer…",
-  "catalog.newEntry": "+ Nouvelle entrée",
-  "catalog.newEntryTitle": "Nouvelle entrée — {type}",
-  "catalog.createEntry": "Créer l'entrée",
-  "catalog.field.name": "Nom",
-  "catalog.field.description": "Description",
-  "catalog.field.ownerTeam": "Propriétaire → équipe",
-  "catalog.field.repository": "Dépôt",
-  "catalog.field.tier": "Niveau",
-  "catalog.field.escalationPath": "Chemin d'escalade",
-  "catalog.field.chatChannel": "Canal de chat",
-  "catalog.field.paging": "Bipe",
-  "catalog.field.externalIdHint": "optionnel, pour l'API et l'importeur",
-  "catalog.ownerNote":
-    "L'escalade se résout via l'équipe propriétaire : service → équipe → chemin d'escalade. Rien à configurer dans les routes.",
-  "catalog.versionedNote": "Versionnée dès la création — chaque changement est tracé.",
-  "catalog.paging.pages": "bipe",
-  "catalog.paging.silent": "silencieux",
-  "catalog.meta.incidents": { one: "{count} incident · 90 j", other: "{count} incidents · 90 j" },
-  "catalog.meta.members": { one: "{count} membre", other: "{count} membres" },
-  "catalog.meta.services": { one: "{count} service", other: "{count} services" },
-  "catalog.noMatch": "Aucune entrée ne correspond à « {query} ».",
-  "catalog.empty": "Aucune entrée de ce type pour l'instant.",
-  "catalog.routingChain": "Chaîne de routage",
-  "catalog.chain.alert": "Alerte entrante",
-  "catalog.chain.attributeService": "attribut service",
-  "catalog.chain.extractedByRoute": "extraite par la route d'alerte",
-  "catalog.chain.service": "Service",
-  "catalog.chain.ownerTeam": "Équipe propriétaire",
-  "catalog.chain.viaOwner": "via l'attribut owner",
-  "catalog.chain.team": "Équipe",
-  "catalog.chain.escalationPath": "Chemin d'escalade",
-  "catalog.chain.pathHint":
-    "résolu depuis l'équipe propriétaire à l'escalade · Astreinte → Chemins",
-  "catalog.chainNote":
-    "Une alerte qui cite ce service est routée sans qu'aucune route ne nomme personne.",
-  "catalog.attributes": "Attributs",
-  "catalog.referencedBy": "Référencé par",
-  "catalog.ref.incidents90": "Incidents · 90 j",
-  "catalog.ref.services": "Services possédés",
-  "catalog.ref.followUps": "Suivis assignés",
-  "catalog.deleteNote":
-    "Supprimer une entrée référencée est bloqué — les usages sont listés d'abord. Le catalogue déclenche de vrais bips : chaque changement est versionné.",
-  "catalog.invalid": "Vérifiez le type et le nom.",
-  "catalog.duplicate": "« {name} » existe déjà pour ce type.",
 
   /* ---------- Settings ---------- */
   "settings.roleRestricted":
@@ -1248,12 +1112,12 @@ export const fr: Dictionary = {
   /* ---------- Enterprise : provisionnement SCIM ---------- */
   "ee.scim.title": "Provisionnement (SCIM 2.0)",
   "ee.scim.lead":
-    "Votre fournisseur d'identité crée, renomme et désactive les membres ici, et garde les équipes du catalogue alignées sur ses groupes. Une suppression dans l'annuaire devient une désactivation : un membre est référencé par des incidents et des lignes d'audit, rien de cela ne peut disparaître.",
+    "Votre fournisseur d'identité crée, renomme et désactive les membres ici, et garde les équipes alignées sur ses groupes. Une suppression dans l'annuaire devient une désactivation : un membre est référencé par des incidents et des lignes d'audit, rien de cela ne peut disparaître.",
   "ee.scim.baseUrl": "URL de base SCIM",
   "ee.scim.baseUrlHint":
     "Donnez au fournisseur cette adresse et un jeton émis ci-dessous. Users et Groups, filtres sur userName, externalId et displayName, PATCH aux formats Okta et Entra ID ; pas de bulk.",
   "ee.scim.mapping":
-    "Les Users deviennent des membres (userName est l'e-mail ; roles peut porter admin, responder ou viewer). Les Groups deviennent des équipes du catalogue et leurs membres.",
+    "Les Users deviennent des membres (userName est l'e-mail ; roles peut porter admin, responder ou viewer). Les Groups deviennent des équipes et leurs membres.",
   "ee.scim.notEnabled": "Non activé",
   "ee.scim.enable": "Activer et émettre un jeton",
   "ee.scim.rotate": "Renouveler le jeton",
@@ -1306,8 +1170,6 @@ export const fr: Dictionary = {
   "ee.roles.error.inUse":
     "Suppression refusée — des membres tiennent encore ce rôle : {members}. Donnez-leur d'abord un autre rôle.",
   "perm.incidents.respond": "Répondre aux incidents",
-  "perm.catalog.entries": "Créer et modifier les entrées du catalogue",
-  "perm.catalog.manage": "Gérer le catalogue (types, imports, suppressions, runbooks)",
   "perm.oncall.manage": "Gérer l'astreinte (plannings, chemins, remplacements)",
   "perm.statuspages.manage": "Gérer les pages de statut",
   "perm.insights.manage": "Gérer les rapports (rapports de paie, exports)",
@@ -1440,7 +1302,6 @@ export const fr: Dictionary = {
   "audit.memberDisabled": "{actor} a désactivé {member}",
   "audit.memberReactivated": "{actor} a réactivé {member}",
   "audit.inviteRevoked": "{actor} a révoqué l'invitation de {email}",
-  "audit.catalogEntryCreated": "{actor} a créé l'entrée de catalogue « {name} »",
   "audit.severityUpdated": "{actor} a modifié la sévérité {name}",
   "audit.statusUpdated": "{actor} a modifié le statut « {name} »",
   "audit.apiKeyCreated": "Clé API {hint} créée (scope {scopes}) par {actor}",
@@ -1497,7 +1358,7 @@ export const fr: Dictionary = {
   "settings.api.newKeyTitle": "Nouvelle clé API",
   "settings.api.keyName": "Nom",
   "settings.api.scopes": "Portées",
-  "settings.api.scope.read": "lire incidents, suivis et catalogue",
+  "settings.api.scope.read": "lire incidents et suivis",
   "settings.api.scope.write": "tout, mises à jour comprises",
   "settings.api.scope.incidentCreate": "déclarer des incidents seulement",
   "settings.api.createKey": "Créer la clé",
@@ -1566,7 +1427,7 @@ export const fr: Dictionary = {
   "settings.fields.type.select": "select",
   "settings.fields.type.number": "nombre",
   "settings.fields.type.link": "lien",
-  "settings.fields.type.catalog_entry": "catalogue",
+  "settings.fields.type.catalog_entry": "retiré",
   "settings.fields.requiredAtDeclare": "obligatoire à la déclaration",
   "settings.fields.notInForm": "dans aucun formulaire",
   "settings.fields.ofType": "type : {type}",
@@ -1618,7 +1479,7 @@ export const fr: Dictionary = {
   "settings.nav.alerting": "Configuration des alertes",
   "settings.nav.alertAttributes": "Attributs",
   "setup.title": "Configuration des alertes",
-  "setup.subtitle": "Du webhook à l'appel, en quatre étapes — sans catalogue.",
+  "setup.subtitle": "Du webhook à l'appel, en quatre étapes — rien à décrire d'avance.",
   "setup.checklist": "Démarrage",
   "setup.checklistNote": "Chaque étape est réelle : rien n'est simulé.",
   "setup.showSteps": "Afficher les étapes",
@@ -1809,9 +1670,6 @@ export const fr: Dictionary = {
   "settings.attributes.kind.text": "Texte",
   "settings.attributes.kind.list": "Liste",
   "settings.attributes.kind.priority": "Priorité d'alerte",
-  "settings.attributes.kind.catalog": "Entrée du catalogue",
-  "settings.attributes.catalogType": "Type de catalogue",
-  "settings.attributes.catalogNone": "— aucun —",
   "settings.attributes.merge": "En cas de répétition",
   "settings.attributes.mergeKind.first": "la première valeur gagne",
   "settings.attributes.mergeKind.last": "la dernière valeur gagne",
@@ -1821,7 +1679,7 @@ export const fr: Dictionary = {
   "settings.attributes.requiredYes": "obligatoire",
   "settings.attributes.requiredNo": "facultatif",
   "settings.attributes.formNote":
-    "La clé est fixée à la création : les sources s'y projettent. Un type de catalogue lie les noms aux entrées et permet à une route d'appeler le chemin d'escalade de l'entrée — ou de son équipe propriétaire.",
+    "La clé est fixée à la création : les sources s'y projettent. Les types service et équipe rapprochent la valeur des vraies lignes, ce qui permet à une route d'appeler l'équipe propriétaire du service — ou l'équipe nommée — par sa politique.",
   "settings.attributes.errorDuplicate": "Un attribut avec cette clé existe déjà.",
   "settings.attributes.col.attribute": "Attribut",
   "settings.attributes.col.type": "Type",
@@ -1832,7 +1690,7 @@ export const fr: Dictionary = {
   "settings.attributes.coverageHint":
     "Combien des 200 dernières alertes le portent, et combien de sources l'extraient.",
   "settings.attributes.note":
-    "Les attributs sont ce qui permet à une route de dire « production » sans savoir quel outil a dit « env=prod ». Liez-en un à un type de catalogue seulement quand vous voulez que le catalogue route.",
+    "Les attributs sont ce qui permet à une route de dire « production » sans savoir quel outil a dit « env=prod ». Donnez-lui le type service ou équipe seulement quand vous voulez qu'il décide qui est appelé.",
   "settings.priorities.aliases": "Alias",
   "settings.priorities.aliasesHint":
     "Ce que les outils l'appellent ; comparé sans tenir compte de la casse quand un payload nomme une priorité.",
@@ -1856,7 +1714,7 @@ export const fr: Dictionary = {
   "settings.routes.conditionsNote":
     "Les lignes d'un groupe sont en ET ; les groupes sont en OU. Aucune condition attrape tout.",
   "settings.routes.escalationNote":
-    "Les règles s'empilent : un chemin choisi une fois, ou le chemin auquel mène un attribut du catalogue — celui de l'entrée, ou de son équipe propriétaire — avec un repli.",
+    "Les règles s'empilent : un chemin choisi une fois, ou le chemin auquel mène un attribut — l'équipe propriétaire du service, ou l'équipe nommée — avec un repli.",
   "settings.routes.rulePath": "Appeler un chemin",
   "settings.routes.ruleAttribute": "Appeler depuis un attribut",
   "settings.routes.fallback": "sinon",
@@ -2049,8 +1907,8 @@ export const fr: Dictionary = {
   "alerts.firstSeen": "première occurrence {when}",
   "alerts.snoozedUntil": "snoozée jusqu'à {when}",
   "alerts.attributes": "Attributs",
-  "alerts.attributesNote": "extraits par la route, liés au catalogue",
-  "alerts.attr.service": "service · catalogue",
+  "alerts.attributesNote": "extraits par la route, rapprochés des vraies lignes",
+  "alerts.attr.service": "service",
   "alerts.attr.team": "équipe · via Service.owner",
   "alerts.attr.environment": "environnement",
   "alerts.attr.priority": "priorité · du payload",
@@ -2439,7 +2297,7 @@ export const fr: Dictionary = {
     "Attributs : environment, service, team, priority, source, region, et ce que les mappings extraient. Les routes sont essayées dans l'ordre ; la première qui correspond l'emporte.",
   "settings.routes.empty": "Aucune route — les alertes sont journalisées et personne n'est bipé.",
   "settings.routes.note":
-    "La notification peut être différée jusqu'à 10 minutes pour laisser le groupement absorber une rafale. L'escalade dynamique lit la chaîne du catalogue : service → équipe propriétaire → chemin d'escalade de l'équipe.",
+    "La notification peut être différée jusqu'à 10 minutes pour laisser le groupement absorber une rafale. L'escalade dynamique suit la chaîne : service → équipe propriétaire → chemin d'escalade de l'équipe.",
   "settings.priorities.title": "Priorités",
   "settings.priorities.subtitle":
     "qualifient l'alerte à l'entrée — extraites du payload ou statiques par route",
@@ -2500,7 +2358,7 @@ export const fr: Dictionary = {
   "settings.integrations.empty":
     "Aucune intégration ne correspond — la source HTTP générique accepte n'importe quel webhook en attendant.",
   "settings.integrations.desc.datadog":
-    "Monitors → alertes dédupliquées par clé et groupées, attributs liés au Catalogue.",
+    "Monitors → alertes dédupliquées par clé et groupées, attributs rapprochés des vraies lignes.",
   "settings.integrations.desc.prometheus":
     "Webhook Alertmanager natif — les labels deviennent des attributs.",
   "settings.integrations.desc.grafana":
@@ -2635,11 +2493,10 @@ export const fr: Dictionary = {
   "statusPages.newComponent": "+ Composant",
   "statusPages.newComponentTitle": "Nouveau composant",
   "statusPages.group": "Groupe",
-  "statusPages.serviceLink": "Service du catalogue",
+  "statusPages.serviceLink": "Service",
   "statusPages.componentNote":
-    "Lié à un service du catalogue, le composant est affecté automatiquement quand un incident sur ce service est publié.",
-  "statusPages.catalog": "catalogue",
-  "statusPages.noService": "aucun service du catalogue",
+    "Lié à un service, le composant est affecté automatiquement quand un incident sur ce service est publié.",
+  "statusPages.noService": "aucun service",
   "statusPages.noComponents":
     "Aucun composant — ajoutez les briques de votre service que vos clients reconnaissent.",
   "statusPages.state.operational": "Opérationnel",
@@ -2852,7 +2709,7 @@ export const fr: Dictionary = {
   "insights.fu.closureSub": "de la création au fait",
   "insights.fu.created": "Créés",
   "insights.fu.createdSub": "sur la période",
-  "insights.fu.noTeam": "Les équipes viennent des propriétaires de services du catalogue.",
+  "insights.fu.noTeam": "Les équipes viennent des propriétaires des services.",
   "insights.fu.openView": "Ouvrir la vue Suivis →",
   "insights.fu.overdue": "En retard",
   "insights.fu.overdueNone": "Rien en retard actuellement.",
@@ -2861,7 +2718,6 @@ export const fr: Dictionary = {
   "insights.fu.vsPolicy": "vs politique",
   "insights.inc.byService": "Par service",
   "insights.inc.bySeverity": "Par sévérité",
-  "insights.inc.catalogDimension": "dimension catalogue",
   "insights.inc.count": "Incidents",
   "insights.inc.countSub": "déclarés sur la période",
   "insights.inc.high": "Haute sévérité",
@@ -2953,7 +2809,6 @@ export const fr: Dictionary = {
   "settings.ai.providerNone": "Aucun configuré",
   "settings.ai.providerNote":
     "L'abstraction rend ce choix réversible — changer de fournisseur ne change aucun comportement produit.",
-  "settings.ai.source.catalog": "Catalogue (services, équipes)",
   "settings.ai.source.changeEvents": "Changements (déploiements, flags, config)",
   "settings.ai.source.docs": "Runbooks et documents",
   "settings.ai.source.incidents": "Incidents et post-mortems",
@@ -3143,21 +2998,15 @@ export const fr: Dictionary = {
   "postMortem.exportError.not_found": "Cet incident n'a pas de post-mortem.",
   "postMortem.exportTo": "Exporter vers {tool}",
   "postMortem.exported": "Page exportée",
-  "settings.integrations.cat.catalog": "Catalogue & IaC",
   "settings.integrations.cat.migration": "Migration & métier",
-  "settings.integrations.importerName": "Importeur de catalogue (CLI & API)",
   "settings.integrations.hrisName": "SIRH (congés)",
   "settings.integrations.siemName": "Audit → SIEM / S3",
   "settings.integrations.desc.oauth":
     "Connexion avec ce fournisseur. Disponible dès que l'instance porte ses identifiants.",
   "settings.integrations.desc.scim":
     "Provisionnez membres et équipes depuis votre annuaire. Édition entreprise.",
-  "settings.integrations.desc.backstage":
-    "Importez votre catalogue de services depuis une instance Backstage, à la demande ou depuis la CI.",
-  "settings.integrations.desc.importer":
-    "Le catalogue comme du code : un fichier, un fichier GitHub, la sortie d'une commande ou l'API d'écriture.",
   "settings.integrations.desc.terraform":
-    "Catalogue, chemins d'escalade, plannings et routes déclarés comme des ressources.",
+    "Chemins d'escalade, plannings, routes et pages de statut déclarés comme des ressources.",
   "settings.integrations.desc.pagerduty":
     "Coexistence puis migration : plannings, politiques, services.",
   "settings.integrations.desc.opsgenie": "Import des plannings et des politiques, en coexistence.",
@@ -3188,19 +3037,4 @@ export const fr: Dictionary = {
   "ai.runbooks.fetchedAt": "récupéré {when}",
   "ai.runbooks.pasted": "texte collé",
   "ai.runbooks.title": "Runbooks",
-  "catalog.runbooks.add": "Ajouter",
-  "catalog.runbooks.content": "…ou collez le texte du runbook ici",
-  "catalog.runbooks.error": "Un titre et soit une URL soit un texte sont requis.",
-  "catalog.runbooks.fetchError":
-    "récupération en échec : {error} — la dernière copie est conservée",
-  "catalog.runbooks.fetchedAt": "récupéré {when}",
-  "catalog.runbooks.hint":
-    "Récupéré maintenant puis toutes les six heures. Lu par l'assistant quand la documentation est une source autorisée.",
-  "catalog.runbooks.name": "Titre",
-  "catalog.runbooks.none": "Aucun runbook pour ce service.",
-  "catalog.runbooks.pasted": "texte collé · {chars} caractères",
-  "catalog.runbooks.refresh": "Récupérer à nouveau",
-  "catalog.runbooks.title": "Runbooks",
-  "catalog.runbooks.url":
-    "URL du fichier — fichier GitHub ou GitLab, ou toute adresse texte/markdown",
 };

@@ -654,7 +654,7 @@ async function ingestOne(
       .returning({ id: alerts.id });
     const alertId = row!.id;
     // The service learns it exists here: the first alert naming it is enough,
-    // and nobody had to fill a catalogue for that to happen.
+    // and nobody had to describe it anywhere first.
     if (attributes.service) {
       await observeService(tx, tenantId, attributes.service, source.name, now);
     }
@@ -775,11 +775,10 @@ async function ingestOne(
           mode: "live",
           typeId: plan.incident.typeId,
           severityId: plan.incident.severityId,
-          serviceEntryId: attributes.service_id ?? null,
           // The service the signal named — `observeService` created it at
           // ingestion, so the incident carries the same one the Services
           // screen and the Insights count.
-          serviceKey: attributes.service ?? null,
+          serviceId: attributes.service_id ?? null,
           customFields: await coerceCustomFields(tx, tenantId, custom),
           source: "alert",
           phase: template.startPhase,

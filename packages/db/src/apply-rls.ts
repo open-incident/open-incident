@@ -4,8 +4,8 @@
  * (DATABASE_ADMIN_URL), idempotently — after every migration.
  *
  * Why a role of its own: PostgreSQL lets a table's owner through its own
- * row-level security. A product that connects as the owner has policies in the
- * catalogue and none in effect — which is exactly how a previous product
+ * row-level security. A product that connects as the owner has policies on
+ * paper and none in effect — which is exactly how a previous product
  * shipped, README and all. The isolation test in test/isolation.test.ts runs
  * with DATABASE_URL and fails the day someone points it at the owner again.
  */

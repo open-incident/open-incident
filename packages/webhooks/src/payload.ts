@@ -6,13 +6,13 @@
  */
 import { and, eq } from "drizzle-orm";
 import {
-  catalogEntries,
   incidentRoles,
   incidentStatuses,
   incidentTypes,
   incidents,
   members,
   roleAssignments,
+  services,
   severities,
   type Tx,
 } from "@openincident/db";
@@ -58,14 +58,14 @@ export async function incidentPayload(
       statusName: incidentStatuses.name,
       severityName: severities.name,
       typeName: incidentTypes.name,
-      serviceId: catalogEntries.id,
-      serviceName: catalogEntries.name,
+      serviceId: services.id,
+      serviceName: services.key,
     })
     .from(incidents)
     .innerJoin(incidentTypes, eq(incidentTypes.id, incidents.typeId))
     .leftJoin(incidentStatuses, eq(incidentStatuses.id, incidents.statusId))
     .leftJoin(severities, eq(severities.id, incidents.severityId))
-    .leftJoin(catalogEntries, eq(catalogEntries.id, incidents.serviceEntryId))
+    .leftJoin(services, eq(services.id, incidents.serviceId))
     .where(and(eq(incidents.tenantId, tenantId), eq(incidents.id, incidentId)));
   if (!row) return null;
   const [lead] = await tx

@@ -6,7 +6,7 @@ import { listServices, listTeams, ownerSuggestions } from "@/lib/services";
 import { assignOwner } from "./actions";
 
 /**
- * Services — the two lists that replace a catalogue.
+ * Services — two lists, and nothing to declare.
  *
  * "Confirmed" is what the workspace has adopted. "Seen in traffic" is what the
  * signals named and nobody has claimed: each row is one click from an owner,

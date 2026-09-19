@@ -36,7 +36,9 @@ export default async function FieldsPage({
     select: ["var(--open-t)", "var(--open)"],
     number: ["var(--viol-t)", "var(--viol)"],
     link: ["var(--wait-t)", "var(--wait)"],
-    catalog_entry: ["var(--brand-t)", "var(--brand)"],
+    // A field of the retired kind is still listed, greyed and named for what
+    // it is: its stored value points at rows the product no longer keeps.
+    catalog_entry: ["var(--sunk)", "var(--ink-3)"],
   };
   const typeLabel = (k: string) =>
     t(

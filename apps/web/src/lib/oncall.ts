@@ -2,8 +2,6 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   alertRoutes,
-  catalogEntries,
-  catalogTypes,
   coverRequests,
   escalationPathVersions,
   escalationPaths,
@@ -189,7 +187,7 @@ export async function listPaths(tx: Tx, tenantId: string) {
 }
 
 export async function targetLabels(tx: Tx, tenantId: string) {
-  const [scheds, mems, sets, tms, legacy] = await Promise.all([
+  const [scheds, mems, sets, tms] = await Promise.all([
     tx
       .select({ id: schedules.id, name: schedules.name })
       .from(schedules)
@@ -203,21 +201,12 @@ export async function targetLabels(tx: Tx, tenantId: string) {
       .from(teams)
       .where(eq(teams.tenantId, tenantId))
       .orderBy(asc(teams.name)),
-    // The catalog entries a path written before the move points at. They are
-    // read so such a level still says who it pages, and they are not offered:
-    // a new target names a team of the workspace.
-    tx
-      .select({ id: catalogEntries.id, name: catalogEntries.name })
-      .from(catalogEntries)
-      .innerJoin(catalogTypes, eq(catalogTypes.id, catalogEntries.typeId))
-      .where(and(eq(catalogEntries.tenantId, tenantId), eq(catalogTypes.key, "team"))),
   ]);
   return {
     schedules: scheds,
     members: mems,
     workingHours: sets,
     teams: tms,
-    legacyTeams: legacy,
   };
 }
 

@@ -296,40 +296,27 @@ export const qaRuns = app.table(
   (t) => [index("qa_runs_tenant_queued").on(t.tenantId, t.queuedAt)],
 );
 
-/* ---------- Catalog ---------- */
+/* ---------- Tables kept only until the drop migration ---------- */
 
-/** `escalation_path` holds an escalation path id — the link the dynamic routing follows, validated. */
-export type CatalogAttributeType =
-  "text" | "link" | "member_list" | "entry" | "select" | "escalation_path";
-
-/** Schema of one attribute a catalog type declares. */
-export type CatalogAttributeDef = {
-  key: string;
-  label: string;
-  type: CatalogAttributeType;
-  /** For `entry`: the key of the referenced type (e.g. "team"). */
-  refTypeKey?: string;
-  /** For `select`: the accepted values. */
-  options?: string[];
-};
-
+/**
+ * These two tables are the retired catalogue. Nothing in the product reads or
+ * writes them any more: services live in `app.services`, teams in `app.teams`
+ * and `app.team_members`, and everything else that used to be described here
+ * is a label on the signal. They are declared only because columns still
+ * carrying a `service_entry_id` reference them, and both go in the migration
+ * that drops those columns.
+ */
 export const catalogTypes = app.table(
   "catalog_types",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: tenantId(),
-    /** Stable key the code reasons about: team | service | environment, or a custom type. */
     key: text("key").notNull(),
     name: text("name").notNull(),
     description: text("description"),
     source: catalogSource("source").notNull().default("ui"),
-    attributes: jsonb("attributes").$type<CatalogAttributeDef[]>().notNull().default([]),
+    attributes: jsonb("attributes").$type<Record<string, unknown>[]>().notNull().default([]),
     position: integer("position").notNull().default(0),
-    /**
-     * True when code owns the type (importer, API with `lock`): the UI shows
-     * its entries but refuses to create, edit or delete them — the next import
-     * would silently undo the change otherwise.
-     */
     locked: boolean("locked").notNull().default(false),
     createdAt: createdAt(),
   },
@@ -346,16 +333,13 @@ export const catalogEntries = app.table(
       .references(() => catalogTypes.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
-    /** Identifier of the entry in the system that owns it (importer, API). */
     externalId: text("external_id"),
-    /** Attribute values, keyed by CatalogAttributeDef.key; `entry` refs hold entry ids. */
     attributes: jsonb("attributes").$type<Record<string, unknown>>().notNull().default({}),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     uniqueIndex("catalog_entries_type_name").on(t.typeId, t.name),
-    /** The importer's upsert key; NULLs are distinct, so UI-only entries never collide. */
     uniqueIndex("catalog_entries_type_external").on(t.typeId, t.externalId),
     index("catalog_entries_tenant").on(t.tenantId),
   ],
@@ -399,7 +383,7 @@ export const incidentTypes = app.table(
     isDefault: boolean("is_default").notNull().default(false),
     /** Incidents of this type start private (security, HR). */
     privateByDefault: boolean("private_by_default").notNull().default(false),
-    /** Ids of the catalog team entries allowed to declare; null = everyone. */
+    /** Ids of the `app.teams` rows allowed to declare; null = everyone. */
     restrictedToTeamIds: jsonb("restricted_to_team_ids").$type<string[] | null>(),
     /** Minimum severity rank that enters the post-incident flow automatically; null = never, -1 = always. */
     postIncidentFromRank: integer("post_incident_from_rank"),
@@ -465,7 +449,7 @@ export const incidentFields = app.table(
     type: fieldType("type").notNull(),
     description: text("description"),
     options: jsonb("options").$type<string[]>().notNull().default([]),
-    /** For catalog_entry: the catalog type the value points to. */
+    /** Dead: the retired catalogue's type. Dropped with the two tables. */
     catalogTypeId: uuid("catalog_type_id").references(() => catalogTypes.id, {
       onDelete: "set null",
     }),
@@ -515,10 +499,6 @@ export const incidents = app.table(
     phase: incidentPhase("phase").notNull().default("active"),
     /** Meaningful in the active phase only. */
     statusId: uuid("status_id").references(() => incidentStatuses.id, { onDelete: "set null" }),
-    /** The catalog Service entry the incident is about — superseded by serviceId. */
-    serviceEntryId: uuid("service_entry_id").references(() => catalogEntries.id, {
-      onDelete: "set null",
-    }),
     /** The service the incident is about — the one paging and reporting read. */
     serviceId: uuid("service_id"),
     creatorMemberId: uuid("creator_member_id").references(() => members.id, {
@@ -711,7 +691,7 @@ export const followUps = app.table(
     assigneeMemberId: uuid("assignee_member_id").references(() => members.id, {
       onDelete: "set null",
     }),
-    /** Alternative to a member: a catalog Team entry. */
+    /** Dead: a team from the retired catalogue. Dropped with the two tables. */
     assigneeTeamEntryId: uuid("assignee_team_entry_id").references(() => catalogEntries.id, {
       onDelete: "set null",
     }),
@@ -1081,15 +1061,13 @@ export const mailDeliveries = app.table(
 
 /* ---------- On-call & alerting — configuration ---------- */
 
-/** How a source's payload feeds an alert attribute: a JSON path, optionally bound to a catalog type. */
+/** How a source's payload feeds an alert attribute: a JSON path into the raw payload. */
 export type AttributeMapping = {
   attribute: string;
   /** Dot path into the raw payload, e.g. "labels.service" or "scope.service". */
   path: string;
   /** Static value when no path applies. */
   value?: string;
-  /** Catalog type whose entry names the value must match (e.g. "service"). Legacy: the registry decides now. */
-  catalogTypeKey?: string;
   /** A light reshaping of the extracted string — what a JavaScript one-liner would do. */
   transform?: MappingTransform;
   /** Keep the value only when it matches this regular expression; a capture group replaces it. */
@@ -1101,14 +1079,15 @@ export type MappingTransform =
 
 /* ---------- Alert attributes — the registry every source maps onto ---------- */
 
-export type AlertAttributeType = "text" | "list" | "priority" | "catalog";
+export type AlertAttributeType = "text" | "list" | "priority" | "service" | "team";
 /** What happens to an attribute when the same alert fires again with a new value. */
 export type MergeStrategy = "first" | "last" | "accumulate" | "max";
 
 /**
  * The workspace's alert attributes: one consistent vocabulary every source maps
- * its payload onto, so routes never care where an alert came from. A catalog
- * type is an option on an attribute, not a prerequisite for routing.
+ * its payload onto, so routes never care where an alert came from. Two of the
+ * types name a real row — `service` resolves against `app.services`, `team`
+ * against `app.teams` — and that is what makes an attribute routable.
  */
 export const alertAttributes = app.table(
   "alert_attributes",
@@ -1119,7 +1098,11 @@ export const alertAttributes = app.table(
     label: text("label").notNull(),
     description: text("description"),
     type: text("type").$type<AlertAttributeType>().notNull().default("text"),
-    /** For `catalog`: the type whose entries the value names (canonicalised at ingest). */
+    /**
+     * Dead column, read once. Rows written before `service` and `team` became
+     * types hold the generic type and the name of what it pointed at here;
+     * `alertAttributeTypeOf` reads them forward. Never written, dropped next.
+     */
     catalogTypeKey: text("catalog_type_key"),
     /** Required: every alert should carry it; sources missing it are flagged, alerts without it counted. */
     required: boolean("required").notNull().default(false),
@@ -1130,6 +1113,29 @@ export const alertAttributes = app.table(
   },
   (t) => [uniqueIndex("alert_attributes_tenant_key").on(t.tenantId, t.key)],
 );
+
+/**
+ * The type of an attribute as the product understands it today.
+ *
+ * A row the workspace has not touched since the two concrete types existed
+ * still says the generic word and names its target in the dead column; read
+ * forward, `service` and `team` are the two that ever meant anything, and
+ * anything else was a dimension the product no longer keeps.
+ */
+export function alertAttributeTypeOf(row: {
+  type: string;
+  catalogTypeKey?: string | null;
+}): AlertAttributeType {
+  if (
+    row.type === "service" ||
+    row.type === "team" ||
+    row.type === "list" ||
+    row.type === "priority"
+  )
+    return row.type;
+  if (row.catalogTypeKey === "service" || row.catalogTypeKey === "team") return row.catalogTypeKey;
+  return "text";
+}
 
 /** How a source sets the alert's priority: the same for every alert, or read from a payload field. */
 export type PriorityRule =
@@ -1227,16 +1233,13 @@ export const workingHoursSets = app.table(
 /**
  * Who a level pages.
  *
- * A team is named by its row in `app.teams`, which is where the product now
- * keeps teams and their members. The older spelling points at a catalog entry
- * instead: it is still read, so a path written before the move keeps paging the
- * same people, and it is never written again.
+ * A team is named by its row in `app.teams`, which is where the product keeps
+ * teams and their members.
  */
 export type EscalationTarget =
   | { kind: "member"; memberId: string }
   | { kind: "schedule"; scheduleId: string; mode: "current" | "next" | "everyone" }
-  | { kind: "team"; teamId: string }
-  | { kind: "team"; teamEntryId: string };
+  | { kind: "team"; teamId: string };
 
 /**
  * The typed graph of an escalation path. Each node names the next one; a level
@@ -1329,9 +1332,9 @@ export type RouteFilter = { attribute: string; op: "eq" | "neq" | "in" | "exists
 
 /**
  * Who a route pages. A path, chosen once; or a path found from an alert
- * attribute bound to a catalog type — the entry's escalation path, or its
- * owner team's — with a fallback when the chain does not resolve. Rules stack;
- * each may carry its own conditions.
+ * attribute — a service's owner team's path, or a team's own — with a
+ * fallback when the chain does not resolve. Rules stack; each may carry its
+ * own conditions.
  */
 export type EscalationRule = (
   | { kind: "path"; pathId: string }
@@ -1936,10 +1939,12 @@ export const statusPageComponents = app.table(
     name: text("name").notNull(),
     groupName: text("group_name"),
     position: integer("position").notNull().default(0),
-    /** The catalog service behind it — how an incident finds its components. */
+    /** Dead: the retired catalogue's entry. Dropped with the two tables. */
     serviceEntryId: uuid("service_entry_id").references(() => catalogEntries.id, {
       onDelete: "set null",
     }),
+    /** The service behind it — how an incident finds its components. */
+    serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
     /**
      * The monitor this component tracks. Set, the component stops being told
      * what to say: its state, its uptime and its bars are read off the
@@ -2124,9 +2129,9 @@ export const aiSettings = app.table(
       .notNull()
       .default({}),
     sources: jsonb("sources")
-      .$type<{ catalog: boolean; incidents: boolean; changeEvents: boolean; docs: boolean }>()
+      .$type<{ services: boolean; incidents: boolean; changeEvents: boolean; docs: boolean }>()
       .notNull()
-      .default({ catalog: true, incidents: true, changeEvents: true, docs: false }),
+      .default({ services: true, incidents: true, changeEvents: true, docs: false }),
     /** Private incidents feed the knowledge layer only with this explicit opt-in. */
     privateOptIn: boolean("private_opt_in").notNull().default(false),
     provider: text("provider"),
@@ -2165,7 +2170,7 @@ export const atlasDocuments = app.table(
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: tenantId(),
     source: text("source")
-      .$type<"incident" | "post_mortem" | "catalog" | "change_event" | "runbook">()
+      .$type<"incident" | "post_mortem" | "change_event" | "runbook">()
       .notNull(),
     refId: text("ref_id").notNull(),
     title: text("title").notNull(),
@@ -2187,9 +2192,12 @@ export const changeEvents = app.table(
     kind: text("kind").$type<"deploy" | "flag" | "config" | "other">().notNull().default("deploy"),
     title: text("title").notNull(),
     description: text("description"),
+    /** Dead: the retired catalogue's entry. Dropped with the two tables. */
     serviceEntryId: uuid("service_entry_id").references(() => catalogEntries.id, {
       onDelete: "set null",
     }),
+    /** The service this belongs to. */
+    serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
     environment: text("environment"),
     actorName: text("actor_name"),
     externalRef: text("external_ref"),
@@ -2352,9 +2360,12 @@ export const heartbeats = app.table(
     tenantId: tenantId(),
     name: text("name").notNull(),
     description: text("description"),
+    /** Dead: the retired catalogue's entry. Dropped with the two tables. */
     serviceEntryId: uuid("service_entry_id").references(() => catalogEntries.id, {
       onDelete: "set null",
     }),
+    /** The service this belongs to. */
+    serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
     intervalSeconds: integer("interval_seconds").notNull().default(3600),
     graceSeconds: integer("grace_seconds").notNull().default(300),
     /** The token in the ping URL — shown to managers, so kept encrypted rather than hashed. */
@@ -2437,9 +2448,12 @@ export const runbooks = app.table(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: tenantId(),
+    /** Dead: the retired catalogue's entry. Dropped with the two tables. */
     serviceEntryId: uuid("service_entry_id").references(() => catalogEntries.id, {
       onDelete: "cascade",
     }),
+    /** The service this belongs to. */
+    serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
     title: text("title").notNull(),
     sourceUrl: text("source_url"),
     content: text("content").notNull().default(""),
@@ -2564,8 +2578,8 @@ export const probes = app.table(
  * A service, as the product learns it exists.
  *
  * It is created the first time a signal names it — an alert label, a monitor,
- * later a trace — and not a moment earlier: nobody fills a catalogue before
- * their first page. `confirmed` marks the ones a human has adopted; the rest
+ * later a trace — and not a moment earlier: nobody describes what they run
+ * before their first page. `confirmed` marks the ones a human has adopted; the rest
  * are shown as "seen in traffic" and are one click from an owner.
  */
 export const services = app.table(
@@ -2596,8 +2610,8 @@ export const services = app.table(
 /**
  * A team: people, and the policy that pages them.
  *
- * It replaces the catalogue's team entries with a table the routing can join
- * against, because "page the owner" must resolve in one hop rather than three.
+ * A table the routing can join against, because "page the owner" must resolve
+ * in one hop rather than three.
  */
 export const teams = app.table(
   "teams",

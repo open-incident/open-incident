@@ -8,8 +8,6 @@ import { canRespond } from "@openincident/config";
 import { after } from "next/server";
 import { and, asc, eq } from "drizzle-orm";
 import {
-  catalogEntries,
-  catalogTypes,
   escalationPaths,
   followUps,
   getTenantById,
@@ -20,6 +18,7 @@ import {
   incidentTypes,
   incidents,
   roleAssignments,
+  services,
   severities,
   withTenant,
   type Tx,
@@ -93,21 +92,17 @@ async function declareOptions(tx: Tx, tenantId: string) {
     .from(severities)
     .where(eq(severities.tenantId, tenantId))
     .orderBy(asc(severities.rank));
-  const [svcType] = await tx
-    .select({ id: catalogTypes.id })
-    .from(catalogTypes)
-    .where(and(eq(catalogTypes.tenantId, tenantId), eq(catalogTypes.key, "service")));
-  const services = svcType
-    ? await tx
-        .select({ id: catalogEntries.id, name: catalogEntries.name })
-        .from(catalogEntries)
-        .where(eq(catalogEntries.typeId, svcType.id))
-        .orderBy(asc(catalogEntries.name))
-    : [];
+  // Only the services the workspace has adopted: the modal is a short list to
+  // pick from, not everything a signal has ever named.
+  const svcRows = await tx
+    .select({ id: services.id, name: services.key })
+    .from(services)
+    .where(and(eq(services.tenantId, tenantId), eq(services.confirmed, true)))
+    .orderBy(asc(services.key));
   return {
     type: type ?? null,
     severities: sevs,
-    services,
+    services: svcRows,
     requireService: Boolean(type?.declareForm.find((f) => f.key === "service")?.required),
   };
 }
@@ -373,7 +368,7 @@ export async function handleInteraction(
           mode: "live",
           typeId: opts.type.id,
           severityId: values.severity ?? null,
-          serviceEntryId: values.service ?? null,
+          serviceId: values.service ?? null,
           customFields: {},
           source: "chat",
         });

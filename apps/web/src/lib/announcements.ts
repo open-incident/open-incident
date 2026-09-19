@@ -11,10 +11,10 @@ import {
   announcementRules,
   announcementTemplates,
   announcements,
-  catalogEntries,
   incidentEvents,
   incidentStatuses,
   incidents,
+  services,
   severities,
   withTenant,
   type Tx,
@@ -49,12 +49,12 @@ export async function refreshAnnouncements(tenantId: string, incidentId: string)
         sevName: severities.name,
         sevRank: severities.rank,
         statusName: incidentStatuses.name,
-        serviceName: catalogEntries.name,
+        serviceName: services.key,
       })
       .from(incidents)
       .leftJoin(severities, eq(severities.id, incidents.severityId))
       .leftJoin(incidentStatuses, eq(incidentStatuses.id, incidents.statusId))
-      .leftJoin(catalogEntries, eq(catalogEntries.id, incidents.serviceEntryId))
+      .leftJoin(services, eq(services.id, incidents.serviceId))
       .where(and(eq(incidents.tenantId, tenantId), eq(incidents.id, incidentId)));
     if (!row) return;
     const inc = row.inc;

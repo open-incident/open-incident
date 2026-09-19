@@ -7,9 +7,8 @@
  * the same walk as a timeline. Both go through here so they never disagree.
  */
 
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import {
-  catalogEntries,
   escalationPaths,
   members,
   schedules,
@@ -63,7 +62,7 @@ export function targetText(t: Translate, target: EscalationTarget, names: Names)
   if (target.kind === "member") return names.member(target.memberId);
   if (target.kind === "team")
     return t("oc2.pol.targetTeam", {
-      name: names.team("teamId" in target ? target.teamId : target.teamEntryId),
+      name: names.team(target.teamId),
     });
   const schedule = names.schedule(target.scheduleId);
   if (target.mode === "everyone") return t("oc2.pol.targetEveryone", { schedule });
@@ -143,40 +142,14 @@ export type NameSource = {
   onCall: Map<string, string>;
 };
 
-/**
- * The names every id in the graphs stands for.
- *
- * A team target still points at a catalogue entry — that is what the engine
- * resolves — while the first-class `teams` table names the owner teams a
- * service routes to. Both are read, so a policy reads the same whichever one
- * it was written against.
- */
+/** The names every id in the graphs stands for. */
 export async function loadNameSource(
   tx: Tx,
   tenantId: string,
   graphs: EscalationGraph[],
   onCall: Map<string, string>,
 ): Promise<NameSource> {
-  const teamIds = [
-    ...new Set(
-      graphs.flatMap((g) =>
-        g.nodes.flatMap((n) =>
-          n.kind === "level"
-            ? n.targets.flatMap((tg) =>
-                tg.kind === "team" ? ["teamId" in tg ? tg.teamId : tg.teamEntryId] : [],
-              )
-            : [],
-        ),
-      ),
-    ),
-  ];
-  const entries = teamIds.length
-    ? await tx
-        .select({ id: catalogEntries.id, name: catalogEntries.name })
-        .from(catalogEntries)
-        .where(inArray(catalogEntries.id, teamIds))
-    : [];
-  const firstClass = await tx
+  const teamRows = await tx
     .select({ id: teams.id, name: teams.name })
     .from(teams)
     .where(eq(teams.tenantId, tenantId))
@@ -190,7 +163,7 @@ export async function loadNameSource(
       .select({ id: schedules.id, name: schedules.name })
       .from(schedules)
       .where(eq(schedules.tenantId, tenantId)),
-    teams: [...entries, ...firstClass],
+    teams: teamRows,
     workingHours: await tx
       .select({ id: workingHoursSets.id, name: workingHoursSets.name })
       .from(workingHoursSets)

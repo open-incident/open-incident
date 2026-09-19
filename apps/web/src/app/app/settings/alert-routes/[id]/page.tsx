@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
-import { alertRoutes, withTenant } from "@openincident/db";
+import { alertAttributeTypeOf, alertRoutes, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { isManager, requireMember } from "@/lib/session";
 import { loadEditorData } from "../editor-data";
@@ -50,8 +50,7 @@ export default async function RulePage({ params }: { params: Promise<{ id: strin
         attributes={data.attributes.map((a) => ({
           key: a.key,
           label: a.label,
-          type: a.type,
-          catalogTypeKey: a.catalogTypeKey,
+          type: alertAttributeTypeOf(a),
         }))}
         sources={data.sources}
         paths={data.paths.map((p) => ({ id: p.id, name: p.name, published: Boolean(p.current) }))}

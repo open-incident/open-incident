@@ -157,7 +157,7 @@ export function declareCard(opts: {
       },
       {
         type: "Input.ChoiceSet",
-        id: "serviceEntryId",
+        id: "serviceId",
         label: "Affected service",
         choices: [{ title: "— none", value: "" }, ...opts.services],
         value: "",

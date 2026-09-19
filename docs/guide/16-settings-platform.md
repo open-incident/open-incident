@@ -19,7 +19,7 @@ Each integration has its own chapter: [Slack](slack), [Microsoft Teams](teams), 
 
 ### API keys
 
-**+ New key** with a name and **scopes**: `read` (incidents, follow-ups, catalog), `write` (everything, updates included), `incident:create` (declare incidents only — the narrow scope of an ingestion key). The key `oi_live_…` is shown **once**; only its SHA-256 is stored. Each row shows its last use; **Revoke** takes effect on the next request.
+**+ New key** with a name and **scopes**: `read` (incidents, follow-ups, change events, status pages), `write` (everything, updates included), `incident:create` (declare incidents only — the narrow scope of an ingestion key). The key `oi_live_…` is shown **once**; only its SHA-256 is stored. Each row shows its last use; **Revoke** takes effect on the next request.
 
 The **contract**: cursor pagination, 100 items at most, 600 requests per minute per key, errors always as `{ error: { code, message } }`, an OpenAPI document at `/api/v1/openapi.json`. See [API and automation](api).
 

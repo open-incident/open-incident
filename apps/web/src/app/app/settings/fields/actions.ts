@@ -14,7 +14,7 @@ const schema = z.object({
     .trim()
     .regex(/^[a-z][a-z0-9_]{1,39}$/),
   label: z.string().trim().max(80).optional(),
-  type: z.enum(["text", "long_text", "select", "number", "link", "catalog_entry"]),
+  type: z.enum(["text", "long_text", "select", "number", "link"]),
   incidentTypeId: z.string().uuid().or(z.literal("")),
   options: z.string().optional(),
   required: z.string().optional(),

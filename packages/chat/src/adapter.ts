@@ -8,7 +8,6 @@ import { and, eq } from "drizzle-orm";
 import { decryptSecrets, encryptSecrets } from "@openincident/crypto";
 import {
   announcements,
-  catalogEntries,
   chatIdentities,
   incidentChannels,
   incidentRoles,
@@ -17,6 +16,7 @@ import {
   integrationInstalls,
   members,
   roleAssignments,
+  services,
   severities,
   withTenant,
   type BridgeConfig,
@@ -145,12 +145,12 @@ export async function incidentCard(
       inc: incidents,
       statusName: incidentStatuses.name,
       sevName: severities.name,
-      serviceName: catalogEntries.name,
+      serviceName: services.key,
     })
     .from(incidents)
     .leftJoin(incidentStatuses, eq(incidentStatuses.id, incidents.statusId))
     .leftJoin(severities, eq(severities.id, incidents.severityId))
-    .leftJoin(catalogEntries, eq(catalogEntries.id, incidents.serviceEntryId))
+    .leftJoin(services, eq(services.id, incidents.serviceId))
     .where(and(eq(incidents.tenantId, tenantId), eq(incidents.id, incidentId)));
   if (!row) return null;
   const [lead] = await tx

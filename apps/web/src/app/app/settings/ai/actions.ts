@@ -16,7 +16,7 @@ export async function saveAiSettings(formData: FormData) {
   const capabilities: Partial<Record<AiCapability, boolean>> = {};
   for (const cap of AI_CAPABILITIES) capabilities[cap] = formData.get(`cap_${cap}`) === "on";
   const sources = {
-    catalog: true,
+    services: true,
     incidents: formData.get("src_incidents") === "on",
     changeEvents: formData.get("src_changeEvents") === "on",
     docs: formData.get("src_docs") === "on",

@@ -5,7 +5,8 @@
  * acts. It also promises the truth, so it does not re-implement the matcher —
  * it replays exactly what `deliverAlert` does to pick a route (active routes in
  * position order, source filter then `conditionsHold`, escalation rules
- * resolved through the catalog) against the alerts as they were stored, once
+ * resolved through the service and its owner) against the alerts as they were
+ * stored, once
  * for the workspace as it stands and once with the draft in place. The
  * difference between the two is the answer.
  *

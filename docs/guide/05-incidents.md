@@ -33,7 +33,7 @@ Press <kbd>⌘K</kbd> / <kbd>Ctrl K</kbd> anywhere to open the **command palette
 2. **Title** — what is happening, in one line. As you type, the product looks for an open incident with a similar title and offers to **Join** it instead of opening a duplicate.
 3. **Incident type** — each type carries its own lifecycle and its own form. A type may be restricted to one team, and may start its incidents private.
 4. **Severity** — shared by every type, ordered. It decides who is announced to, whether a status page suggests publication, and whether the post-incident flow starts at resolution.
-5. **Affected service** — from the catalog. It binds the incident to its owner team and to the status page components of that service.
+5. **Affected service** — one of the workspace's services, the ones the signals have already named. It binds the incident to that service's owner team and to the status page components bound to it.
 6. **Summary** and the type's **custom fields** — required or optional, as the type says.
 
 If an inference provider is configured, **Propose a title and summary** drafts both from what you typed; keep, edit or ignore.
@@ -105,7 +105,7 @@ When the workspace allows it: an **AI summary** of the timeline (regenerable, la
 
 ![Follow-ups](img/incident-followups.png "One row per follow-up: title, priority, assignee, deadline, export.")
 
-The **Follow-ups** tab lists what has to be done after the incident: a title, a **priority** (with the workspace's closure policy), an assignee (a member or a catalog team), a deadline. **+ New follow-up** adds one; the assistant can **Suggest follow-ups** from the timeline — each becomes real only when you create it.
+The **Follow-ups** tab lists what has to be done after the incident: a title, a **priority** (with the workspace's closure policy), an assignee (a member or a team), a deadline. **+ New follow-up** adds one; the assistant can **Suggest follow-ups** from the timeline — each becomes real only when you create it.
 
 **Export** sends a follow-up to a connected tracker (GitHub Issues, GitLab Issues, Jira, Linear); the row keeps the link, and a closed issue marks the follow-up **Done** here with a line in the timeline. See [Trackers and documentation tools](trackers-docs).
 

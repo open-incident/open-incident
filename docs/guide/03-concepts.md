@@ -9,7 +9,7 @@ summary: The dozen ideas the whole product is built on — read once, then every
 
 An **instance** is one deployment: one database, one `BASE_DOMAIN`, one set of provider credentials (SMTP, Twilio, Slack app, inference endpoint…). An instance serves one or many **workspaces**.
 
-A **workspace** is an organisation's space: its own members, catalog, incidents, settings. Each workspace answers on its own subdomain — `acme.your-domain.example` — or on the bare domain when `DEFAULT_TENANT_SLUG` names it. Everything a workspace stores carries its id, and the database enforces the separation with row-level security: the application role cannot read another workspace's rows even by mistake.
+A **workspace** is an organisation's space: its own members, services, incidents, settings. Each workspace answers on its own subdomain — `acme.your-domain.example` — or on the bare domain when `DEFAULT_TENANT_SLUG` names it. Everything a workspace stores carries its id, and the database enforces the separation with row-level security: the application role cannot read another workspace's rows even by mistake.
 
 A **member** is a person in a workspace, identified by email. Sign-in identities are global to the instance (one account can belong to several workspaces); membership is what a workspace says about that email.
 
@@ -17,18 +17,24 @@ A **member** is a person in a workspace, identified by email. Sign-in identities
 
 Four built-in roles:
 
-| Role          | What it may do                                                                                                                                      |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Owner**     | Everything, including appointing other owners and importing status page subscribers.                                                                |
-| **Admin**     | Everything in the settings and the product.                                                                                                         |
-| **Responder** | Declare, update and resolve incidents; act on alerts; create and edit catalog entries. Reads the settings' outcome but does not enter the settings. |
-| **Viewer**    | Reads everything the workspace shows; acts on nothing.                                                                                              |
+| Role          | What it may do                                                                                                                                                  |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Owner**     | Everything, including appointing other owners and importing status page subscribers.                                                                            |
+| **Admin**     | Everything in the settings and the product.                                                                                                                     |
+| **Responder** | Declare, update and resolve incidents; act on alerts; confirm a service and give it an owner team. Reads the settings' outcome but does not enter the settings. |
+| **Viewer**    | Reads everything the workspace shows; acts on nothing.                                                                                                          |
 
-Underneath, the product asks one question everywhere: _may this member do this here?_ The answer comes from a set of twelve permissions (respond to incidents, manage on-call, manage each settings area, read the audit log…). The four built-in roles are fixed sets of those permissions. The enterprise edition lets you define [custom roles](custom-roles) as any other set.
+Underneath, the product asks one question everywhere: _may this member do this here?_ The answer comes from a set of ten permissions (respond to incidents, manage on-call, manage each settings area, read the audit log…). The four built-in roles are fixed sets of those permissions. The enterprise edition lets you define [custom roles](custom-roles) as any other set.
 
-## The catalog is optional
+## Services, teams, labels
 
-Routing does not need the catalog. A route says who to page — an escalation path, chosen once — and a fresh workspace pages someone the moment a person clicks **Page me** in **Settings → Alert configuration**. The **catalog** — **teams**, **services**, **environments**, and any type you add — is where the routing grows into: bind the `service` attribute to the service type and a route can page _the path the entry leads to_ — the service's own, or its owner team's — with a fallback when the chain does not resolve:
+Nothing has to be declared before the routing works. A route says who to page — an escalation path, chosen once — and a fresh workspace pages someone the moment a person clicks **Page me** in **Settings → Alert configuration**.
+
+A **service** is never created by hand: it appears under **Services** the first time a signal names it — a label on an alert, a monitor. Its **key** _is_ its name (`checkout-api`); there is no second field to fill in. It waits in **Seen in traffic** until a member gives it an **owner team**, which confirms it in the same gesture.
+
+A **team** is a row of its own: its members, a chat channel, and the escalation path it is paged through. Teams live in the **Services** area, and the enterprise edition mirrors your identity provider's groups onto them through [provisioning](scim).
+
+That chain is what lets a route page the right people without naming them: bind an alert attribute to the type `service` or `team` and a route can page _the path the named row leads to_ — the service's owner team, or the team itself — with a fallback when the chain does not resolve:
 
 ```
 alert  →  attribute "service" = checkout-api
@@ -37,7 +43,9 @@ alert  →  attribute "service" = checkout-api
        →  the path pages whoever is on call
 ```
 
-Change the owner of a service in the catalog and every alert about it follows, on the next event. Knowledge lives there once — when you want it to.
+Change a service's owner and every alert about it follows, on the next event. Nobody had to describe the organisation first.
+
+Everything else an alert used to be described by — environment, region, tier, customer — is now simply a **label** on the alert: a value a route reads and a screen filters on, nothing more. There is no list of environments to declare and no types of your own to design.
 
 ## Alert, incident, escalation
 
@@ -78,7 +86,7 @@ When an inference provider is configured, an assistant drafts titles, summaries,
 
 ## Where the truth lives
 
-- Incidents, alerts, catalog, schedules, settings: in your database, under your workspace's id.
+- Incidents, alerts, services, schedules, settings: in your database, under your workspace's id.
 - Public status pages: a separate application that reads a snapshot and nothing else, so it keeps answering when the product is down.
 - Emails, SMS, pushes, chat messages: written to an outbox with an honest status (queued, sent, delivered, failed) before they leave.
 - Exports to Jira, GitHub, Confluence, Notion: copies with a link back; the record here stays the source.

@@ -207,25 +207,25 @@ export async function sweepRunbooks(tenantIds: string[]): Promise<number> {
 }
 
 /** The runbooks of a service (and the workspace-wide ones), oldest first. */
-export async function runbooksForService(tx: Tx, tenantId: string, serviceEntryId: string | null) {
+export async function runbooksForService(tx: Tx, tenantId: string, serviceId: string | null) {
   const rows = await tx
     .select()
     .from(runbooks)
     .where(eq(runbooks.tenantId, tenantId))
     .orderBy(asc(runbooks.createdAt));
-  return rows.filter((r) => r.serviceEntryId === null || r.serviceEntryId === serviceEntryId);
+  return rows.filter((r) => r.serviceId === null || r.serviceId === serviceId);
 }
 
 /** What the dossier may quote: the runbooks of the service, trimmed, when documentation is an allowed source. */
 export async function runbookExcerpts(
   tx: Tx,
   tenantId: string,
-  serviceEntryId: string | null,
+  serviceId: string | null,
   maxChars = 6000,
 ): Promise<string[]> {
   const settings = await getAiSettings(tx, tenantId);
   if (!settings.sources.docs) return [];
-  const rows = await runbooksForService(tx, tenantId, serviceEntryId);
+  const rows = await runbooksForService(tx, tenantId, serviceId);
   const out: string[] = [];
   let budget = maxChars;
   for (const r of rows) {

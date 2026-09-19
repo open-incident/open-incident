@@ -15,7 +15,6 @@ import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import {
   alertEvents,
   alerts,
-  catalogEntries,
   escalationEvents,
   escalationPathVersions,
   escalationPaths,
@@ -101,22 +100,11 @@ export async function resolveTargets(
   for (const t of targets) {
     if (t.kind === "member") ids.add(t.memberId);
     if (t.kind === "team") {
-      if ("teamId" in t) {
-        // The team as the product now keeps it: a row and its memberships.
-        const rows = await tx
-          .select({ memberId: teamMembers.memberId })
-          .from(teamMembers)
-          .where(and(eq(teamMembers.tenantId, tenantId), eq(teamMembers.teamId, t.teamId)));
-        for (const r of rows) ids.add(r.memberId);
-      } else {
-        // A path written before the move still names a catalog entry.
-        const [entry] = await tx
-          .select({ attributes: catalogEntries.attributes })
-          .from(catalogEntries)
-          .where(and(eq(catalogEntries.tenantId, tenantId), eq(catalogEntries.id, t.teamEntryId)));
-        const list = entry?.attributes?.members;
-        if (Array.isArray(list)) for (const m of list) if (typeof m === "string") ids.add(m);
-      }
+      const rows = await tx
+        .select({ memberId: teamMembers.memberId })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.tenantId, tenantId), eq(teamMembers.teamId, t.teamId)));
+      for (const r of rows) ids.add(r.memberId);
     }
     if (t.kind === "schedule") {
       const [sched] = await tx
@@ -1019,10 +1007,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * appears the moment a signal names it, and the Services screen assigns it a
  * team. That assignment has to be what decides who is paged, otherwise the
  * screen records a decision the engine never applies — which it did, until
- * this function existed.
- *
- * The catalog stays as a fallback below, for the workspaces that keep one up
- * to date. It is no longer the source.
+ * this function existed. There is no second road: no owner recorded means no
+ * path found, and the rule falls back to the one it names.
  */
 export async function resolvePathFromService(
   tx: Tx,
@@ -1061,10 +1047,10 @@ export async function resolvePathFromService(
  * resolves to the team's policy directly. Anything else resolves to nothing,
  * and the rule falls back to the path it names.
  *
- * There used to be a third road through the catalog, where any entry of any
- * type could carry a path. It is gone with the catalog: a service is observed
- * and a team is a team, and one answer to "who owns this" is worth more than a
- * mechanism that could give two.
+ * There used to be a third road, where an entry of any dimension a workspace
+ * had invented could carry a path of its own. It is gone: a service is
+ * observed and a team is a team, and one answer to "who owns this" is worth
+ * more than a mechanism that could give two.
  */
 export async function resolveAttributePath(
   tx: Tx,

@@ -11,14 +11,16 @@ import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql } from "driz
 import {
   alertSources,
   alerts,
-  catalogEntries,
   changeEvents,
   incidentEvents,
   incidents,
   members,
   postMortems,
   runbooks,
+  services,
   severities,
+  teamMembers,
+  teams,
   withTenant,
   type Citation,
   type InvestigationCheck,
@@ -42,7 +44,7 @@ export type IncidentHead = {
   summary: string | null;
   severity: string | null;
   service: string | null;
-  serviceEntryId: string | null;
+  serviceId: string | null;
   phase: string;
   declaredAt: Date;
   resolvedAt: Date | null;
@@ -63,14 +65,14 @@ const fmt = (d: Date) => d.toISOString().slice(0, 16).replace("T", " ");
 const clip = (s: string | null | undefined, n: number) =>
   (s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 
-type Sources = { catalog: boolean; incidents: boolean; changeEvents: boolean; docs: boolean };
+type Sources = { services: boolean; incidents: boolean; changeEvents: boolean; docs: boolean };
 
 async function head(tx: Tx, tenantId: string, incidentId: string): Promise<IncidentHead | null> {
   const [row] = await tx
-    .select({ inc: incidents, sevName: severities.name, serviceName: catalogEntries.name })
+    .select({ inc: incidents, sevName: severities.name, serviceKey: services.key })
     .from(incidents)
     .leftJoin(severities, eq(severities.id, incidents.severityId))
-    .leftJoin(catalogEntries, eq(catalogEntries.id, incidents.serviceEntryId))
+    .leftJoin(services, eq(services.id, incidents.serviceId))
     .where(and(eq(incidents.tenantId, tenantId), eq(incidents.id, incidentId)));
   if (!row) return null;
   return {
@@ -79,8 +81,8 @@ async function head(tx: Tx, tenantId: string, incidentId: string): Promise<Incid
     name: row.inc.name,
     summary: row.inc.summary,
     severity: row.sevName,
-    service: row.serviceName,
-    serviceEntryId: row.inc.serviceEntryId,
+    service: row.serviceKey,
+    serviceId: row.inc.serviceId,
     phase: row.inc.phase,
     declaredAt: row.inc.declaredAt,
     resolvedAt: row.inc.resolvedAt,
@@ -172,30 +174,27 @@ async function changeItems(tx: Tx, tenantId: string, inc: IncidentHead): Promise
   const from = new Date(inc.declaredAt.getTime() - DAY);
   const to = inc.resolvedAt ?? new Date();
   const rows = await tx
-    .select({ ev: changeEvents, serviceName: catalogEntries.name })
+    .select({ ev: changeEvents, serviceKey: services.key })
     .from(changeEvents)
-    .leftJoin(catalogEntries, eq(catalogEntries.id, changeEvents.serviceEntryId))
+    .leftJoin(services, eq(services.id, changeEvents.serviceId))
     .where(
       and(
         eq(changeEvents.tenantId, tenantId),
         gte(changeEvents.occurredAt, from),
         lte(changeEvents.occurredAt, to),
-        inc.serviceEntryId
-          ? or(
-              eq(changeEvents.serviceEntryId, inc.serviceEntryId),
-              isNull(changeEvents.serviceEntryId),
-            )
+        inc.serviceId
+          ? or(eq(changeEvents.serviceId, inc.serviceId), isNull(changeEvents.serviceId))
           : sql`true`,
       ),
     )
     .orderBy(desc(changeEvents.occurredAt))
     .limit(12);
-  return rows.map(({ ev, serviceName }, i) => ({
+  return rows.map(({ ev, serviceKey }, i) => ({
     id: `C${i + 1}`,
     kind: "change" as const,
     label: `${ev.kind} · ${clip(ev.title, 80)}`,
     url: ev.externalRef,
-    body: `${fmt(ev.occurredAt)} ${ev.kind} ${clip(ev.title, 200)}${serviceName ? ` [${serviceName}]` : " [no service]"}${ev.environment ? ` (${ev.environment})` : ""}${ev.actorName ? ` by ${ev.actorName}` : ""}${ev.description ? ` — ${clip(ev.description, 300)}` : ""}`,
+    body: `${fmt(ev.occurredAt)} ${ev.kind} ${clip(ev.title, 200)}${serviceKey ? ` [${serviceKey}]` : " [no service]"}${ev.environment ? ` (${ev.environment})` : ""}${ev.actorName ? ` by ${ev.actorName}` : ""}${ev.description ? ` — ${clip(ev.description, 300)}` : ""}`,
   }));
 }
 
@@ -274,9 +273,9 @@ async function runbookItems(tx: Tx, tenantId: string, inc: IncidentHead): Promis
     .where(
       and(
         eq(runbooks.tenantId, tenantId),
-        inc.serviceEntryId
-          ? or(eq(runbooks.serviceEntryId, inc.serviceEntryId), isNull(runbooks.serviceEntryId))
-          : isNull(runbooks.serviceEntryId),
+        inc.serviceId
+          ? or(eq(runbooks.serviceId, inc.serviceId), isNull(runbooks.serviceId))
+          : isNull(runbooks.serviceId),
         ne(runbooks.content, ""),
       ),
     )
@@ -297,54 +296,45 @@ async function ownershipItems(
   inc: IncidentHead,
   origin: string,
 ): Promise<EvidenceItem[]> {
-  if (!inc.serviceEntryId) return [];
+  if (!inc.serviceId) return [];
   const [service] = await tx
-    .select()
-    .from(catalogEntries)
-    .where(and(eq(catalogEntries.tenantId, tenantId), eq(catalogEntries.id, inc.serviceEntryId)));
+    .select({
+      id: services.id,
+      key: services.key,
+      labels: services.labels,
+      confirmed: services.confirmed,
+      ownerTeamId: services.ownerTeamId,
+      ownerTeamName: teams.name,
+    })
+    .from(services)
+    .leftJoin(teams, eq(teams.id, services.ownerTeamId))
+    .where(and(eq(services.tenantId, tenantId), eq(services.id, inc.serviceId)));
   if (!service) return [];
-  const attrs = service.attributes ?? {};
   const parts: string[] = [];
-  const ownerId = typeof attrs.owner === "string" ? attrs.owner : null;
-  let ownerName: string | null = null;
-  if (ownerId) {
-    const [team] = await tx
-      .select()
-      .from(catalogEntries)
-      .where(and(eq(catalogEntries.tenantId, tenantId), eq(catalogEntries.id, ownerId)));
-    if (team) {
-      ownerName = team.name;
-      const memberIds = Array.isArray(team.attributes?.members)
-        ? (team.attributes.members as unknown[]).filter((m): m is string => typeof m === "string")
-        : [];
-      const names =
-        memberIds.length > 0
-          ? (
-              await tx
-                .select({ name: members.name })
-                .from(members)
-                .where(
-                  and(eq(members.tenantId, tenantId), inArray(members.id, memberIds.slice(0, 12))),
-                )
-            ).map((m) => m.name)
-          : [];
-      parts.push(
-        `Service ${service.name} is owned by team ${team.name}${names.length ? ` (members: ${names.slice(0, 6).join(", ")})` : ""}.`,
-      );
-    }
+  if (service.ownerTeamId && service.ownerTeamName) {
+    const names = (
+      await tx
+        .select({ name: members.name })
+        .from(teamMembers)
+        .innerJoin(members, eq(members.id, teamMembers.memberId))
+        .where(and(eq(teamMembers.tenantId, tenantId), eq(teamMembers.teamId, service.ownerTeamId)))
+        .limit(12)
+    ).map((m) => m.name);
+    parts.push(
+      `Service ${service.key} is owned by team ${service.ownerTeamName}${names.length ? ` (members: ${names.slice(0, 6).join(", ")})` : " (no member recorded)"}.`,
+    );
+  } else {
+    parts.push(`Service ${service.key} has no owner team.`);
   }
-  if (!ownerName) parts.push(`Service ${service.name} has no owner team recorded in the catalog.`);
-  for (const key of ["tier", "repository", "environments", "escalation_path"]) {
-    const v = attrs[key];
-    if (typeof v === "string" && v) parts.push(`${key}: ${clip(v, 120)}.`);
-  }
-  if (service.description) parts.push(clip(service.description, 300));
+  if (!service.confirmed) parts.push(`It was seen in traffic and nobody has adopted it yet.`);
+  for (const [key, value] of Object.entries(service.labels))
+    if (value) parts.push(`${key}: ${clip(value, 120)}.`);
   return [
     {
       id: "O1",
       kind: "owner",
-      label: `owner · ${ownerName ?? service.name}`,
-      url: `${origin}/app/catalog?entry=${encodeURIComponent(service.name)}`,
+      label: `owner · ${service.ownerTeamName ?? service.key}`,
+      url: `${origin}/app/services/${service.id}`,
       body: parts.join(" "),
     },
   ];
@@ -424,7 +414,7 @@ export async function gatherEvidence(
       await timed(
         "ownership",
         () =>
-          sources.catalog ? ownershipItems(tx, tenantId, inc, origin) : Promise.resolve("skipped"),
+          sources.services ? ownershipItems(tx, tenantId, inc, origin) : Promise.resolve("skipped"),
         off,
       ),
       await timed("notes", () => Promise.resolve(noteItems(notes))),

@@ -16,7 +16,7 @@ summary: Alert configuration in four steps; sources with their page, attributes,
 
 Under the steps: tiles for sources, routes, paths, priorities and attributes; the sources with their last day (alerts, firing) and their last alert; the routes in order, each in one line — _when_ and _then_.
 
-No catalog is required. Every new workspace starts with three priorities (P1–P3 with the usual aliases), five attributes (service, team, environment, region, the tool's severity) and one route — **Every alert** — that catches everything and opens a triage incident when the priority pages. Name who to page and it is live.
+Nothing has to be declared beforehand. Every new workspace starts with three priorities (P1–P3 with the usual aliases), five attributes (service, team, environment, region, the tool's severity) and one route — **Every alert** — that catches everything and opens a triage incident when the priority pages. Name who to page and it is live.
 
 ## Alert sources
 
@@ -51,9 +51,9 @@ Adding a dedicated tool is a parser plus default mappings, not a connector — t
 
 ## Attributes
 
-**Settings → Attributes** is the vocabulary every source maps its payload onto and every route reasons about — so a route says _environment is production_ without knowing which tool said `env=prod`. Each attribute has a **key** (fixed once created), a label, a **type** — text, list, alert priority, or a **catalog entry** of a chosen type — whether it is **required** on every alert (sources missing it are flagged, alerts lacking it say so in their history), and what a **repeat** of the same alert does to its value: first wins, last wins, accumulate (lists), highest priority wins. The **coverage** column says how many of the last 200 alerts carry it and how many sources map it.
+**Settings → Attributes** is the vocabulary every source maps its payload onto and every route reasons about — so a route says _environment is production_ without knowing which tool said `env=prod`. Each attribute has a **key** (fixed once created), a label, a **type** — text, list, alert priority, **service** or **team** — whether it is **required** on every alert (sources missing it are flagged, alerts lacking it say so in their history), and what a **repeat** of the same alert does to its value: first wins, last wins, accumulate (lists), highest priority wins. The **coverage** column says how many of the last 200 alerts carry it and how many sources map it.
 
-Bind an attribute to a catalog type only when you want the catalog to route: the value is then canonicalised to the entry it names, and a route can page _the path the entry leads to_.
+**Service** and **team** are the two types that name a real row: the value is matched against the workspace's services and teams, and a route can then page _the path that row leads to_. Every other attribute — environment, region, tier, customer — is a plain label: a route reads it, a screen filters on it, and nothing else is stored about it.
 
 ## Priorities
 
@@ -69,7 +69,7 @@ Each route is edited on a page of its own:
 
 - **Sources**: every source, or only some.
 - **Which alerts**: conditions on any attribute, or on the source, its name, the priority, the title — _is, is not, is one of, is none of, contains, matches (regex), is set, is missing_. Lines in a group are ANDed; groups are ORed. No condition catches everything.
-- **Who to page**: rules that stack. **Page a path** names one; **Page from an attribute** follows a catalog-bound attribute to the entry's escalation path — or its owner team's — with a fallback when the chain does not resolve. **Page me**, a schedule or a colleague make a published one-level path in one click.
+- **Who to page**: rules that stack. **Page a path** names one; **Page from an attribute** follows a `service` or `team` attribute to the escalation path it leads to — the service's owner team, or the team itself — with a fallback when the chain does not resolve. **Page me**, a schedule or a colleague make a published one-level path in one click.
 - **Incident**: never, always, or when the priority pages; the type, whether it starts in triage or active, the severity (from the priority, fixed, or none), private or not, custom fields filled from attributes, and whether a triage incident is declined when the alert resolves.
 - **Grouping**: the attributes the key is built from, the window in minutes — fixed, or restarting at each alert that joins — what a joining alert does to paging (nothing, page again, page again if the priority rises), and a grace before the first page.
 - **Slack channel**: where every alert this route catches is posted, with its attributes and the way in.

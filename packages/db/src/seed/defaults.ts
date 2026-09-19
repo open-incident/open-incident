@@ -1,7 +1,7 @@
 /**
  * Defaults installed in EVERY new workspace: severities, the default incident
  * type with its lifecycle, the two roles, follow-up priorities and their
- * policy, the three catalog types, the post-incident flow. Example content,
+ * policy, the alert vocabulary, the post-incident flow. Example content,
  * meant to be edited — it exists so a fresh install has something to look at
  * and so the code paths have rows to read.
  *
@@ -14,7 +14,6 @@ import {
   alertAttributes,
   alertPriorities,
   alertRoutes,
-  catalogTypes,
   followUpPriorities,
   incidentRoles,
   incidentStatuses,
@@ -31,7 +30,6 @@ export type InstalledDefaults = {
   leadRoleId: string;
   commsRoleId: string;
   priorityIds: Record<"P1" | "P2" | "P3", string>;
-  catalogTypeIds: Record<"team" | "service" | "environment", string>;
   alertPriorityIds: Record<"P1" | "P2" | "P3", string>;
   /** The route every new workspace starts with: catches everything, pages nobody until someone is named. */
   defaultRouteId: string;
@@ -142,54 +140,6 @@ export async function installDefaults(
     .returning({ id: followUpPriorities.id, name: followUpPriorities.name });
   const prio = (name: string) => prioRows.find((p) => p.name === name)!.id;
 
-  /* ---------- Catalog types — an option the routing grows into, never a prerequisite ---------- */
-  const catRows = await tx
-    .insert(catalogTypes)
-    .values([
-      {
-        tenantId,
-        key: "team",
-        name: T("catalog.team"),
-        description: T("catalog.team.desc"),
-        position: 0,
-        attributes: [
-          { key: "members", label: T("attr.members"), type: "member_list" },
-          { key: "escalation_path", label: T("attr.escalationPath"), type: "escalation_path" },
-          { key: "chat_channel", label: T("attr.chatChannel"), type: "text" },
-        ],
-      },
-      {
-        tenantId,
-        key: "service",
-        name: T("catalog.service"),
-        description: T("catalog.service.desc"),
-        position: 1,
-        attributes: [
-          { key: "owner", label: T("attr.owner"), type: "entry", refTypeKey: "team" },
-          { key: "repository", label: T("attr.repository"), type: "text" },
-          {
-            key: "tier",
-            label: T("attr.tier"),
-            type: "select",
-            options: ["tier 1", "tier 2", "tier 3"],
-          },
-          { key: "environments", label: T("attr.environments"), type: "text" },
-        ],
-      },
-      {
-        tenantId,
-        key: "environment",
-        name: T("catalog.environment"),
-        description: T("catalog.environment.desc"),
-        position: 2,
-        attributes: [
-          { key: "paging", label: T("attr.paging"), type: "select", options: ["pages", "silent"] },
-        ],
-      },
-    ])
-    .returning({ id: catalogTypes.id, key: catalogTypes.key });
-  const cat = (key: string) => catRows.find((c) => c.key === key)!.id;
-
   /* ---------- Alerting — three priorities, the attribute vocabulary, one route ---------- */
   const aprioRows = await tx
     .insert(alertPriorities)
@@ -235,8 +185,7 @@ export async function installDefaults(
       key: "service",
       label: T("aattr.service"),
       description: T("aattr.service.desc"),
-      type: "catalog",
-      catalogTypeKey: "service",
+      type: "service",
       position: 0,
     },
     {
@@ -244,8 +193,7 @@ export async function installDefaults(
       key: "team",
       label: T("aattr.team"),
       description: T("aattr.team.desc"),
-      type: "catalog",
-      catalogTypeKey: "team",
+      type: "team",
       position: 1,
     },
     {
@@ -369,7 +317,6 @@ export async function installDefaults(
     leadRoleId: roleRows.find((r) => r.isLead)!.id,
     commsRoleId: roleRows.find((r) => !r.isLead)!.id,
     priorityIds: { P1: prio("P1"), P2: prio("P2"), P3: prio("P3") },
-    catalogTypeIds: { team: cat("team"), service: cat("service"), environment: cat("environment") },
     alertPriorityIds: { P1: aprio("P1"), P2: aprio("P2"), P3: aprio("P3") },
     defaultRouteId: defaultRoute!.id,
   };

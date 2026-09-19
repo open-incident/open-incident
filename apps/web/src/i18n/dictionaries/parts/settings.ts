@@ -117,6 +117,17 @@ const en = {
   "set2.probes.ownerWorkspace": "this workspace",
   "set2.probes.neverReported": "never reported",
   "set2.probes.openMonitors": "Open Monitors →",
+
+  /* ---------- The two attribute types that name a real row ---------- */
+  "settings.attributes.kind.service": "Service",
+  "settings.attributes.kind.team": "Team",
+  "settings.ai.source.services": "Services & teams",
+  "settings.integrations.cat.iac": "Infrastructure as code",
+  "settings.types.incidentCount": {
+    one: "{count} incident · 90 d",
+    other: "{count} incidents · 90 d",
+  },
+  "perm.services.manage": "Adopt services, set their owner, its policy and its runbooks",
 } satisfies Record<string, Message>;
 
 const fr = {
@@ -229,6 +240,19 @@ const fr = {
   "set2.probes.ownerWorkspace": "cet espace",
   "set2.probes.neverReported": "jamais rapporté",
   "set2.probes.openMonitors": "Ouvrir les moniteurs →",
+
+  /* ---------- The two attribute types that name a real row ---------- */
+  "settings.attributes.kind.service": "Service",
+  "settings.attributes.kind.team": "Équipe",
+  "settings.ai.source.services": "Services et équipes",
+  "settings.integrations.cat.iac": "Infrastructure as code",
+  "settings.types.incidentCount": {
+    one: "{count} incident · 90 j",
+    many: "{count} incidents · 90 j",
+    other: "{count} incidents · 90 j",
+  },
+  "perm.services.manage":
+    "Adopter les services, définir leur propriétaire, sa politique et ses runbooks",
 } satisfies Record<keyof typeof en, Message>;
 
 const de = {
@@ -337,6 +361,18 @@ const de = {
   "set2.probes.ownerWorkspace": "dieser Arbeitsbereich",
   "set2.probes.neverReported": "nie gemeldet",
   "set2.probes.openMonitors": "Monitore öffnen →",
+
+  /* ---------- The two attribute types that name a real row ---------- */
+  "settings.attributes.kind.service": "Dienst",
+  "settings.attributes.kind.team": "Team",
+  "settings.ai.source.services": "Dienste und Teams",
+  "settings.integrations.cat.iac": "Infrastructure as Code",
+  "settings.types.incidentCount": {
+    one: "{count} Vorfall · 90 T",
+    other: "{count} Vorfälle · 90 T",
+  },
+  "perm.services.manage":
+    "Dienste übernehmen, ihren Besitzer, dessen Richtlinie und Runbooks festlegen",
 } satisfies Record<keyof typeof en, Message>;
 
 export const settingsPart = { en, fr, de } satisfies {

@@ -53,10 +53,7 @@ export async function requestAssessment(
  * incidents it may concern: those of the service, or every open one when the
  * signal names no service. Coalesced by the queue, so a burst is one run.
  */
-export async function signalOpenIncidents(
-  tenant: Tenant,
-  serviceEntryId: string | null,
-): Promise<void> {
+export async function signalOpenIncidents(tenant: Tenant, serviceId: string | null): Promise<void> {
   const access = await investigationAccess(tenant);
   if (!access.ok) return;
   const open = await withTenant(tenant.id, (tx) =>
@@ -68,8 +65,8 @@ export async function signalOpenIncidents(
           eq(incidents.tenantId, tenant.id),
           inArray(incidents.phase, ["triage", "active"]),
           eq(incidents.mode, "live"),
-          serviceEntryId
-            ? or(eq(incidents.serviceEntryId, serviceEntryId), isNull(incidents.serviceEntryId))
+          serviceId
+            ? or(eq(incidents.serviceId, serviceId), isNull(incidents.serviceId))
             : undefined,
         ),
       )

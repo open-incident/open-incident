@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
-  catalogEntries,
-  catalogTypes,
+  services as servicesTable,
   incidents,
   statusPageComponents,
   statusPageIncidentUpdates,
@@ -213,17 +212,13 @@ export default async function StatusPagesPage({
       })
       .from(statusPageSubscribers)
       .where(eq(statusPageSubscribers.pageId, page.id));
-    const [svcType] = await tx
-      .select({ id: catalogTypes.id })
-      .from(catalogTypes)
-      .where(and(eq(catalogTypes.tenantId, tenant.id), eq(catalogTypes.key, "service")));
-    const services = svcType
-      ? await tx
-          .select({ id: catalogEntries.id, name: catalogEntries.name })
-          .from(catalogEntries)
-          .where(eq(catalogEntries.typeId, svcType.id))
-          .orderBy(asc(catalogEntries.name))
-      : [];
+    // The services the workspace has learned about; a component names one of
+    // those or nothing.
+    const services = await tx
+      .select({ id: servicesTable.id, name: servicesTable.key })
+      .from(servicesTable)
+      .where(eq(servicesTable.tenantId, tenant.id))
+      .orderBy(asc(servicesTable.key));
     return {
       ...empty,
       page,
@@ -615,12 +610,12 @@ export default async function StatusPagesPage({
                 </div>
                 {snap.components.map((c) => {
                   const row = data.comps.find((x) => x.id === c.id);
-                  const svc = data.services.find((s) => s.id === row?.serviceEntryId);
+                  const svc = data.services.find((s) => s.id === row?.serviceId);
                   const mon = data.monitors.find((m) => m.id === c.monitorId);
                   // The AUTO badge already says where the state comes from, so
                   // the line under the name spends itself on the source: the
-                  // monitor, the catalog service, or the plain admission that
-                  // a human sets this one from the incidents.
+                  // monitor, the service, or the plain admission that a human
+                  // sets this one from the incidents.
                   const source =
                     c.source === "monitor"
                       ? `${c.monitorName ?? ""}${mon ? ` ${mon.type}` : ""}`.trim()

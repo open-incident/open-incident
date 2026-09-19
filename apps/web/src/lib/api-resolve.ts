@@ -3,8 +3,8 @@
  * or by name, inside the tenant transaction. The web forms pass ids; an
  * integrator writes "SEV2" and "checkout-api".
  */
-import { and, eq, or } from "drizzle-orm";
-import { catalogEntries, catalogTypes, incidentTypes, severities, type Tx } from "@openincident/db";
+import { and, eq, or, sql } from "drizzle-orm";
+import { incidentTypes, services, severities, type Tx } from "@openincident/db";
 import { buildTranslate } from "@/i18n/server";
 import { resolveLocale } from "@/i18n/locales";
 import { workspaces } from "@openincident/db";
@@ -52,20 +52,15 @@ export async function resolveSeverity(tx: Tx, tenantId: string, ref: string | un
 
 export async function resolveService(tx: Tx, tenantId: string, ref: string | undefined | null) {
   if (!ref) return null;
-  const [type] = await tx
-    .select({ id: catalogTypes.id })
-    .from(catalogTypes)
-    .where(and(eq(catalogTypes.tenantId, tenantId), eq(catalogTypes.key, "service")));
-  if (!type) return null;
   const [row] = await tx
     .select()
-    .from(catalogEntries)
+    .from(services)
     .where(
       and(
-        eq(catalogEntries.typeId, type.id),
+        eq(services.tenantId, tenantId),
         isUuid(ref)
-          ? or(eq(catalogEntries.id, ref), eq(catalogEntries.name, ref))
-          : eq(catalogEntries.name, ref),
+          ? or(eq(services.id, ref), sql`lower(${services.key}) = lower(${ref})`)
+          : sql`lower(${services.key}) = lower(${ref})`,
       ),
     );
   return row ?? null;

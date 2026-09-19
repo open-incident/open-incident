@@ -94,7 +94,7 @@ describe("teams", () => {
       "name",
       "typeId",
       "severityId",
-      "serviceEntryId",
+      "serviceId",
       "summary",
     ]);
     expect(declare.actions[0]!.data.action).toBe("oi_declare");

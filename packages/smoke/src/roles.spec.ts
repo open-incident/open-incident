@@ -17,7 +17,6 @@ test.describe("Custom roles", () => {
     await form.locator('input[name="name"]').fill("Alerting admin");
     await form.locator('select[name="base"]').selectOption("responder");
     await form.locator('input[value="incidents.respond"]').check();
-    await form.locator('input[value="catalog.entries"]').check();
     await form.locator('input[value="settings.alerting"]').check();
     await page.getByTestId("role-save").click();
     await page.waitForURL(/saved=1/);

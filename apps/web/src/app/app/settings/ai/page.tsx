@@ -274,7 +274,7 @@ export default async function AiGovernancePage({
               <span className="oi-eyebrow">{t("settings.ai.sources")}</span>
               {(
                 [
-                  ["catalog", true, true],
+                  ["services", true, true],
                   ["incidents", data.settings.sources.incidents, false],
                   ["changeEvents", data.settings.sources.changeEvents, false],
                 ] as const

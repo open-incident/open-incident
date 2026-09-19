@@ -395,7 +395,7 @@ export function NewComponentDialog({
               <label style={field}>
                 <span style={label}>{t("statusPages.serviceLink")}</span>
                 <select
-                  name="serviceEntryId"
+                  name="serviceId"
                   defaultValue=""
                   className="oi-field"
                   style={select}

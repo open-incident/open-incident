@@ -1,13 +1,12 @@
 import Link from "next/link";
 import { and, asc, eq, gte } from "drizzle-orm";
 import {
-  catalogEntries,
-  catalogTypes,
   incidentFields,
   incidentStatuses,
   incidentTypes,
   incidents,
   severities,
+  teams,
   withTenant,
 } from "@openincident/db";
 import { sql } from "drizzle-orm";
@@ -143,13 +142,12 @@ export default async function TypesPage({
             severity: data.sevs.find((s) => s.rank === type.postIncidentFromRank)?.name ?? "—",
           });
 
-  const teams = await withTenant(tenant.id, (tx) =>
+  const teamRows = await withTenant(tenant.id, (tx) =>
     tx
-      .select({ id: catalogEntries.id, name: catalogEntries.name })
-      .from(catalogEntries)
-      .innerJoin(catalogTypes, eq(catalogTypes.id, catalogEntries.typeId))
-      .where(and(eq(catalogEntries.tenantId, tenant.id), eq(catalogTypes.key, "team")))
-      .orderBy(asc(catalogEntries.name)),
+      .select({ id: teams.id, name: teams.name })
+      .from(teams)
+      .where(eq(teams.tenantId, tenant.id))
+      .orderBy(asc(teams.name)),
   );
 
   return (
@@ -179,7 +177,7 @@ export default async function TypesPage({
         )}
         <NewTypeDialog
           types={data.types.map((ty) => ({ id: ty.id, name: ty.name, isDefault: ty.isDefault }))}
-          teams={teams}
+          teams={teamRows}
         />
         <div
           role="tablist"
@@ -290,7 +288,7 @@ export default async function TypesPage({
                       marginTop: "auto",
                     }}
                   >
-                    {t("catalog.meta.incidents", { count: data.counts.get(ty.id) ?? 0 })}
+                    {t("settings.types.incidentCount", { count: data.counts.get(ty.id) ?? 0 })}
                   </div>
                 </Link>
               );

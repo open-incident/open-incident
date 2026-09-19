@@ -51,8 +51,6 @@ function parseTarget(formData: FormData): EscalationTarget | null {
   const raw = String(formData.get("target") ?? "");
   const [kind, id, mode] = raw.split(":");
   if (kind === "member" && id) return { kind: "member", memberId: id };
-  // A team chosen here is a team of the workspace. The catalog spelling is
-  // still read by the engine for paths written before the move, never written.
   if (kind === "team" && id) return { kind: "team", teamId: id };
   if (kind === "schedule" && id)
     return {

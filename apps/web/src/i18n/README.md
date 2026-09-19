@@ -52,7 +52,8 @@ use it.
 
 Brands and technical acronyms, keyboard keys (`⌘K`, `↵`), the product's own
 identifiers (`INC-217`, `SEV2`, `P1` — mono on screen, they are values, not
-text), machine keys of custom fields and catalog attributes. Statuses a
+text), machine keys of custom fields and alert attributes, and the keys of
+services and the names of teams — a workspace's own rows. Statuses a
 workspace names itself (Investigation, Confinement…) are its data, not ours.
 
 ## Formats: do not write them, delegate them

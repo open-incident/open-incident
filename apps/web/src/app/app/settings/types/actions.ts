@@ -95,7 +95,7 @@ export async function saveStatus(formData: FormData) {
 const typeSchema = z.object({
   name: z.string().trim().min(2).max(60),
   baseTypeId: z.string().uuid(),
-  teamEntryId: z.string().uuid().or(z.literal("")),
+  teamId: z.string().uuid().or(z.literal("")),
 });
 
 /**
@@ -135,7 +135,7 @@ export async function createType(formData: FormData) {
         tenantId: current.tenant.id,
         name: input.name,
         isDefault: false,
-        restrictedToTeamIds: input.teamEntryId ? [input.teamEntryId] : null,
+        restrictedToTeamIds: input.teamId ? [input.teamId] : null,
         position: Math.max(-1, ...types.map((x) => x.position)) + 1,
       } as typeof incidentTypes.$inferInsert)
       .returning({ id: incidentTypes.id });
@@ -155,7 +155,7 @@ export async function createType(formData: FormData) {
     await recordAudit(tx, current, "config", "incident_type.created", {
       name: input.name,
       basedOn: base.name,
-      team: input.teamEntryId || null,
+      team: input.teamId || null,
     });
     return type!.id;
   });

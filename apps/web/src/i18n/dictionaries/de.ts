@@ -27,7 +27,6 @@ export const de: Dictionary = {
   "nav.alerts": "Alarme",
   "nav.onCall": "Bereitschaft",
   "nav.statusPages": "Statusseiten",
-  "nav.catalog": "Katalog",
   "nav.insights": "Analysen",
   "nav.settings": "Einstellungen",
   /* ---------- Benutzerhandbuch ---------- */
@@ -69,7 +68,7 @@ export const de: Dictionary = {
   "telemetry.step2":
     "Richten Sie Ihren OpenTelemetry-Collector oder Ihre SDKs auf {endpoint} mit dem einmalig gezeigten Arbeitsbereichs-Token.",
   "telemetry.step3":
-    "In service.name genannte Services erscheinen automatisch unter Services — kein Katalog zum Ausfüllen.",
+    "In service.name genannte Services erscheinen automatisch unter Services — nichts vorher auszufüllen.",
   "telemetry.footnote":
     "Daten bleiben in der EU · Aufbewahrung und Sampling werden pro Service gesetzt.",
   "services.tabConfirmed": "Bestätigt",
@@ -97,8 +96,7 @@ export const de: Dictionary = {
     other: "{team}? — {count} Responder aus diesem Team haben seine Alarme quittiert",
   },
   "services.noSuggestion": "Noch kein Signal für einen Vorschlag.",
-  "services.noTeams":
-    "Noch kein Team — legen Sie eines unter Einstellungen › Mitglieder und Rollen an.",
+  "services.noTeams": "Noch kein Team — eines erscheint, sobald Ihr Verzeichnis es bereitstellt.",
   "services.confirmed": "bestätigt",
   "services.seenOnly": "im Verkehr gesehen",
   "services.seenInCount": { one: "in {count} Quelle gesehen", other: "in {count} Quellen gesehen" },
@@ -179,7 +177,7 @@ export const de: Dictionary = {
     "Eine Person, die angerufen wird, eine Alarmquelle und den Beweis, dass die Kette funktioniert — Ende zu Ende.",
   "home.youDontNeed": "WAS SIE NICHT BRAUCHEN",
   "home.youDontNeedBody":
-    "Kein Katalog, keine Routing-Regeln, kein Schema. Services erscheinen von selbst, wenn Alarme sie nennen.",
+    "Keine Routing-Regeln, kein Schema, nichts auszufüllen. Services erscheinen von selbst, wenn Alarme sie nennen.",
   "home.alreadySetUp": "ANDERSWO SCHON EINGERICHTET?",
   "home.skip": "Vorerst überspringen → Arbeitsbereich erkunden",
   "home.stepsDisappear":
@@ -403,7 +401,6 @@ export const de: Dictionary = {
   "docs.section.operations": "Betrieb",
   "docs.section.use-cases": "Anwendungsfälle",
   "docs.section.reference": "Referenz",
-  /* ---------- QA ---------- */
   /* ---------- Abonnement & Rechnungen (Cloud-Edition) ---------- */
   "settings.nav.billing": "Abonnement & Rechnungen",
   "shell.suspendedBillingCta": "Abonnement & Rechnungen öffnen",
@@ -521,10 +518,10 @@ export const de: Dictionary = {
   "qa.suites": "Suiten",
   "qa.suite.smoke.name": "Smoke (Ende zu Ende)",
   "qa.suite.smoke.desc":
-    "Playwright gegen diese Instanz: Anmeldung, Vorfälle, Alarme, Bereitschaft, Katalog, Statusseiten, Integrationen mit ihren Mocks, Enterprise-Edition — auf einem Wegwerf-Arbeitsbereich.",
+    "Playwright gegen diese Instanz: Anmeldung, Vorfälle, Alarme, Bereitschaft, Dienste, Statusseiten, Integrationen mit ihren Mocks, Enterprise-Edition — auf einem Wegwerf-Arbeitsbereich.",
   "qa.suite.unit.name": "Unit-Tests",
   "qa.suite.unit.desc":
-    "vitest in jedem Paket: Parser, Rotation, Vergütung, Verschlüsselung, Katalog, SCIM, Mandantenisolation.",
+    "vitest in jedem Paket: Parser, Rotation, Vergütung, Verschlüsselung, Routing, SCIM, Mandantenisolation.",
   "qa.suite.typecheck.name": "Typprüfung",
   "qa.suite.typecheck.desc":
     "tsc in jedem Paket und jeder App, einschließlich der Wörterbuch-Parität.",
@@ -721,7 +718,6 @@ export const de: Dictionary = {
   "incidents.declare.type": "Vorfallstyp",
   "incidents.declare.severity": "Schweregrad",
   "incidents.declare.service": "Betroffener Dienst",
-  "incidents.declare.fromCatalog": "aus dem Katalog",
   "incidents.declare.summary": "Zusammenfassung",
   "incidents.declare.summaryPlaceholder": "Was wissen wir bisher?",
   "incidents.declare.startedAt": "Beginn ({timeZone})",
@@ -990,7 +986,7 @@ export const de: Dictionary = {
   "timeline.acceptedDesc": "{severity} gesetzt · Status {status}.",
   "timeline.declined": "Abgelehnt von {actor}",
   "timeline.roleAssigned": "Rolle {role}: {member}",
-  "timeline.autoOnCall": "Automatisch — in Bereitschaft für {service} (Katalog).",
+  "timeline.autoOnCall": "Automatisch — in Bereitschaft für {service}.",
   "timeline.byActor": "von {actor}",
   "timeline.roleUnassigned": "Rolle {role} von {member} entzogen",
   "timeline.updateTag": "Update",
@@ -1033,136 +1029,6 @@ export const de: Dictionary = {
   "timeline.madePublic": "Vorfall für den Arbeitsbereich sichtbar gemacht",
   "timeline.renamed": "Umbenannt von {actor}",
   "timeline.merged": "Zusammengeführt in {target}",
-
-  /* ---------- Catalog ---------- */
-  "catalog.typesLabel": "Typen",
-  "catalog.type.service": "Dienst",
-  "catalog.type.team": "Team",
-  "catalog.type.environment": "Umgebung",
-  "catalog.typesIntro":
-    "Squads, Domänen, Säulen: Legen Sie eigene Typen an. Importer und API befüllen sie aus dem Code.",
-  "catalog.newType": "+ Neuer Typ",
-  "catalog.newTypeTitle": "Neuer Typ",
-  "catalog.typeSettings": "Typ-Einstellungen",
-  "catalog.editTypeTitle": "Typ-Einstellungen — {type}",
-  "catalog.field.key": "Schlüssel",
-  "catalog.field.keyHint":
-    "Kleinbuchstaben, Ziffern und _ — was API und CSV-Kopfzeilen verwenden. Nach dem Anlegen fest.",
-  "catalog.typeAttributes": "Attribute",
-  "catalog.attrsEmpty": "Noch keine Attribute — Name und Beschreibung sind immer da.",
-  "catalog.attr.label": "Bezeichnung",
-  "catalog.attr.type": "Art",
-  "catalog.attr.refType": "Verweist auf",
-  "catalog.attr.options": "Werte",
-  "catalog.attr.add": "+ Attribut hinzufügen",
-  "catalog.attr.kind.text": "Text",
-  "catalog.attr.kind.link": "Link",
-  "catalog.attr.kind.select": "Auswahl",
-  "catalog.attr.kind.entry": "Katalogeintrag",
-  "catalog.attr.kind.member_list": "Mitglieder",
-  "catalog.attr.kind.escalation_path": "Eskalationspfad",
-  "catalog.createType": "Typ anlegen",
-  "catalog.saveType": "Typ speichern",
-  "catalog.deleteType": "Typ löschen",
-  "catalog.deleteTypeBlocked": "Löschen blockiert — noch in Gebrauch: {usages}",
-  "catalog.typeInvalid": "Prüfen Sie Name, Schlüssel und Attribute.",
-  "catalog.typeDuplicate": "Ein Typ mit dem Schlüssel „{key}“ existiert bereits.",
-  "catalog.coreType":
-    "Eingebauter Typ: Das Routing stützt sich darauf. Er kann erweitert, nicht gelöscht werden.",
-  "catalog.locked": "Vom Code verwaltet",
-  "catalog.lockedNote":
-    "Dieser Typ wird vom Importer oder der API befüllt. Seine Einträge sind hier schreibgeschützt: Der nächste Import würde eine manuelle Änderung rückgängig machen.",
-  "catalog.lockedError": "Dieser Typ wird vom Code verwaltet; ändern Sie ihn an der Quelle.",
-  "catalog.editEntry": "Bearbeiten",
-  "catalog.editEntryTitle": "Bearbeiten — {name}",
-  "catalog.saveEntry": "Eintrag speichern",
-  "catalog.deleteEntry": "Eintrag löschen",
-  "catalog.deleteBlocked": "Löschen blockiert — noch referenziert von: {usages}",
-  "catalog.entryInvalid": "Prüfen Sie die Werte.",
-  "catalog.usage.incidents": { one: "{count} Vorfall", other: "{count} Vorfälle" },
-  "catalog.usage.incident_fields": {
-    one: "{count} Vorfallsfeld-Wert",
-    other: "{count} Vorfallsfeld-Werte",
-  },
-  "catalog.usage.follow_ups": { one: "{count} Folgeaufgabe", other: "{count} Folgeaufgaben" },
-  "catalog.usage.status_components": {
-    one: "{count} Statusseiten-Komponente",
-    other: "{count} Statusseiten-Komponenten",
-  },
-  "catalog.usage.change_events": {
-    one: "{count} Änderungsereignis",
-    other: "{count} Änderungsereignisse",
-  },
-  "catalog.usage.heartbeats": { one: "{count} Heartbeat", other: "{count} Heartbeats" },
-  "catalog.usage.runbooks": { one: "{count} Runbook", other: "{count} Runbooks" },
-  "catalog.usage.entries": { one: "{count} Katalogeintrag", other: "{count} Katalogeinträge" },
-  "catalog.usage.types": {
-    one: "{count} Typ verweist darauf",
-    other: "{count} Typen verweisen darauf",
-  },
-  "catalog.import": "CSV importieren",
-  "catalog.importTitle": "Import — {type}",
-  "catalog.importHint":
-    "Eine Zeile pro Eintrag. Zeilen werden über external_id, dann über den Namen zugeordnet; ein Verweis nennt den Zieleintrag; Mitglieder sind E-Mails. Ist eine einzige Zeile falsch, wird nichts geschrieben.",
-  "catalog.importColumns": "Erwartete Kopfzeile",
-  "catalog.importFile": "CSV-Datei",
-  "catalog.importRun": "Importieren",
-  "catalog.importResult": "{created} angelegt · {updated} aktualisiert · {unchanged} unverändert",
-  "catalog.importErrors": {
-    one: "{count} Problem — nichts wurde geschrieben:",
-    other: "{count} Probleme — nichts wurde geschrieben:",
-  },
-  "catalog.importInvalid": "Wählen Sie eine CSV-Datei (höchstens 5 MB).",
-  "catalog.meta.references": { one: "{count} Verweis", other: "{count} Verweise" },
-  "catalog.ref.entries": "Einträge, die hierher zeigen",
-  "catalog.spineTitle": "Optional – das Routing funktioniert auch ohne.",
-  "catalog.spineBody":
-    "Binden Sie ein Alarmattribut an einen Typ, wenn eine Route den eigenen Eskalationspfad des Eintrags alarmieren soll.",
-  "catalog.filterPlaceholder": "Filtern…",
-  "catalog.newEntry": "+ Neuer Eintrag",
-  "catalog.newEntryTitle": "Neuer Eintrag — {type}",
-  "catalog.createEntry": "Eintrag anlegen",
-  "catalog.field.name": "Name",
-  "catalog.field.description": "Beschreibung",
-  "catalog.field.ownerTeam": "Verantwortlich → Team",
-  "catalog.field.repository": "Repository",
-  "catalog.field.tier": "Stufe",
-  "catalog.field.escalationPath": "Eskalationspfad",
-  "catalog.field.chatChannel": "Chat-Kanal",
-  "catalog.field.paging": "Alarmierung",
-  "catalog.field.externalIdHint": "optional, für API und Import",
-  "catalog.ownerNote":
-    "Die Eskalation läuft über das verantwortliche Team: Dienst → Team → Eskalationspfad. In den Routen ist nichts zu konfigurieren.",
-  "catalog.versionedNote": "Ab der Anlage versioniert — jede Änderung wird festgehalten.",
-  "catalog.paging.pages": "alarmiert",
-  "catalog.paging.silent": "still",
-  "catalog.meta.incidents": { one: "{count} Vorfall · 90 T", other: "{count} Vorfälle · 90 T" },
-  "catalog.meta.members": { one: "{count} Mitglied", other: "{count} Mitglieder" },
-  "catalog.meta.services": { one: "{count} Dienst", other: "{count} Dienste" },
-  "catalog.noMatch": "Kein Eintrag passt zu „{query}“.",
-  "catalog.empty": "Noch kein Eintrag dieses Typs.",
-  "catalog.routingChain": "Routing-Kette",
-  "catalog.chain.alert": "Eingehender Alarm",
-  "catalog.chain.attributeService": "Attribut Dienst",
-  "catalog.chain.extractedByRoute": "von der Alarmroute extrahiert",
-  "catalog.chain.service": "Dienst",
-  "catalog.chain.ownerTeam": "Verantwortliches Team",
-  "catalog.chain.viaOwner": "über das Attribut owner",
-  "catalog.chain.team": "Team",
-  "catalog.chain.escalationPath": "Eskalationspfad",
-  "catalog.chain.pathHint":
-    "bei der Eskalation aus dem verantwortlichen Team aufgelöst · Bereitschaft → Pfade",
-  "catalog.chainNote":
-    "Ein Alarm, der diesen Dienst nennt, wird geroutet, ohne dass eine Route jemanden nennt.",
-  "catalog.attributes": "Attribute",
-  "catalog.referencedBy": "Referenziert von",
-  "catalog.ref.incidents90": "Vorfälle · 90 T",
-  "catalog.ref.services": "Verantwortete Dienste",
-  "catalog.ref.followUps": "Zugewiesene Folgemaßnahmen",
-  "catalog.deleteNote":
-    "Ein referenzierter Eintrag kann nicht gelöscht werden — zuerst werden die Verwendungen aufgelistet. Der Katalog löst echte Alarmierungen aus: Jede Änderung ist versioniert.",
-  "catalog.invalid": "Prüfen Sie Typ und Name.",
-  "catalog.duplicate": "„{name}“ existiert für diesen Typ bereits.",
 
   /* ---------- Settings ---------- */
   "settings.roleRestricted":
@@ -1250,12 +1116,12 @@ export const de: Dictionary = {
   /* ---------- Enterprise: SCIM-Provisionierung ---------- */
   "ee.scim.title": "Provisionierung (SCIM 2.0)",
   "ee.scim.lead":
-    "Ihr Identitätsanbieter legt hier Mitglieder an, benennt sie um und deaktiviert sie, und hält Katalog-Teams mit seinen Gruppen in Einklang. Aus einer Löschung im Verzeichnis wird eine Deaktivierung: Ein Mitglied wird von Vorfällen und Audit-Zeilen referenziert, und nichts davon darf verschwinden.",
+    "Ihr Identitätsanbieter legt hier Mitglieder an, benennt sie um und deaktiviert sie, und hält Teams mit seinen Gruppen in Einklang. Aus einer Löschung im Verzeichnis wird eine Deaktivierung: Ein Mitglied wird von Vorfällen und Audit-Zeilen referenziert, und nichts davon darf verschwinden.",
   "ee.scim.baseUrl": "SCIM-Basis-URL",
   "ee.scim.baseUrlHint":
     "Geben Sie dem Anbieter diese Adresse und ein unten ausgestelltes Bearer-Token. Users und Groups, Filter auf userName, externalId und displayName, PATCH in den Formen von Okta und Entra ID; kein Bulk.",
   "ee.scim.mapping":
-    "Users werden Mitglieder (userName ist die E-Mail; roles darf admin, responder oder viewer tragen). Groups werden Katalog-Teams samt Mitgliedern.",
+    "Users werden Mitglieder (userName ist die E-Mail; roles darf admin, responder oder viewer tragen). Groups werden Teams samt Mitgliedern.",
   "ee.scim.notEnabled": "Nicht aktiviert",
   "ee.scim.enable": "Aktivieren und Token ausstellen",
   "ee.scim.rotate": "Token erneuern",
@@ -1306,8 +1172,6 @@ export const de: Dictionary = {
   "ee.roles.error.inUse":
     "Löschen abgelehnt — Mitglieder haben diese Rolle noch: {members}. Geben Sie ihnen zuerst eine andere Rolle.",
   "perm.incidents.respond": "Auf Vorfälle reagieren",
-  "perm.catalog.entries": "Katalogeinträge anlegen und bearbeiten",
-  "perm.catalog.manage": "Katalog verwalten (Typen, Importe, Löschungen, Runbooks)",
   "perm.oncall.manage": "Bereitschaft verwalten (Pläne, Pfade, Vertretungen)",
   "perm.statuspages.manage": "Statusseiten verwalten",
   "perm.insights.manage": "Berichte verwalten (Vergütungsberichte, Exporte)",
@@ -1441,7 +1305,6 @@ export const de: Dictionary = {
   "audit.memberDisabled": "{actor} hat {member} deaktiviert",
   "audit.memberReactivated": "{actor} hat {member} reaktiviert",
   "audit.inviteRevoked": "{actor} hat die Einladung von {email} zurückgezogen",
-  "audit.catalogEntryCreated": "{actor} hat den Katalogeintrag „{name}“ angelegt",
   "audit.severityUpdated": "{actor} hat den Schweregrad {name} geändert",
   "audit.statusUpdated": "{actor} hat den Status „{name}“ geändert",
   "audit.apiKeyCreated": "API-Schlüssel {hint} angelegt (Scope {scopes}) durch {actor}",
@@ -1500,7 +1363,7 @@ export const de: Dictionary = {
   "settings.api.newKeyTitle": "Neuer API-Schlüssel",
   "settings.api.keyName": "Name",
   "settings.api.scopes": "Berechtigungen",
-  "settings.api.scope.read": "Incidents, Follow-ups und Katalog lesen",
+  "settings.api.scope.read": "Incidents und Follow-ups lesen",
   "settings.api.scope.write": "alles, Updates eingeschlossen",
   "settings.api.scope.incidentCreate": "nur Incidents melden",
   "settings.api.createKey": "Schlüssel erstellen",
@@ -1569,7 +1432,7 @@ export const de: Dictionary = {
   "settings.fields.type.select": "Auswahl",
   "settings.fields.type.number": "Zahl",
   "settings.fields.type.link": "Link",
-  "settings.fields.type.catalog_entry": "Katalog",
+  "settings.fields.type.catalog_entry": "stillgelegt",
   "settings.fields.requiredAtDeclare": "bei der Meldung erforderlich",
   "settings.fields.notInForm": "in keinem Formular",
   "settings.fields.ofType": "Typ: {type}",
@@ -1621,7 +1484,7 @@ export const de: Dictionary = {
   "settings.nav.alerting": "Alarmkonfiguration",
   "settings.nav.alertAttributes": "Attribute",
   "setup.title": "Alarmkonfiguration",
-  "setup.subtitle": "Vom Webhook zum Alarmruf in vier Schritten – ohne Katalog.",
+  "setup.subtitle": "Vom Webhook zum Alarmruf in vier Schritten – nichts vorher zu beschreiben.",
   "setup.checklist": "Erste Schritte",
   "setup.checklistNote": "Jeder Schritt ist echt: hier wird nichts simuliert.",
   "setup.showSteps": "Schritte anzeigen",
@@ -1811,9 +1674,6 @@ export const de: Dictionary = {
   "settings.attributes.kind.text": "Text",
   "settings.attributes.kind.list": "Liste",
   "settings.attributes.kind.priority": "Alarmpriorität",
-  "settings.attributes.kind.catalog": "Katalogeintrag",
-  "settings.attributes.catalogType": "Katalogtyp",
-  "settings.attributes.catalogNone": "— keiner —",
   "settings.attributes.merge": "Bei Wiederholung",
   "settings.attributes.mergeKind.first": "erster Wert gewinnt",
   "settings.attributes.mergeKind.last": "letzter Wert gewinnt",
@@ -1823,7 +1683,7 @@ export const de: Dictionary = {
   "settings.attributes.requiredYes": "erforderlich",
   "settings.attributes.requiredNo": "optional",
   "settings.attributes.formNote":
-    "Der Schlüssel steht nach dem Anlegen fest: Quellen bilden darauf ab. Ein Katalogtyp bindet Namen an Einträge und lässt eine Route den Eskalationspfad des Eintrags – oder seines Teams – alarmieren.",
+    "Der Schlüssel steht nach dem Anlegen fest: Quellen bilden darauf ab. Die Typen Dienst und Team gleichen den Wert mit den echten Zeilen ab, sodass eine Route das verantwortliche Team des Dienstes – oder das genannte Team – über dessen Richtlinie alarmiert.",
   "settings.attributes.errorDuplicate": "Ein Attribut mit diesem Schlüssel existiert bereits.",
   "settings.attributes.col.attribute": "Attribut",
   "settings.attributes.col.type": "Typ",
@@ -1834,7 +1694,7 @@ export const de: Dictionary = {
   "settings.attributes.coverageHint":
     "Wie viele der letzten 200 Alarme es tragen, und wie viele Quellen es extrahieren.",
   "settings.attributes.note":
-    "Attribute sind, wie eine Route „production“ sagt, ohne zu wissen, welches Tool „env=prod“ sagte. Binden Sie eines nur dann an einen Katalogtyp, wenn der Katalog routen soll.",
+    "Attribute sind, wie eine Route „production“ sagt, ohne zu wissen, welches Tool „env=prod“ sagte. Geben Sie einem nur dann den Typ Dienst oder Team, wenn es entscheiden soll, wer alarmiert wird.",
   "settings.priorities.aliases": "Aliasse",
   "settings.priorities.aliasesHint":
     "Wie die Tools sie nennen; ohne Groß-/Kleinschreibung verglichen, wenn ein Payload eine Priorität nennt.",
@@ -1858,7 +1718,7 @@ export const de: Dictionary = {
   "settings.routes.conditionsNote":
     "Zeilen einer Gruppe sind UND-verknüpft; Gruppen ODER. Keine Bedingung fängt alles.",
   "settings.routes.escalationNote":
-    "Regeln stapeln sich: ein einmal gewählter Pfad, oder der Pfad, zu dem ein Katalogattribut führt – der des Eintrags oder seines Teams – mit Rückfall.",
+    "Regeln stapeln sich: ein einmal gewählter Pfad, oder der Pfad, zu dem ein Attribut führt – das verantwortliche Team des Dienstes oder das genannte Team – mit Rückfall.",
   "settings.routes.rulePath": "Einen Pfad alarmieren",
   "settings.routes.ruleAttribute": "Aus einem Attribut alarmieren",
   "settings.routes.fallback": "sonst",
@@ -2048,8 +1908,8 @@ export const de: Dictionary = {
   "alerts.firstSeen": "erstmals {when}",
   "alerts.snoozedUntil": "stumm bis {when}",
   "alerts.attributes": "Attribute",
-  "alerts.attributesNote": "von der Route extrahiert, an den Katalog gebunden",
-  "alerts.attr.service": "Dienst · Katalog",
+  "alerts.attributesNote": "von der Route extrahiert, mit den echten Zeilen abgeglichen",
+  "alerts.attr.service": "Dienst",
   "alerts.attr.team": "Team · über Service.owner",
   "alerts.attr.environment": "Umgebung",
   "alerts.attr.priority": "Priorität · aus dem Payload",
@@ -2454,7 +2314,7 @@ export const de: Dictionary = {
     "Attribute: environment, service, team, priority, source, region und was die Mappings extrahieren. Routen werden in Reihenfolge geprüft; der erste Treffer gewinnt.",
   "settings.routes.empty": "Keine Route — Alarme werden protokolliert, niemand alarmiert.",
   "settings.routes.note":
-    "Die Benachrichtigung kann bis zu 10 Minuten verzögert werden, damit die Gruppierung eine Welle abfängt. Die dynamische Eskalation liest die Katalogkette: Dienst → verantwortliches Team → Eskalationspfad des Teams.",
+    "Die Benachrichtigung kann bis zu 10 Minuten verzögert werden, damit die Gruppierung eine Welle abfängt. Die dynamische Eskalation folgt der Kette: Dienst → verantwortliches Team → Eskalationspfad des Teams.",
   "settings.priorities.title": "Prioritäten",
   "settings.priorities.subtitle":
     "qualifizieren den Alarm beim Eingang — aus dem Payload oder statisch je Route",
@@ -2514,7 +2374,7 @@ export const de: Dictionary = {
   "settings.integrations.empty":
     "Keine Integration passt — die generische HTTP-Quelle nimmt derweil jeden Webhook an.",
   "settings.integrations.desc.datadog":
-    "Monitore → nach Schlüssel deduplizierte, gruppierte Alarme, Attribute an den Katalog gebunden.",
+    "Monitore → nach Schlüssel deduplizierte, gruppierte Alarme, Attribute mit den echten Zeilen abgeglichen.",
   "settings.integrations.desc.prometheus":
     "Nativer Alertmanager-Webhook — Labels werden Attribute.",
   "settings.integrations.desc.grafana":
@@ -2652,11 +2512,10 @@ export const de: Dictionary = {
   "statusPages.newComponent": "+ Komponente",
   "statusPages.newComponentTitle": "Neue Komponente",
   "statusPages.group": "Gruppe",
-  "statusPages.serviceLink": "Katalogdienst",
+  "statusPages.serviceLink": "Dienst",
   "statusPages.componentNote":
-    "An einen Katalogdienst gebunden, wird die Komponente automatisch betroffen, wenn ein Incident dieses Dienstes veröffentlicht wird.",
-  "statusPages.catalog": "Katalog",
-  "statusPages.noService": "kein Katalogdienst",
+    "An einen Dienst gebunden, wird die Komponente automatisch betroffen, wenn ein Incident dieses Dienstes veröffentlicht wird.",
+  "statusPages.noService": "kein Dienst",
   "statusPages.noComponents":
     "Noch keine Komponente — fügen Sie die Bausteine hinzu, die Ihre Kunden wiedererkennen.",
   "statusPages.state.operational": "Betriebsbereit",
@@ -2873,7 +2732,7 @@ export const de: Dictionary = {
   "insights.fu.closureSub": "von Anlage bis Erledigung",
   "insights.fu.created": "Angelegt",
   "insights.fu.createdSub": "im Zeitraum",
-  "insights.fu.noTeam": "Teams stammen von den Dienstverantwortlichen im Katalog.",
+  "insights.fu.noTeam": "Teams stammen von den Verantwortlichen der Dienste.",
   "insights.fu.openView": "Ansicht Folgeaufgaben öffnen →",
   "insights.fu.overdue": "Überfällig",
   "insights.fu.overdueNone": "Derzeit nichts überfällig.",
@@ -2882,7 +2741,6 @@ export const de: Dictionary = {
   "insights.fu.vsPolicy": "vs. Richtlinie",
   "insights.inc.byService": "Nach Dienst",
   "insights.inc.bySeverity": "Nach Schwere",
-  "insights.inc.catalogDimension": "Katalogdimension",
   "insights.inc.count": "Vorfälle",
   "insights.inc.countSub": "im Zeitraum gemeldet",
   "insights.inc.high": "Hohe Schwere",
@@ -2972,7 +2830,6 @@ export const de: Dictionary = {
   "settings.ai.providerNone": "Keiner konfiguriert",
   "settings.ai.providerNote":
     "Die Abstraktion hält diese Wahl umkehrbar — ein Anbieterwechsel ändert kein Produktverhalten.",
-  "settings.ai.source.catalog": "Katalog (Dienste, Teams)",
   "settings.ai.source.changeEvents": "Änderungen (Deployments, Flags, Konfiguration)",
   "settings.ai.source.docs": "Runbooks und Dokumente",
   "settings.ai.source.incidents": "Vorfälle und Post-mortems",
@@ -3166,21 +3023,15 @@ export const de: Dictionary = {
   "postMortem.exportError.not_found": "Dieser Vorfall hat kein Post-mortem.",
   "postMortem.exportTo": "Nach {tool} exportieren",
   "postMortem.exported": "Exportierte Seite",
-  "settings.integrations.cat.catalog": "Katalog & IaC",
   "settings.integrations.cat.migration": "Migration & Betrieb",
-  "settings.integrations.importerName": "Katalog-Importer (CLI & API)",
   "settings.integrations.hrisName": "HR-System (Abwesenheiten)",
   "settings.integrations.siemName": "Audit → SIEM / S3",
   "settings.integrations.desc.oauth":
     "Anmeldung über diesen Anbieter. Verfügbar, sobald die Instanz seine Zugangsdaten hat.",
   "settings.integrations.desc.scim":
     "Mitglieder und Teams aus Ihrem Verzeichnis bereitstellen. Enterprise-Edition.",
-  "settings.integrations.desc.backstage":
-    "Servicekatalog aus einer Backstage-Instanz importieren, auf Abruf oder aus der CI.",
-  "settings.integrations.desc.importer":
-    "Der Katalog als Code: eine Datei, eine GitHub-Datei, die Ausgabe eines Befehls oder die Schreib-API.",
   "settings.integrations.desc.terraform":
-    "Katalog, Eskalationspfade, Dienstpläne und Routen als Ressourcen deklariert.",
+    "Eskalationspfade, Dienstpläne, Routen und Statusseiten als Ressourcen deklariert.",
   "settings.integrations.desc.pagerduty":
     "Parallelbetrieb, dann Migration: Dienstpläne, Richtlinien, Services.",
   "settings.integrations.desc.opsgenie":
@@ -3212,18 +3063,4 @@ export const de: Dictionary = {
   "ai.runbooks.fetchedAt": "abgerufen {when}",
   "ai.runbooks.pasted": "eingefügter Text",
   "ai.runbooks.title": "Runbooks",
-  "catalog.runbooks.add": "Hinzufügen",
-  "catalog.runbooks.content": "…oder fügen Sie den Runbook-Text hier ein",
-  "catalog.runbooks.error": "Ein Titel und entweder eine URL oder ein Text sind erforderlich.",
-  "catalog.runbooks.fetchError": "Abruf fehlgeschlagen: {error} — die letzte Kopie bleibt",
-  "catalog.runbooks.fetchedAt": "abgerufen {when}",
-  "catalog.runbooks.hint":
-    "Jetzt abgerufen und alle sechs Stunden aktualisiert. Vom Assistenten gelesen, wenn Dokumentation eine erlaubte Quelle ist.",
-  "catalog.runbooks.name": "Titel",
-  "catalog.runbooks.none": "Kein Runbook für diesen Dienst.",
-  "catalog.runbooks.pasted": "eingefügter Text · {chars} Zeichen",
-  "catalog.runbooks.refresh": "Erneut abrufen",
-  "catalog.runbooks.title": "Runbooks",
-  "catalog.runbooks.url":
-    "Datei-URL — GitHub- oder GitLab-Datei oder eine beliebige Text-/Markdown-Adresse",
 };

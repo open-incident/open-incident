@@ -165,8 +165,7 @@ test.describe("Microsoft Teams", () => {
           name: fromTeams,
           typeId,
           severityId: "",
-          serviceEntryId:
-            card.body.find((b) => b.id === "serviceEntryId")?.choices?.[1]?.value ?? "",
+          serviceId: card.body.find((b) => b.id === "serviceId")?.choices?.[1]?.value ?? "",
           summary: "Declared from Teams.",
         },
         from: { id: "29:amelie", name: "Amélie Laurent", aadObjectId: "aad-amelie" },

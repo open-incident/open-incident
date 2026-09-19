@@ -7,7 +7,7 @@
  * its own context, read with no context at all, and write a row that names a
  * workspace it is not in. Row-level security must return nothing and accept
  * nothing. It also fails on purpose when DATABASE_URL is the owner: the
- * policies would be in the catalogue and out of effect.
+ * policies would exist on paper and be out of effect.
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";

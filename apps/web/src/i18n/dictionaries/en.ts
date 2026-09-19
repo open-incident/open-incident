@@ -36,7 +36,6 @@ export const en = {
   "nav.alerts": "Alerts",
   "nav.onCall": "On-call",
   "nav.statusPages": "Status pages",
-  "nav.catalog": "Catalog",
   "nav.insights": "Insights",
   "nav.settings": "Settings",
   /* ---------- User guide ---------- */
@@ -77,7 +76,7 @@ export const en = {
   "telemetry.step2":
     "Point your OpenTelemetry collector or SDKs at {endpoint} with the workspace token, shown once.",
   "telemetry.step3":
-    "Services named in service.name appear in Services automatically — no catalogue to fill.",
+    "Services named in service.name appear in Services automatically — nothing to fill in first.",
   "telemetry.footnote": "Data stays in the EU · retention and sampling are set per service.",
   "services.tabConfirmed": "Confirmed",
   "services.tabSeen": "Seen in traffic",
@@ -103,7 +102,7 @@ export const en = {
     other: "{team}? — {count} responders from this team acknowledged its alerts",
   },
   "services.noSuggestion": "No signal yet to suggest an owner.",
-  "services.noTeams": "No team yet — create one in Settings › Members & roles.",
+  "services.noTeams": "No team yet — one arrives when your directory provisions it.",
   "services.confirmed": "confirmed",
   "services.seenOnly": "seen in traffic",
   "services.seenInCount": { one: "seen in {count} source", other: "seen in {count} sources" },
@@ -178,7 +177,7 @@ export const en = {
     "A person who gets called, a source of alerts, and proof that the chain works — end to end.",
   "home.youDontNeed": "WHAT YOU DON'T NEED",
   "home.youDontNeedBody":
-    "No catalogue, no routing rules, no schema. Services show up by themselves when alerts name them.",
+    "No routing rules, no schema, nothing to fill in. Services show up by themselves when alerts name them.",
   "home.alreadySetUp": "ALREADY SET UP ELSEWHERE?",
   "home.skip": "Skip for now → explore the workspace",
   "home.stepsDisappear":
@@ -402,7 +401,6 @@ export const en = {
   "docs.section.operations": "Operations",
   "docs.section.use-cases": "Use cases",
   "docs.section.reference": "Reference",
-  /* ---------- QA ---------- */
   /* ---------- Subscription & invoices (cloud edition) ---------- */
   "settings.nav.billing": "Subscription & invoices",
   "shell.suspendedBillingCta": "Open subscription & invoices",
@@ -516,10 +514,10 @@ export const en = {
   "qa.suites": "Suites",
   "qa.suite.smoke.name": "Smoke (end to end)",
   "qa.suite.smoke.desc":
-    "Playwright against this instance: sign-in, incidents, alerts, on-call, catalog, status pages, integrations with their mocks, enterprise edition — on a throwaway workspace.",
+    "Playwright against this instance: sign-in, incidents, alerts, on-call, services, status pages, integrations with their mocks, enterprise edition — on a throwaway workspace.",
   "qa.suite.unit.name": "Unit tests",
   "qa.suite.unit.desc":
-    "vitest in every package: parsers, rotation, pay, crypto, catalog, SCIM, tenant isolation.",
+    "vitest in every package: parsers, rotation, pay, crypto, routing, SCIM, tenant isolation.",
   "qa.suite.typecheck.name": "Type check",
   "qa.suite.typecheck.desc":
     "tsc in every package and app, including the dictionary parity across languages.",
@@ -710,7 +708,6 @@ export const en = {
   "incidents.declare.type": "Incident type",
   "incidents.declare.severity": "Severity",
   "incidents.declare.service": "Affected service",
-  "incidents.declare.fromCatalog": "from the catalog",
   "incidents.declare.summary": "Summary",
   "incidents.declare.summaryPlaceholder": "What do we know so far?",
   "incidents.declare.startedAt": "Started at ({timeZone})",
@@ -976,7 +973,7 @@ export const en = {
   "timeline.acceptedDesc": "{severity} set · status {status}.",
   "timeline.declined": "Declined by {actor}",
   "timeline.roleAssigned": "{member} named {role}",
-  "timeline.autoOnCall": "Automatic — on call for {service} (catalog).",
+  "timeline.autoOnCall": "Automatic — on call for {service}.",
   "timeline.byActor": "by {actor}",
   "timeline.roleUnassigned": "{member} no longer {role}",
   "timeline.updateTag": "Update",
@@ -1019,129 +1016,6 @@ export const en = {
   "timeline.madePublic": "Incident made visible to the workspace",
   "timeline.renamed": "Renamed by {actor}",
   "timeline.merged": "Merged into {target}",
-
-  /* ---------- Catalog ---------- */
-  "catalog.typesLabel": "Types",
-  "catalog.type.service": "Service",
-  "catalog.type.team": "Team",
-  "catalog.type.environment": "Environment",
-  "catalog.typesIntro":
-    "Squads, domains, pillars: add your own types. The importer and the API feed them from code.",
-  "catalog.newType": "+ New type",
-  "catalog.newTypeTitle": "New type",
-  "catalog.typeSettings": "Type settings",
-  "catalog.editTypeTitle": "Type settings — {type}",
-  "catalog.field.key": "Key",
-  "catalog.field.keyHint":
-    "Lowercase letters, digits and _ — what the API and the CSV headers use. Frozen once created.",
-  "catalog.typeAttributes": "Attributes",
-  "catalog.attrsEmpty": "No attributes yet — the name and the description are always there.",
-  "catalog.attr.label": "Label",
-  "catalog.attr.type": "Kind",
-  "catalog.attr.refType": "Points to",
-  "catalog.attr.options": "Values",
-  "catalog.attr.add": "+ Add an attribute",
-  "catalog.attr.kind.text": "Text",
-  "catalog.attr.kind.link": "Link",
-  "catalog.attr.kind.select": "Choice",
-  "catalog.attr.kind.entry": "Catalog entry",
-  "catalog.attr.kind.member_list": "Members",
-  "catalog.attr.kind.escalation_path": "Escalation path",
-  "catalog.createType": "Create the type",
-  "catalog.saveType": "Save the type",
-  "catalog.deleteType": "Delete the type",
-  "catalog.deleteTypeBlocked": "Deletion blocked — still in use: {usages}",
-  "catalog.typeInvalid": "Check the name, the key and the attributes.",
-  "catalog.typeDuplicate": "A type with the key “{key}” already exists.",
-  "catalog.coreType":
-    "Built-in type: the routing reasons about it. It can be extended, not deleted.",
-  "catalog.locked": "Managed by code",
-  "catalog.lockedNote":
-    "This type is fed by the importer or the API. Its entries are read-only here: the next import would undo a manual change.",
-  "catalog.lockedError": "This type is managed by code; change it at the source.",
-  "catalog.editEntry": "Edit",
-  "catalog.editEntryTitle": "Edit — {name}",
-  "catalog.saveEntry": "Save the entry",
-  "catalog.deleteEntry": "Delete the entry",
-  "catalog.deleteBlocked": "Deletion blocked — still referenced by: {usages}",
-  "catalog.entryInvalid": "Check the values.",
-  "catalog.usage.incidents": { one: "{count} incident", other: "{count} incidents" },
-  "catalog.usage.incident_fields": {
-    one: "{count} incident field value",
-    other: "{count} incident field values",
-  },
-  "catalog.usage.follow_ups": { one: "{count} follow-up", other: "{count} follow-ups" },
-  "catalog.usage.status_components": {
-    one: "{count} status page component",
-    other: "{count} status page components",
-  },
-  "catalog.usage.change_events": { one: "{count} change event", other: "{count} change events" },
-  "catalog.usage.heartbeats": { one: "{count} heartbeat", other: "{count} heartbeats" },
-  "catalog.usage.runbooks": { one: "{count} runbook", other: "{count} runbooks" },
-  "catalog.usage.entries": { one: "{count} catalog entry", other: "{count} catalog entries" },
-  "catalog.usage.types": { one: "{count} type references it", other: "{count} types reference it" },
-  "catalog.import": "Import CSV",
-  "catalog.importTitle": "Import — {type}",
-  "catalog.importHint":
-    "One row per entry. Rows are matched by external_id, then by name; a reference names the entry it points to; members are emails. Nothing is written if a single row is wrong.",
-  "catalog.importColumns": "Expected header",
-  "catalog.importFile": "CSV file",
-  "catalog.importRun": "Import",
-  "catalog.importResult": "{created} created · {updated} updated · {unchanged} unchanged",
-  "catalog.importErrors": {
-    one: "{count} problem — nothing was written:",
-    other: "{count} problems — nothing was written:",
-  },
-  "catalog.importInvalid": "Choose a CSV file (5 MB at most).",
-  "catalog.meta.references": { one: "{count} reference", other: "{count} references" },
-  "catalog.ref.entries": "Entries pointing here",
-  "catalog.spineTitle": "Optional — the routing works without it.",
-  "catalog.spineBody":
-    "Bind an alert attribute to a type when you want a route to page the entry's own escalation path.",
-  "catalog.filterPlaceholder": "Filter…",
-  "catalog.newEntry": "+ New entry",
-  "catalog.newEntryTitle": "New entry — {type}",
-  "catalog.createEntry": "Create the entry",
-  "catalog.field.name": "Name",
-  "catalog.field.description": "Description",
-  "catalog.field.ownerTeam": "Owner → team",
-  "catalog.field.repository": "Repository",
-  "catalog.field.tier": "Tier",
-  "catalog.field.escalationPath": "Escalation path",
-  "catalog.field.chatChannel": "Chat channel",
-  "catalog.field.paging": "Paging",
-  "catalog.field.externalIdHint": "optional, for the API and the importer",
-  "catalog.ownerNote":
-    "Escalation resolves through the owner team: service → team → escalation path. Nothing to configure in the routes.",
-  "catalog.versionedNote": "Versioned from creation — every change is traced.",
-  "catalog.paging.pages": "pages",
-  "catalog.paging.silent": "silent",
-  "catalog.meta.incidents": { one: "{count} incident · 90 d", other: "{count} incidents · 90 d" },
-  "catalog.meta.members": { one: "{count} member", other: "{count} members" },
-  "catalog.meta.services": { one: "{count} service", other: "{count} services" },
-  "catalog.noMatch": "No entry matches “{query}”.",
-  "catalog.empty": "No entry of this type yet.",
-  "catalog.routingChain": "Routing chain",
-  "catalog.chain.alert": "Incoming alert",
-  "catalog.chain.attributeService": "attribute service",
-  "catalog.chain.extractedByRoute": "extracted by the alert route",
-  "catalog.chain.service": "Service",
-  "catalog.chain.ownerTeam": "Owner team",
-  "catalog.chain.viaOwner": "via the owner attribute",
-  "catalog.chain.team": "Team",
-  "catalog.chain.escalationPath": "Escalation path",
-  "catalog.chain.pathHint": "resolved from the owner team at escalation · On-call → Paths",
-  "catalog.chainNote":
-    "An alert that names this service is routed without any route naming anyone.",
-  "catalog.attributes": "Attributes",
-  "catalog.referencedBy": "Referenced by",
-  "catalog.ref.incidents90": "Incidents · 90 d",
-  "catalog.ref.services": "Services owned",
-  "catalog.ref.followUps": "Follow-ups assigned",
-  "catalog.deleteNote":
-    "Deleting a referenced entry is blocked — its usages are listed first. The catalog triggers real pages: every change is versioned.",
-  "catalog.invalid": "Check the type and the name.",
-  "catalog.duplicate": "“{name}” already exists for this type.",
 
   /* ---------- Settings ---------- */
   "settings.roleRestricted":
@@ -1228,12 +1102,12 @@ export const en = {
   /* ---------- Enterprise: SCIM provisioning ---------- */
   "ee.scim.title": "Provisioning (SCIM 2.0)",
   "ee.scim.lead":
-    "Your identity provider creates, renames and deactivates members here, and keeps catalog teams in step with its groups. Deactivation is what a directory removal becomes: a member is referenced by incidents and audit lines, none of which may vanish.",
+    "Your identity provider creates, renames and deactivates members here, and keeps teams in step with its groups. Deactivation is what a directory removal becomes: a member is referenced by incidents and audit lines, none of which may vanish.",
   "ee.scim.baseUrl": "SCIM base URL",
   "ee.scim.baseUrlHint":
     "Give the provider this address and a bearer token issued below. Users and Groups, filters on userName, externalId and displayName, PATCH in the Okta and Entra ID shapes; no bulk.",
   "ee.scim.mapping":
-    "Users map to members (userName is the email; roles may carry admin, responder or viewer). Groups map to catalog teams and their members.",
+    "Users map to members (userName is the email; roles may carry admin, responder or viewer). Groups map to teams and their members.",
   "ee.scim.notEnabled": "Not enabled",
   "ee.scim.enable": "Enable and issue a token",
   "ee.scim.rotate": "Rotate the token",
@@ -1284,8 +1158,6 @@ export const en = {
   "ee.roles.error.inUse":
     "Deletion refused — members still hold this role: {members}. Give them another role first.",
   "perm.incidents.respond": "Respond to incidents",
-  "perm.catalog.entries": "Create and edit catalog entries",
-  "perm.catalog.manage": "Manage the catalog (types, imports, deletions, runbooks)",
   "perm.oncall.manage": "Manage on-call (schedules, paths, overrides)",
   "perm.statuspages.manage": "Manage status pages",
   "perm.insights.manage": "Manage reports (pay reports, exports)",
@@ -1417,7 +1289,6 @@ export const en = {
   "audit.memberDisabled": "{actor} disabled {member}",
   "audit.memberReactivated": "{actor} reactivated {member}",
   "audit.inviteRevoked": "{actor} revoked the invitation of {email}",
-  "audit.catalogEntryCreated": "{actor} created the catalog entry “{name}”",
   "audit.severityUpdated": "{actor} updated the severity {name}",
   "audit.statusUpdated": "{actor} updated the status “{name}”",
   "audit.apiKeyCreated": "API key {hint} created (scope {scopes}) by {actor}",
@@ -1474,7 +1345,7 @@ export const en = {
   "settings.api.newKeyTitle": "New API key",
   "settings.api.keyName": "Name",
   "settings.api.scopes": "Scopes",
-  "settings.api.scope.read": "read incidents, follow-ups and the catalog",
+  "settings.api.scope.read": "read incidents and follow-ups",
   "settings.api.scope.write": "everything, updates included",
   "settings.api.scope.incidentCreate": "declare incidents only",
   "settings.api.createKey": "Create the key",
@@ -1542,7 +1413,7 @@ export const en = {
   "settings.fields.type.select": "select",
   "settings.fields.type.number": "number",
   "settings.fields.type.link": "link",
-  "settings.fields.type.catalog_entry": "catalog",
+  "settings.fields.type.catalog_entry": "retired",
   "settings.fields.requiredAtDeclare": "required at declaration",
   "settings.fields.notInForm": "not in any form",
   "settings.fields.ofType": "type: {type}",
@@ -1591,7 +1462,7 @@ export const en = {
   "settings.nav.alerting": "Alert configuration",
   "settings.nav.alertAttributes": "Attributes",
   "setup.title": "Alert configuration",
-  "setup.subtitle": "From a webhook to a page, in four steps — no catalog required.",
+  "setup.subtitle": "From a webhook to a page, in four steps — nothing to describe first.",
   "setup.checklist": "Getting started",
   "setup.checklistNote": "Each step is real: nothing here is simulated.",
   "setup.showSteps": "Show the setup steps",
@@ -1779,9 +1650,6 @@ export const en = {
   "settings.attributes.kind.text": "Text",
   "settings.attributes.kind.list": "List",
   "settings.attributes.kind.priority": "Alert priority",
-  "settings.attributes.kind.catalog": "Catalog entry",
-  "settings.attributes.catalogType": "Catalog type",
-  "settings.attributes.catalogNone": "— none —",
   "settings.attributes.merge": "On repeat",
   "settings.attributes.mergeKind.first": "first value wins",
   "settings.attributes.mergeKind.last": "last value wins",
@@ -1791,7 +1659,7 @@ export const en = {
   "settings.attributes.requiredYes": "required",
   "settings.attributes.requiredNo": "optional",
   "settings.attributes.formNote":
-    "The key is fixed once created: sources map onto it. A catalog type binds names to entries and lets a route page the entry's — or its owner team's — escalation path.",
+    "The key is fixed once created: sources map onto it. The service and team types match the value against the real rows, which lets a route page the service’s owner team — or the named team — through its policy.",
   "settings.attributes.errorDuplicate": "An attribute with this key already exists.",
   "settings.attributes.col.attribute": "Attribute",
   "settings.attributes.col.type": "Type",
@@ -1802,7 +1670,7 @@ export const en = {
   "settings.attributes.coverageHint":
     "How many of the last 200 alerts carry it, and how many sources map it.",
   "settings.attributes.note":
-    "Attributes are how a route says “production” without knowing which tool said “env=prod”. Bind one to a catalog type only when you want the catalog to route.",
+    "Attributes are how a route says “production” without knowing which tool said “env=prod”. Give one the service or team type only when you want it to decide who is paged.",
   "settings.priorities.aliases": "Aliases",
   "settings.priorities.aliasesHint":
     "What the tools call it; matched case-insensitively when a payload names a priority.",
@@ -1826,7 +1694,7 @@ export const en = {
   "settings.routes.conditionsNote":
     "Lines in a group are ANDed; groups are ORed. No condition catches everything.",
   "settings.routes.escalationNote":
-    "Rules stack: a path chosen once, or the path a catalog attribute leads to — the entry's, or its owner team's — with a fallback.",
+    "Rules stack: a path chosen once, or the path an attribute leads to — the service’s owner team, or the named team — with a fallback.",
   "settings.routes.rulePath": "Page a path",
   "settings.routes.ruleAttribute": "Page from an attribute",
   "settings.routes.fallback": "otherwise",
@@ -2014,8 +1882,8 @@ export const en = {
   "alerts.firstSeen": "first seen {when}",
   "alerts.snoozedUntil": "snoozed until {when}",
   "alerts.attributes": "Attributes",
-  "alerts.attributesNote": "extracted by the route, bound to the catalog",
-  "alerts.attr.service": "service · catalog",
+  "alerts.attributesNote": "extracted by the route, matched against the real rows",
+  "alerts.attr.service": "service",
   "alerts.attr.team": "team · via Service.owner",
   "alerts.attr.environment": "environment",
   "alerts.attr.priority": "priority · from the payload",
@@ -2404,7 +2272,7 @@ export const en = {
     "Attributes: environment, service, team, priority, source, region, and whatever the mappings extract. Routes are tried in order; the first match wins.",
   "settings.routes.empty": "No route — alerts are logged and nobody is paged.",
   "settings.routes.note":
-    "Notification can be deferred up to 10 minutes to let grouping absorb a burst. Dynamic escalation reads the catalog chain: service → owner team → the team's escalation path.",
+    "Notification can be deferred up to 10 minutes to let grouping absorb a burst. Dynamic escalation follows the chain: service → owner team → the team's escalation path.",
   "settings.priorities.title": "Priorities",
   "settings.priorities.subtitle":
     "qualify the alert at ingestion — from the payload or static per route",
@@ -2461,7 +2329,7 @@ export const en = {
   "settings.integrations.empty":
     "No integration matches — the generic HTTP source accepts any webhook meanwhile.",
   "settings.integrations.desc.datadog":
-    "Monitors → alerts deduplicated by key and grouped, attributes bound to the Catalog.",
+    "Monitors → alerts deduplicated by key and grouped, attributes matched against the real rows.",
   "settings.integrations.desc.prometheus":
     "Native Alertmanager webhook — labels become attributes.",
   "settings.integrations.desc.grafana": "Contact point webhook — annotations land in the timeline.",
@@ -2591,11 +2459,10 @@ export const en = {
   "statusPages.newComponent": "+ Component",
   "statusPages.newComponentTitle": "New component",
   "statusPages.group": "Group",
-  "statusPages.serviceLink": "Catalog service",
+  "statusPages.serviceLink": "Service",
   "statusPages.componentNote":
-    "Bound to a catalog service, the component is affected automatically when an incident on that service is published.",
-  "statusPages.catalog": "catalog",
-  "statusPages.noService": "no catalog service",
+    "Bound to a service, the component is affected automatically when an incident on that service is published.",
+  "statusPages.noService": "no service",
   "statusPages.noComponents":
     "No component yet — add the pieces of your service your customers recognise.",
   "statusPages.state.operational": "Operational",
@@ -2806,7 +2673,7 @@ export const en = {
   "insights.fu.closureSub": "from creation to done",
   "insights.fu.created": "Created",
   "insights.fu.createdSub": "in the period",
-  "insights.fu.noTeam": "Teams come from the catalog's service owners.",
+  "insights.fu.noTeam": "Teams come from the owners of the services.",
   "insights.fu.openView": "Open the Follow-ups view →",
   "insights.fu.overdue": "Overdue",
   "insights.fu.overdueNone": "Nothing overdue right now.",
@@ -2815,7 +2682,6 @@ export const en = {
   "insights.fu.vsPolicy": "vs policy",
   "insights.inc.byService": "By service",
   "insights.inc.bySeverity": "By severity",
-  "insights.inc.catalogDimension": "catalog dimension",
   "insights.inc.count": "Incidents",
   "insights.inc.countSub": "declared in the period",
   "insights.inc.high": "High severity",
@@ -2905,7 +2771,6 @@ export const en = {
   "settings.ai.providerNone": "None configured",
   "settings.ai.providerNote":
     "The abstraction keeps this choice reversible — changing the provider changes no product behaviour.",
-  "settings.ai.source.catalog": "Catalog (services, teams)",
   "settings.ai.source.changeEvents": "Change events (deploys, flags, config)",
   "settings.ai.source.docs": "Runbooks and documents",
   "settings.ai.source.incidents": "Incidents and post-mortems",
@@ -3093,21 +2958,15 @@ export const en = {
   "postMortem.exportError.not_found": "This incident has no post-mortem.",
   "postMortem.exportTo": "Export to {tool}",
   "postMortem.exported": "Exported page",
-  "settings.integrations.cat.catalog": "Catalog & IaC",
   "settings.integrations.cat.migration": "Migration & business",
-  "settings.integrations.importerName": "Catalog importer (CLI & API)",
   "settings.integrations.hrisName": "HR system (leave)",
   "settings.integrations.siemName": "Audit → SIEM / S3",
   "settings.integrations.desc.oauth":
     "Sign in with this provider. Available once the instance carries its credentials.",
   "settings.integrations.desc.scim":
     "Provision members and teams from your directory. Enterprise edition.",
-  "settings.integrations.desc.backstage":
-    "Import your service catalog from a Backstage instance, on demand or from CI.",
-  "settings.integrations.desc.importer":
-    "The catalog as code: a file, a GitHub file, a command's output or the write API.",
   "settings.integrations.desc.terraform":
-    "Catalog, escalation paths, schedules and routes declared as resources.",
+    "Escalation paths, schedules, routes and status pages declared as resources.",
   "settings.integrations.desc.pagerduty": "Dual-run then migrate: schedules, policies, services.",
   "settings.integrations.desc.opsgenie": "Import schedules and policies, dual-run.",
   "settings.integrations.desc.statuspage": "Migrate components, incidents and subscribers.",
@@ -3137,19 +2996,6 @@ export const en = {
   "ai.runbooks.fetchedAt": "fetched {when}",
   "ai.runbooks.pasted": "pasted text",
   "ai.runbooks.title": "Runbooks",
-  "catalog.runbooks.add": "Add",
-  "catalog.runbooks.content": "…or paste the runbook text here",
-  "catalog.runbooks.error": "A title and either a URL or some text are required.",
-  "catalog.runbooks.fetchError": "fetch failed: {error} — the last copy is kept",
-  "catalog.runbooks.fetchedAt": "fetched {when}",
-  "catalog.runbooks.hint":
-    "Fetched now and refreshed every six hours. Read by the assistant when documentation is an allowed source.",
-  "catalog.runbooks.name": "Title",
-  "catalog.runbooks.none": "No runbook for this service.",
-  "catalog.runbooks.pasted": "pasted text · {chars} characters",
-  "catalog.runbooks.refresh": "Fetch again",
-  "catalog.runbooks.title": "Runbooks",
-  "catalog.runbooks.url": "File URL — GitHub or GitLab file, or any text/markdown address",
 } satisfies Record<string, Message>;
 
 export type Dictionary = typeof en;

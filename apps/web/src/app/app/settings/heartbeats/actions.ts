@@ -19,7 +19,7 @@ const PAGE = "/app/settings/heartbeats";
 const schema = z.object({
   name: z.string().trim().min(2).max(120),
   description: z.string().trim().max(500).optional(),
-  serviceEntryId: z.string().uuid().or(z.literal("")).optional(),
+  serviceId: z.string().uuid().or(z.literal("")).optional(),
   intervalSeconds: z.coerce
     .number()
     .int()
@@ -46,7 +46,7 @@ export async function createHeartbeat(formData: FormData) {
         tenantId: current.tenant.id,
         name: input.name,
         description: input.description || null,
-        serviceEntryId: input.serviceEntryId || null,
+        serviceId: input.serviceId || null,
         intervalSeconds: input.intervalSeconds,
         graceSeconds: input.graceSeconds,
         encryptedToken: encryptSecret(newHeartbeatToken()),

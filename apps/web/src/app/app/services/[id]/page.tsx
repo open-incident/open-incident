@@ -2,12 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { escalationPaths, withTenant } from "@openincident/db";
-import { aiConfigured } from "@openincident/ai";
+import { aiConfigured, runbooksForService } from "@openincident/ai";
 import { getT } from "@/i18n/server";
-import { canRespond, requireMember } from "@/lib/session";
+import { canRespond, isManager, requireMember } from "@/lib/session";
 import { getService, listTeams } from "@/lib/services";
 import { telemetryInstalled } from "@/lib/telemetry-module";
-import { assignOwner, setTeamPolicy } from "../actions";
+import {
+  assignOwner,
+  createRunbook,
+  deleteRunbook,
+  refreshRunbookAction,
+  setTeamPolicy,
+} from "../actions";
 
 const CARD: React.CSSProperties = {
   background: "var(--panel)",
@@ -18,6 +24,26 @@ const CARD: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   gap: 8,
+};
+
+const RUNBOOK_BTN: React.CSSProperties = {
+  height: 24,
+  padding: "0 8px",
+  border: "1px solid var(--line)",
+  borderRadius: 6,
+  background: "var(--panel)",
+  fontSize: 11,
+  cursor: "pointer",
+};
+
+const RUNBOOK_FIELD: React.CSSProperties = {
+  height: 30,
+  padding: "0 10px",
+  border: "1px solid var(--line)",
+  borderRadius: 8,
+  fontSize: 12.5,
+  background: "var(--panel)",
+  outline: "none",
 };
 
 const EYEBROW: React.CSSProperties = {
@@ -33,10 +59,17 @@ const EYEBROW: React.CSSProperties = {
  * The dependency card is the honest one: without traces the product does not
  * know what calls what, and says so rather than drawing a graph it invented.
  */
-export default async function ServiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ServiceDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
   const { tenant, member } = await requireMember();
   const t = await getT();
   const { id } = await params;
+  const { error } = await searchParams;
 
   const data = await withTenant(tenant.id, async (tx) => {
     const svc = await getService(tx, tenant.id, id);
@@ -48,11 +81,17 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
       .from(escalationPaths)
       .where(eq(escalationPaths.tenantId, tenant.id))
       .orderBy(asc(escalationPaths.name));
-    return { svc, teams: await listTeams(tx, tenant.id), paths };
+    return {
+      svc,
+      teams: await listTeams(tx, tenant.id),
+      paths,
+      runbooks: await runbooksForService(tx, tenant.id, svc.id),
+    };
   });
   if (!data) notFound();
-  const { svc, teams, paths } = data;
+  const { svc, teams, paths, runbooks } = data;
   const mayEdit = canRespond(member);
+  const mayManage = isManager(member);
 
   const STATE_DOT: Record<string, string> = {
     online: "var(--ok)",
@@ -225,6 +264,138 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
                 ? t("services.dependenciesEmpty")
                 : t("services.dependenciesNoTelemetry")}
             </div>
+          </div>
+
+          <div style={{ ...CARD, padding: "14px 16px" }} data-testid="runbooks">
+            <div style={EYEBROW}>{t("svc.runbooks.title")}</div>
+            {runbooks.length === 0 && (
+              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("svc.runbooks.none")}</div>
+            )}
+            {runbooks.map((r) => (
+              <div
+                key={r.id}
+                data-testid="runbook-row"
+                style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5 }}
+              >
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  {r.sourceUrl ? (
+                    <a
+                      href={r.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="oi-link"
+                      style={{ fontWeight: 600, display: "block" }}
+                    >
+                      {r.title}
+                    </a>
+                  ) : (
+                    <span style={{ fontWeight: 600, display: "block" }}>{r.title}</span>
+                  )}
+                  <span
+                    style={{ fontSize: 11.5, color: r.fetchError ? "var(--dang)" : "var(--ink-3)" }}
+                  >
+                    {r.fetchError
+                      ? t("svc.runbooks.fetchError", { error: r.fetchError })
+                      : r.fetchedAt
+                        ? t("svc.runbooks.fetchedAt", { when: t.fmt.relative(r.fetchedAt) })
+                        : t("svc.runbooks.pasted", { chars: r.content.length })}
+                  </span>
+                </span>
+                {mayManage && (
+                  <span style={{ display: "flex", gap: 4, flex: "none" }}>
+                    {r.sourceUrl && (
+                      <form action={refreshRunbookAction}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <input type="hidden" name="serviceId" value={svc.id} />
+                        <button
+                          type="submit"
+                          className="oi-hover"
+                          title={t("svc.runbooks.refresh")}
+                          style={RUNBOOK_BTN}
+                        >
+                          ↻
+                        </button>
+                      </form>
+                    )}
+                    <form action={deleteRunbook}>
+                      <input type="hidden" name="id" value={r.id} />
+                      <input type="hidden" name="serviceId" value={svc.id} />
+                      <button
+                        type="submit"
+                        className="oi-hover-dang"
+                        aria-label={t("common.delete")}
+                        style={{ ...RUNBOOK_BTN, color: "var(--dang)" }}
+                      >
+                        ✕
+                      </button>
+                    </form>
+                  </span>
+                )}
+              </div>
+            ))}
+            {mayManage && (
+              <form
+                action={createRunbook}
+                data-testid="runbook-form"
+                style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}
+              >
+                <input type="hidden" name="serviceId" value={svc.id} />
+                <input
+                  name="title"
+                  required
+                  placeholder={t("svc.runbooks.name")}
+                  className="oi-field"
+                  style={RUNBOOK_FIELD}
+                />
+                <input
+                  name="sourceUrl"
+                  type="url"
+                  placeholder={t("svc.runbooks.url")}
+                  className="oi-field"
+                  style={{ ...RUNBOOK_FIELD, fontFamily: "var(--mono)", fontSize: 12 }}
+                />
+                <textarea
+                  name="content"
+                  rows={3}
+                  placeholder={t("svc.runbooks.content")}
+                  className="oi-field"
+                  style={{
+                    ...RUNBOOK_FIELD,
+                    height: "auto",
+                    padding: "8px 10px",
+                    resize: "vertical",
+                  }}
+                />
+                {error === "runbook" && (
+                  <div role="alert" style={{ fontSize: 12, color: "var(--dang)" }}>
+                    {t("svc.runbooks.error")}
+                  </div>
+                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 11.5, color: "var(--ink-3)", flex: 1 }}>
+                    {t("svc.runbooks.hint")}
+                  </span>
+                  <button
+                    type="submit"
+                    data-testid="runbook-save"
+                    className="oi-hover-brand-2"
+                    style={{
+                      height: 28,
+                      padding: "0 11px",
+                      borderRadius: 8,
+                      background: "var(--brand)",
+                      color: "var(--on-brand)",
+                      border: 0,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t("svc.runbooks.add")}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
 
           <div style={{ ...CARD, padding: "14px 16px" }}>

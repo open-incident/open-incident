@@ -25,7 +25,7 @@ A signed-in member sees a rail on the left with seven sections. Each one is a ch
 | **Alerts**       | What monitoring tools sent, how it was routed, who was paged                  | [Alerts](alerts)                                       |
 | **On-call**      | Schedules, overrides, escalation paths, your own notification rules           | [On-call](on-call)                                     |
 | **Status pages** | Public or internal pages, components, maintenances, subscribers               | [Status pages](status-pages)                           |
-| **Catalog**      | Teams, services, environments and your own types — the spine of the routing   | [Catalog](catalog)                                     |
+| **Services**     | The services your signals name, their owner teams, what watches them          | [Alerts](alerts), [On-call](on-call)                   |
 | **Reports**      | Incidents, alerts, on-call load, follow-ups and on-call pay over a period     | [Reports](reports)                                     |
 | **Settings**     | Everything an administrator configures                                        | [Configuration](settings-workspace)                    |
 
@@ -44,7 +44,7 @@ A signed-in member sees a rail on the left with seven sections. Each one is a ch
 
 **Nothing is simulated.** When a capability needs something the instance does not have — an SMS provider, an object storage bucket, an inference provider, an enterprise entitlement — the screen says "unavailable on this instance" and names the variable to set. No button is drawn that does nothing.
 
-**Every change is traced.** Incidents have a timeline; the workspace has an audit log; the catalog, the escalation paths and the status pages version their changes. When something happened, you can find who did it and when.
+**Every change is traced.** Incidents have a timeline; the workspace has an audit log; services, the escalation paths and the status pages version their changes. When something happened, you can find who did it and when.
 
 ## The demo workspace
 

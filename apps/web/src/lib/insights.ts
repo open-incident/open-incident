@@ -7,14 +7,15 @@ import { and, eq, gte, isNull, lt, ne } from "drizzle-orm";
 import {
   alertSources,
   alerts,
-  catalogEntries,
   escalations,
   followUpPriorities,
   followUps,
   incidents,
   members,
   notificationDeliveries,
+  services,
   severities,
+  teams,
   type Tx,
 } from "@openincident/db";
 
@@ -67,11 +68,11 @@ export async function incidentInsights(tx: Tx, tenantId: string, period: Period)
       inc: incidents,
       sevRank: severities.rank,
       sevName: severities.name,
-      serviceName: catalogEntries.name,
+      serviceName: services.key,
     })
     .from(incidents)
     .leftJoin(severities, eq(severities.id, incidents.severityId))
-    .leftJoin(catalogEntries, eq(catalogEntries.id, incidents.serviceEntryId))
+    .leftJoin(services, eq(services.id, incidents.serviceId))
     .where(
       and(
         eq(incidents.tenantId, tenantId),
@@ -319,7 +320,7 @@ export async function followUpInsights(tx: Tx, tenantId: string, period: Period)
       priorityName: followUpPriorities.name,
       targetDays: followUpPriorities.completeWithinDays,
       incidentNumber: incidents.number,
-      serviceId: incidents.serviceEntryId,
+      serviceId: incidents.serviceId,
     })
     .from(followUps)
     .leftJoin(followUpPriorities, eq(followUpPriorities.id, followUps.priorityId))
@@ -356,21 +357,17 @@ export async function followUpInsights(tx: Tx, tenantId: string, period: Period)
     .where(
       and(eq(followUps.tenantId, tenantId), eq(followUps.status, "open"), lt(followUps.dueAt, now)),
     );
-  // Team = owner of the incident's service (catalog attribute `owner`, an entry id).
-  const services = await tx
-    .select({
-      id: catalogEntries.id,
-      name: catalogEntries.name,
-      attributes: catalogEntries.attributes,
-    })
-    .from(catalogEntries)
-    .where(eq(catalogEntries.tenantId, tenantId));
-  const nameOfTeam = new Map(services.map((s) => [s.id, s.name]));
-  const teamOf = (serviceId: string | null) => {
-    if (!serviceId) return null;
-    const owner = services.find((s) => s.id === serviceId)?.attributes.owner;
-    return typeof owner === "string" ? owner : null;
-  };
+  // Team = the team that owns the incident's service.
+  const owners = await tx
+    .select({ serviceId: services.id, teamId: services.ownerTeamId, teamName: teams.name })
+    .from(services)
+    .leftJoin(teams, eq(teams.id, services.ownerTeamId))
+    .where(eq(services.tenantId, tenantId));
+  const nameOfTeam = new Map(
+    owners.filter((o) => o.teamId).map((o) => [o.teamId!, o.teamName ?? o.teamId!]),
+  );
+  const teamOf = (serviceId: string | null) =>
+    serviceId ? (owners.find((o) => o.serviceId === serviceId)?.teamId ?? null) : null;
   const byTeam = new Map<string, { total: number; done: number }>();
   for (const r of cur) {
     const team = teamOf(r.serviceId);

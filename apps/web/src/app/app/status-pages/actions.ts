@@ -208,7 +208,7 @@ export async function createComponent(formData: FormData) {
       pageId: uuid,
       name: z.string().trim().min(1).max(60),
       groupName: z.string().trim().max(60).optional(),
-      serviceEntryId: uuid.or(z.literal("")).optional(),
+      serviceId: uuid.or(z.literal("")).optional(),
       source: z.enum(["monitor", "manual"]).default("manual"),
       monitorId: uuid.or(z.literal("")).optional(),
     })
@@ -239,7 +239,7 @@ export async function createComponent(formData: FormData) {
       pageId: input.pageId,
       name: input.name,
       groupName: input.groupName || null,
-      serviceEntryId: monitorId ? null : input.serviceEntryId || null,
+      serviceId: monitorId ? null : input.serviceId || null,
       monitorId,
       position: (max?.max ?? -1) + 1,
     });

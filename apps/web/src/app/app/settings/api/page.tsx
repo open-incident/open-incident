@@ -190,7 +190,7 @@ PATCH /api/v1/incidents/:number
 POST  /api/v1/incidents/:number/updates
 GET   /api/v1/incidents/:number/timeline
 POST  /api/v1/incidents/:number/follow-ups
-GET   /api/v1/follow-ups · /catalog/types · /catalog/entries
+GET   /api/v1/follow-ups · /change-events · /status-pages
 { "error": { "code": "missing_scope", "message": "…" } }`}
             </pre>
             <div

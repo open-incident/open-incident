@@ -11,9 +11,7 @@ summary: The product's words, in one place.
 | **Alert**                     | What a monitoring tool sent: one payload, deduplicated by key and grouped. Has a priority and an urgency.                                                                   |
 | **Alert source**              | One monitoring tool's endpoint and secret, with a mapping from payload to attributes.                                                                                       |
 | **Announcement**              | A living post published by a rule when an incident matches, updated with the incident, closed at resolution.                                                                |
-| **Attribute**                 | A value extracted from an alert's payload (service, environment, priority…), bound to the catalog when it names an entry.                                                   |
-| **Bundle**                    | The catalog's exchange format: types and entries in one document, applied in one transaction.                                                                               |
-| **Catalog**                   | Teams, services, environments and your own types; the spine of the routing.                                                                                                 |
+| **Attribute**                 | A value extracted from an alert's payload (service, environment, priority…). Typed `service` or `team` it names a real row and can route; otherwise it is a label.          |
 | **Change event**              | A deploy, flag or configuration change recorded through the API and shown next to the incidents it may explain.                                                             |
 | **Confidence**                | How sure a root cause hypothesis is, on five levels: speculation, plausible, likely, strong, validated — set by the evidence, not by tone.                                  |
 | **Coverage**                  | The share of the hours a schedule declares that has someone on call over the next 60 days.                                                                                  |
@@ -22,7 +20,7 @@ summary: The product's words, in one place.
 | **Entitlement**               | A capability switched on for a workspace: by `OI_ENTITLEMENTS` on a standalone install, by the control plane in cloud.                                                      |
 | **Escalation**                | A running instance of a path: levels reached, people paged, acknowledgement or exhaustion.                                                                                  |
 | **Escalation path**           | A versioned graph of levels, conditions, delays, retries and hand-overs that says how a page travels.                                                                       |
-| **External id**               | An entry's identifier in the system that owns it; what the importer and the API match on.                                                                                   |
+| **External id**               | A member's identifier in the identity provider that owns them; what SCIM matches on.                                                                                        |
 | **Finding**                   | One fact the root cause analysis established, citing the evidence ids it rests on.                                                                                          |
 | **Follow-up**                 | An action to take after an incident, with a priority, an assignee and a deadline; exportable to a tracker.                                                                  |
 | **Grouping**                  | Alerts of the same route within a five-minute window are attached to the first one.                                                                                         |
@@ -31,6 +29,7 @@ summary: The product's words, in one place.
 | **Incident**                  | What the team runs: title, severity, status, roles, updates, timeline, follow-ups.                                                                                          |
 | **Incident type**             | A lifecycle and a declaration form; severities are shared across types.                                                                                                     |
 | **Just-in-time (JIT)**        | Creating a member on first SSO sign-in.                                                                                                                                     |
+| **Label**                     | Anything else an alert carries — environment, region, tier, customer: a value routes read and screens filter on, kept on the alert and nowhere else.                        |
 | **Mode**                      | Live, retrospective or test. Test incidents are excluded from reports and announcements.                                                                                    |
 | **Outbox**                    | Where every email, SMS, push and chat message is written with an honest status before it leaves.                                                                            |
 | **Override**                  | A slot of a schedule given to someone else (or to nobody) without touching the rotation.                                                                                    |
@@ -43,10 +42,12 @@ summary: The product's words, in one place.
 | **Runbook**                   | Documentation attached to a service, fetched from a URL or pasted, read by the assistant when allowed.                                                                      |
 | **Schedule**                  | Who is on call when: rotations, handover time, overrides.                                                                                                                   |
 | **SCIM**                      | System for Cross-domain Identity Management: the identity provider creates, updates and deactivates members through `/scim/v2`.                                             |
+| **Service**                   | Something the workspace runs, as the product learns it exists: a signal names it, it appears under **Services**, a member gives it an owner team. Its key is its name.      |
 | **Severity**                  | Qualifies an incident (SEV1, SEV2…); decides announcements, publication suggestions and the post-incident flow.                                                             |
 | **Status**                    | The workspace's word inside the active phase (Investigating, Monitoring…), mapped to a public status.                                                                       |
-| **Status page**               | A public or internal page with components bound to catalog services, incidents and maintenances.                                                                            |
+| **Status page**               | A public or internal page with components bound to services, incidents and maintenances.                                                                                    |
+| **Team**                      | People, a chat channel and the escalation path they are paged through: the owner of a service, the assignee of a follow-up, what a SCIM group becomes.                      |
 | **Triage**                    | The phase where alert- or API-born incidents wait for a responder to accept, decline or merge.                                                                              |
 | **Urgency**                   | High wakes people up; low stays silent. Picks the notification channels of a member's rules.                                                                                |
 | **Working hours**             | A named set of days and hours used by escalation conditions and delays.                                                                                                     |
-| **Workspace**                 | An organisation's space on an instance: its own members, catalog, incidents, settings, subdomain.                                                                           |
+| **Workspace**                 | An organisation's space on an instance: its own members, services, incidents, settings, subdomain.                                                                          |

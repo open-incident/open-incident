@@ -4,7 +4,7 @@ import { startAiMock } from "./ai-mock";
 import { startTrackersMock } from "./trackers-mock";
 
 /**
- * Runbooks: attached to a service from the catalog (a GitHub file, fetched
+ * Runbooks: attached to a service from its own page (a GitHub file, fetched
  * through the API), shown on the incident, and quoted to the assistant only
  * when documentation is an allowed source.
  */
@@ -31,14 +31,16 @@ test.describe("Runbooks", () => {
     await page.getByTestId("ai-save").click();
     await page.waitForURL(/saved=1/);
 
-    await page.goto("/app/catalog?type=service&entry=checkout-api");
+    await page.goto("/app/services");
+    await page.getByRole("link", { name: "checkout-api" }).first().click();
+    await page.waitForURL(/\/app\/services\/[0-9a-f-]+/);
     const form = page.getByTestId("runbook-form");
     await form.locator('input[name="title"]').fill("Checkout latency runbook");
     await form
       .locator('input[name="sourceUrl"]')
       .fill("https://github.com/skylark/ops/blob/main/runbooks/checkout.md");
     await page.getByTestId("runbook-save").click();
-    await page.waitForURL(/entry=checkout-api/);
+    await page.waitForURL(/\/app\/services\/[0-9a-f-]+/);
     const row = page.getByTestId("runbook-row").filter({ hasText: "Checkout latency runbook" });
     await expect(row).toBeVisible();
     await expect(row).toContainText(/fetched|récupéré|abgerufen/i);

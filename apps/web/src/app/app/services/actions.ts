@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Giving a service an owner — the one click that replaces a catalogue.
+ * Giving a service an owner — the one click that is the whole configuration.
  *
  * From the moment it succeeds, an alert naming this service pages that team's
  * policy. Nothing else has to be configured, which is why the button sits in
@@ -9,11 +9,20 @@
  */
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { escalationPaths, services, teams, withTenant } from "@openincident/db";
+import {
+  atlasDocuments,
+  escalationPaths,
+  runbooks,
+  services,
+  teams,
+  withTenant,
+} from "@openincident/db";
+import { indexRunbook, refreshRunbook } from "@openincident/ai";
 import { recordAudit } from "@/lib/audit";
-import { requireResponder } from "@/lib/session";
+import { requireManager, requireResponder } from "@/lib/session";
 
 const uuid = z.string().uuid();
 
@@ -108,4 +117,79 @@ export async function setTeamPolicy(formData: FormData) {
   revalidatePath(`/app/services/${serviceId}`);
   revalidatePath("/app/services");
   revalidatePath("/app/on-call");
+}
+
+/* ---------- Runbooks ---------- */
+
+const runbookSchema = z.object({
+  serviceId: z.string().uuid(),
+  title: z.string().trim().min(2).max(160),
+  sourceUrl: z.string().trim().url().max(500).or(z.literal("")),
+  content: z.string().max(60_000).default(""),
+});
+
+/** A runbook for a service: a file at a URL (fetched now, refreshed by the worker) or pasted text. */
+export async function createRunbook(formData: FormData) {
+  const current = await requireManager();
+  const parsed = runbookSchema.safeParse(Object.fromEntries(formData.entries()));
+  const back = (suffix: string) =>
+    redirect(`/app/services/${String(formData.get("serviceId") ?? "")}${suffix}`);
+  if (!parsed.success) return back("?error=runbook");
+  const input = parsed.data;
+  if (!input.sourceUrl && !input.content.trim()) return back("?error=runbook");
+  const id = await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .insert(runbooks)
+      .values({
+        tenantId: current.tenant.id,
+        serviceId: input.serviceId,
+        title: input.title,
+        sourceUrl: input.sourceUrl || null,
+        content: input.sourceUrl ? "" : input.content.trim(),
+        createdByMemberId: current.member.id,
+      })
+      .returning({ id: runbooks.id });
+    await recordAudit(tx, current, "config", "runbook.created", {
+      title: input.title,
+      url: input.sourceUrl || null,
+    });
+    return row!.id;
+  });
+  if (input.sourceUrl) await refreshRunbook(current.tenant.id, id);
+  else await indexRunbook(current.tenant.id, id);
+  revalidatePath(`/app/services/${input.serviceId}`);
+  redirect(`/app/services/${input.serviceId}`);
+}
+
+export async function deleteRunbook(formData: FormData) {
+  const current = await requireManager();
+  const id = z.string().uuid().parse(formData.get("id"));
+  const serviceId = String(formData.get("serviceId") ?? "");
+  await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .delete(runbooks)
+      .where(and(eq(runbooks.tenantId, current.tenant.id), eq(runbooks.id, id)))
+      .returning({ title: runbooks.title });
+    await tx
+      .delete(atlasDocuments)
+      .where(
+        and(
+          eq(atlasDocuments.tenantId, current.tenant.id),
+          eq(atlasDocuments.source, "runbook"),
+          eq(atlasDocuments.refId, id),
+        ),
+      );
+    if (row) await recordAudit(tx, current, "config", "runbook.deleted", { title: row.title });
+  });
+  revalidatePath(`/app/services/${serviceId}`);
+  redirect(`/app/services/${serviceId}`);
+}
+
+export async function refreshRunbookAction(formData: FormData) {
+  const current = await requireManager();
+  const id = z.string().uuid().parse(formData.get("id"));
+  const serviceId = String(formData.get("serviceId") ?? "");
+  await refreshRunbook(current.tenant.id, id);
+  revalidatePath(`/app/services/${serviceId}`);
+  redirect(`/app/services/${serviceId}`);
 }

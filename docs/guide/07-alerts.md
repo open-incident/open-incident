@@ -14,18 +14,18 @@ summary: What your monitoring sent, how the route treated it, who was paged — 
 3. **Receive a first alert.** Send one from the tool — the source page waits for it live — or press **Test**: a real alert goes through the whole pipeline in test mode and pages nobody.
 4. **Check that an alert paged someone.** Open it: its history says which route caught it, who it paged and why.
 
-No catalog is needed for any of this. The catalog is where the routing grows into, when you want a route to page _the team that owns the service_ rather than a fixed path.
+Nothing has to be declared first. Services appear on their own, the moment an alert or a monitor names one; giving one an owner team in **Services** is what later lets a route page _the team that owns the service_ rather than a fixed path.
 
 ## From a webhook to an alert
 
-Every monitoring tool posts to its own **alert source**: one endpoint and one secret per source (Datadog, Prometheus/Alertmanager, Grafana, Sentry, CloudWatch, Uptime Kuma, generic HTTP). The payload is stored raw and parsed by the source's **mappings** into the workspace's **attributes** — service, team, environment, region, the tool's own severity, and any you add in **Settings → Attributes**. An attribute bound to a catalog type is canonicalised to the entry it names (the team derived from the service's owner when the payload gives none). The source then decides the **priority** — the same for every alert, or read from a payload field with a value map; a label the tools use (_critical_, _warning_) matches a priority by its aliases — and may **filter** out what it does not want (resolutions always pass).
+Every monitoring tool posts to its own **alert source**: one endpoint and one secret per source (Datadog, Prometheus/Alertmanager, Grafana, Sentry, CloudWatch, Uptime Kuma, generic HTTP). The payload is stored raw and parsed by the source's **mappings** into the workspace's **attributes** — service, team, environment, region, the tool's own severity, and any you add in **Settings → Attributes**. An attribute typed `service` or `team` is resolved against the workspace's real services and teams — an unknown service name is recorded as a new one, seen in traffic, and the team is derived from the service's owner when the payload gives none. Every other attribute is just a label carried by the alert. The source then decides the **priority** — the same for every alert, or read from a payload field with a value map; a label the tools use (_critical_, _warning_) matches a priority by its aliases — and may **filter** out what it does not want (resolutions always pass).
 
 Two mechanisms keep the noise down before anything else happens:
 
 - **Deduplication by key**: the same key from the same source is one alert with more events, not a new alert. Repeats merge attributes per the attribute's strategy — first wins, last wins, accumulate, highest priority — until the alert pages or opens an incident, after which the record is locked.
 - **Grouping**: a route groups alerts sharing a key — the attributes it chooses — within a window, fixed or restarting at each alert that joins; joiners are handled with the first one and page again only if the route says so.
 
-Then the **routes** are tried in order; the first whose conditions hold decides: who to page (rules that stack — a path, or the path an attribute leads to through the catalog, with a fallback), whether an incident opens (never, always, or in triage when the priority pages), with what type, phase, severity and custom fields, whether the triage incident is declined when the alert resolves, which Slack channel to post to, and whether the first page waits. No route matching means: logged, nobody paged — and the history says so.
+Then the **routes** are tried in order; the first whose conditions hold decides: who to page (rules that stack — a path, or the path a `service` or `team` attribute leads to, with a fallback), whether an incident opens (never, always, or in triage when the priority pages), with what type, phase, severity and custom fields, whether the triage incident is declined when the alert resolves, which Slack channel to post to, and whether the first page waits. No route matching means: logged, nobody paged — and the history says so.
 
 Every source page has a **tester**: paste a payload and read what the pipeline would do with it — attributes, priority, route, who it pages, the incident — before sending it as a test or for real.
 
@@ -59,7 +59,7 @@ The **Route** block names the route that matched and how it escalates — the pa
 
 ### Attributes and payload
 
-The extracted attributes with their origin (_service · catalog_, _team · via Service.owner_, _priority · from the payload_, the deduplication key), and the raw payload as it was received — stored as JSON, parsed downstream. The list has a search box over titles and attributes.
+The extracted attributes with their origin (_service_ matched to a known service, _team · via Service.owner_, _priority · from the payload_, the deduplication key), and the raw payload as it was received — stored as JSON, parsed downstream. The list has a search box over titles and attributes.
 
 ## Test alerts
 

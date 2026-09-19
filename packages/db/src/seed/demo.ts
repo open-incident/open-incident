@@ -50,8 +50,6 @@ import {
   scheduleOverrides,
   schedules,
   workingHoursSets,
-  catalogEntries,
-  catalogTypes,
   debriefs,
   followUpPriorities,
   followUps,
@@ -123,14 +121,14 @@ try {
     await ensureMembers(tx);
     const ctx = await loadContext(tx);
     await ensureTypes(tx, ctx);
-    await ensureCatalog(tx, ctx);
+    await ensureTeamsAndServices(tx, ctx);
     await ensureFields(tx, ctx);
     await ensureIncidents(tx, ctx);
     await ensureAudit(tx, ctx);
     await ensureAnnouncements(tx, ctx);
     await ensureApiAndWebhooks(tx, ctx);
     await ensureOnCall(tx, ctx);
-    await ensureServicesAndTeams(tx, ctx);
+    await linkTeamPolicies(tx, ctx);
     await ensureHeartbeats(tx, ctx);
     await ensurePayRules(tx);
     await ensureStatusPage(tx, ctx);
@@ -153,8 +151,8 @@ type Ctx = {
   roleLead: string;
   roleComms: string;
   prioId: Record<string, string>;
-  catType: Record<string, string>;
-  entryId: Record<string, string>;
+  teamId: Record<string, string>;
+  serviceId: Record<string, string>;
 };
 
 async function ensureMembers(tx: Tx) {
@@ -193,7 +191,6 @@ async function loadContext(tx: Tx): Promise<Ctx> {
     .select()
     .from(followUpPriorities)
     .where(eq(followUpPriorities.tenantId, tenantId));
-  const catRows = await tx.select().from(catalogTypes).where(eq(catalogTypes.tenantId, tenantId));
   const defaultType = typeRows.find((t) => t.isDefault)!;
   const statusRows = await tx
     .select()
@@ -214,8 +211,8 @@ async function loadContext(tx: Tx): Promise<Ctx> {
     roleLead: roleRows.find((r) => r.isLead)!.id,
     roleComms: roleRows.find((r) => !r.isLead)!.id,
     prioId: Object.fromEntries(prioRows.map((p) => [p.name, p.id])),
-    catType: Object.fromEntries(catRows.map((c) => [c.key, c.id])),
-    entryId: {},
+    teamId: {},
+    serviceId: {},
   };
 }
 
@@ -343,88 +340,83 @@ async function ensureTypes(tx: Tx, ctx: Ctx) {
     .where(eq(incidentTypes.id, ctx.typeId.default!));
 }
 
-async function ensureCatalog(tx: Tx, ctx: Ctx) {
-  const upsert = async (
-    typeKey: string,
-    name: string,
-    description: string,
-    externalId: string | null,
-    attributes: Record<string, unknown>,
-  ) => {
-    const typeId = ctx.catType[typeKey]!;
-    const [row] = await tx
-      .insert(catalogEntries)
-      .values({ tenantId, typeId, name, description, externalId, attributes })
-      .onConflictDoUpdate({
-        target: [catalogEntries.typeId, catalogEntries.name],
-        set: { description, attributes, updatedAt: new Date() },
-      })
-      .returning({ id: catalogEntries.id });
-    ctx.entryId[name] = row!.id;
-  };
+/**
+ * The three teams and the four services the demo talks about.
+ *
+ * Services are normally observed — a row appears the moment a signal names one
+ * — but a fresh demo has no live traffic and a history full of incidents, so
+ * the four its alerts name are written here. It is the same fact, arrived at
+ * the short way: `linkTeamPolicies` later reads the alerts to say when each was
+ * really seen, rather than inventing a date.
+ */
+async function ensureTeamsAndServices(tx: Tx, ctx: Ctx) {
   const m = ctx.memberId;
-  await upsert("team", "Platform", "Infrastructure, API et données", "team_platform", {
-    members: [
-      m("Amélie Laurent"),
-      m("Karim Haddad"),
-      m("Thomas Moreau"),
-      m("Nadia Benali"),
-      m("Lucas Girard"),
-    ],
-    escalation_path: "Platform primary",
-    chat_channel: "#team-platform",
+  const team = async (name: string, chatChannel: string, memberNames: string[]) => {
+    const [row] = await tx
+      .insert(teams)
+      .values({ tenantId, name, chatChannel })
+      .onConflictDoUpdate({
+        target: [teams.tenantId, teams.name],
+        set: { chatChannel, updatedAt: new Date() },
+      })
+      .returning({ id: teams.id });
+    ctx.teamId[name] = row!.id;
+    for (const memberName of memberNames)
+      await tx
+        .insert(teamMembers)
+        .values({ tenantId, teamId: row!.id, memberId: m(memberName) })
+        .onConflictDoNothing();
+  };
+  await team("Platform", "#team-platform", [
+    "Amélie Laurent",
+    "Karim Haddad",
+    "Thomas Moreau",
+    "Nadia Benali",
+    "Lucas Girard",
+  ]);
+  await team("Payments", "#team-payments", [
+    "Nadia Benali",
+    "Lucas Girard",
+    "Karim Haddad",
+    "Claire Dubois",
+  ]);
+  await team("Storefront", "#team-storefront", [
+    "Thomas Moreau",
+    "Claire Dubois",
+    "Amélie Laurent",
+  ]);
+
+  const service = async (key: string, owner: string, labels: Record<string, string>) => {
+    const ownerTeamId = ctx.teamId[owner]!;
+    const [row] = await tx
+      .insert(services)
+      .values({ tenantId, key, ownerTeamId, labels, confirmed: true, seenIn: ["Alertmanager"] })
+      .onConflictDoUpdate({
+        target: [services.tenantId, services.key],
+        set: { ownerTeamId, labels, confirmed: true, updatedAt: new Date() },
+      })
+      .returning({ id: services.id });
+    ctx.serviceId[key] = row!.id;
+  };
+  await service("checkout-api", "Platform", {
+    repository: "skylark/checkout-api",
+    tier: "tier 1",
+    environments: "production, staging",
   });
-  await upsert("team", "Payments", "Chaîne de paiement et conformité", "team_payments", {
-    members: [m("Nadia Benali"), m("Lucas Girard"), m("Karim Haddad"), m("Claire Dubois")],
-    escalation_path: "Payments escalation",
-    chat_channel: "#team-payments",
+  await service("payments-worker", "Payments", {
+    repository: "skylark/payments",
+    tier: "tier 1",
+    environments: "production, staging",
   });
-  await upsert("team", "Storefront", "Expérience boutique et checkout front", "team_storefront", {
-    members: [m("Thomas Moreau"), m("Claire Dubois"), m("Amélie Laurent")],
-    escalation_path: "Platform primary",
-    chat_channel: "#team-storefront",
-  });
-  await upsert(
-    "service",
-    "checkout-api",
-    "API de commande et de paiement côté serveur",
-    "svc_chk_01",
-    {
-      owner: ctx.entryId.Platform,
-      repository: "skylark/checkout-api",
-      tier: "tier 1",
-      environments: "production, staging",
-    },
-  );
-  await upsert(
-    "service",
-    "payments-worker",
-    "Traitement asynchrone des paiements et webhooks",
-    "svc_pay_01",
-    {
-      owner: ctx.entryId.Payments,
-      repository: "skylark/payments",
-      tier: "tier 1",
-      environments: "production, staging",
-    },
-  );
-  await upsert("service", "web-storefront", "Front boutique — SSR et edge", "svc_sf_01", {
-    owner: ctx.entryId.Storefront,
+  await service("web-storefront", "Storefront", {
     repository: "skylark/storefront",
     tier: "tier 2",
     environments: "production",
   });
-  await upsert("service", "auth-service", "Authentification, SSO et sessions", "svc_auth_01", {
-    owner: ctx.entryId.Platform,
+  await service("auth-service", "Platform", {
     repository: "skylark/auth",
     tier: "tier 1",
     environments: "production, staging",
-  });
-  await upsert("environment", "production", "Trafic client réel — bipe", "env_prod", {
-    paging: "pages",
-  });
-  await upsert("environment", "staging", "Pré-production — silencieux", "env_staging", {
-    paging: "silent",
   });
 }
 
@@ -996,7 +988,7 @@ async function ensureIncident(tx: Tx, ctx: Ctx, inc: Inc) {
       severityId: inc.sev ? ctx.sevId[inc.sev]! : null,
       phase: inc.phase,
       statusId,
-      serviceEntryId: ctx.entryId[inc.service] ?? null,
+      serviceId: ctx.serviceId[inc.service] ?? null,
       creatorMemberId: inc.source === "web" && inc.lead ? ctx.memberId(inc.lead) : null,
       source: inc.source,
       customFields: inc.customFields ?? {},
@@ -1832,7 +1824,7 @@ async function ensureOnCall(tx: Tx, ctx: Ctx) {
         {
           id: "l4",
           kind: "level",
-          targets: [{ kind: "team", teamEntryId: ctx.entryId.Platform! }],
+          targets: [{ kind: "team", teamId: ctx.teamId.Platform! }],
           urgency: "high",
           ackTimeoutMinutes: 20,
           retries: 0,
@@ -1934,7 +1926,7 @@ async function ensureOnCall(tx: Tx, ctx: Ctx) {
             {
               id: "l2",
               kind: "level",
-              targets: [{ kind: "team", teamEntryId: ctx.entryId.Platform! }],
+              targets: [{ kind: "team", teamId: ctx.teamId.Platform! }],
               urgency: "high",
               ackTimeoutMinutes: 15,
               retries: 0,
@@ -2516,7 +2508,7 @@ function defaultMappingsFor(
   switch (kind) {
     case "datadog":
       return [
-        { attribute: "service", path: "scope.service", catalogTypeKey: "service" },
+        { attribute: "service", path: "scope.service" },
         { attribute: "priority", path: "priority" },
         { attribute: "environment", path: "scope.env" },
         { attribute: "region", path: "scope.region" },
@@ -2524,17 +2516,17 @@ function defaultMappingsFor(
     case "prometheus":
     case "grafana":
       return [
-        { attribute: "service", path: "labels.service", catalogTypeKey: "service" },
+        { attribute: "service", path: "labels.service" },
         { attribute: "environment", path: "labels.env" },
       ];
     case "sentry":
-      return [{ attribute: "service", path: "data.event.tags.service", catalogTypeKey: "service" }];
+      return [{ attribute: "service", path: "data.event.tags.service" }];
     case "uptime_kuma":
     case "cloudwatch":
       return [{ attribute: "environment", path: "", value: "production" }];
     default:
       return [
-        { attribute: "service", path: "service", catalogTypeKey: "service" },
+        { attribute: "service", path: "service" },
         { attribute: "environment", path: "environment" },
         { attribute: "priority", path: "priority" },
       ];
@@ -2542,7 +2534,7 @@ function defaultMappingsFor(
 }
 
 /**
- * The public status page of the design: five components bound to the catalog,
+ * The public status page of the design: five components bound to services,
  * their 90 days of history, the public incident of INC-217 with its four
  * updates, the August maintenance, 128 confirmed subscribers, three approved
  * templates. The projection is written so apps/status serves it at once.
@@ -2612,7 +2604,7 @@ async function ensureStatusPage(tx: Tx, ctx: Ctx) {
         tenantId,
         pageId,
         name,
-        serviceEntryId: ctx.entryId[svc] ?? null,
+        serviceId: ctx.serviceId[svc] ?? null,
         position: i,
         state: "operational",
       })
@@ -2945,7 +2937,7 @@ async function ensureAiAndChanges(tx: Tx, ctx: Ctx) {
     tenantId,
     enabled: true,
     capabilities: {},
-    sources: { catalog: true, incidents: true, changeEvents: true, docs: false },
+    sources: { services: true, incidents: true, changeEvents: true, docs: false },
     privateOptIn: false,
     provider: null,
   });
@@ -3003,7 +2995,7 @@ async function ensureAiAndChanges(tx: Tx, ctx: Ctx) {
       kind: "deploy",
       title: "payments-worker v2026.08.26-1 — pool size ×2",
       description: "Doubles the database connection pool of payments-worker (PR #482).",
-      serviceEntryId: ctx.entryId["payments-worker"] ?? null,
+      serviceId: ctx.serviceId["payments-worker"] ?? null,
       environment: "production",
       actorName: "CI · github-actions",
       externalRef: "https://github.com/skylark/payments-worker/pull/482",
@@ -3015,7 +3007,7 @@ async function ensureAiAndChanges(tx: Tx, ctx: Ctx) {
       kind: "deploy",
       title: "payments-worker rollback → v2026.08.25-3",
       description: "Rollback of the pool change.",
-      serviceEntryId: ctx.entryId["payments-worker"] ?? null,
+      serviceId: ctx.serviceId["payments-worker"] ?? null,
       environment: "production",
       actorName: "Amélie Laurent",
       externalRef: "https://github.com/skylark/payments-worker/actions/runs/9931",
@@ -3027,7 +3019,7 @@ async function ensureAiAndChanges(tx: Tx, ctx: Ctx) {
       kind: "flag",
       title: "checkout.new-address-form → 25 %",
       description: "Progressive rollout of the new address form.",
-      serviceEntryId: ctx.entryId["checkout-api"] ?? null,
+      serviceId: ctx.serviceId["checkout-api"] ?? null,
       environment: "production",
       actorName: "Thomas Moreau",
       externalRef: null,
@@ -3039,7 +3031,7 @@ async function ensureAiAndChanges(tx: Tx, ctx: Ctx) {
       kind: "config",
       title: "CDN edge config push — cache TTL storefront",
       description: "TTL of storefront HTML lowered to 30 s.",
-      serviceEntryId: ctx.entryId["web-storefront"] ?? null,
+      serviceId: ctx.serviceId["web-storefront"] ?? null,
       environment: "production",
       actorName: "Lucas Girard",
       externalRef: null,
@@ -3049,76 +3041,35 @@ async function ensureAiAndChanges(tx: Tx, ctx: Ctx) {
   ]);
 }
 
-/** Two heartbeats and the managed source that carries their alerts: one healthy, one waiting for its first ping. */
 /**
- * The new model, seeded from the one the catalog already describes.
+ * The last link of the chain: the policy each team is paged through, and when
+ * each service was really seen.
  *
- * Services are normally *observed*: they appear the moment a signal names one.
- * A fresh demo has no live traffic, so the four services its alerts talk about
- * would exist nowhere, and the screens built on them — Services, the owner of
- * an incident, the unowned list on Home — would be empty on an instance whose
- * history is full. Seeding them from the catalog entries is not a shortcut
- * around observation: it is the same fact, written in the table the product
- * now reads.
- *
- * Runs after the escalation paths exist, because a team is only useful once it
- * has the policy it is paged through — the link the product had no way to
- * write until recently.
+ * It runs after the escalation paths exist — a team is only useful once it has
+ * the policy it is paged through — and after the alerts, because "last signal"
+ * is read from them rather than invented.
  */
-async function ensureServicesAndTeams(tx: Tx, ctx: Ctx) {
-  const entries = await tx
-    .select({
-      id: catalogEntries.id,
-      name: catalogEntries.name,
-      typeId: catalogEntries.typeId,
-      attributes: catalogEntries.attributes,
-    })
-    .from(catalogEntries)
-    .where(eq(catalogEntries.tenantId, tenantId));
+async function linkTeamPolicies(tx: Tx, ctx: Ctx) {
   const paths = await tx
     .select({ id: escalationPaths.id, name: escalationPaths.name })
     .from(escalationPaths)
     .where(eq(escalationPaths.tenantId, tenantId));
   const pathByName = new Map(paths.map((p) => [p.name, p.id]));
-
-  // Team entries first: a service points at one.
-  const teamIdByEntry = new Map<string, string>();
-  for (const e of entries.filter((x) => x.typeId === ctx.catType.team)) {
-    const attrs = (e.attributes ?? {}) as Record<string, unknown>;
-    const pathName = typeof attrs.escalation_path === "string" ? attrs.escalation_path : null;
-    const [row] = await tx
-      .insert(teams)
-      .values({
-        tenantId,
-        name: e.name,
-        policyPathId: pathName ? (pathByName.get(pathName) ?? null) : null,
-        chatChannel: typeof attrs.chat_channel === "string" ? attrs.chat_channel : null,
-      })
-      .onConflictDoUpdate({
-        target: [teams.tenantId, teams.name],
-        set: {
-          policyPathId: pathName ? (pathByName.get(pathName) ?? null) : null,
-          chatChannel: typeof attrs.chat_channel === "string" ? attrs.chat_channel : null,
-          updatedAt: new Date(),
-        },
-      })
-      .returning({ id: teams.id });
-    teamIdByEntry.set(e.id, row!.id);
-    const memberIds = Array.isArray(attrs.members) ? attrs.members.filter(isUuid) : [];
-    for (const memberId of memberIds) {
-      await tx
-        .insert(teamMembers)
-        .values({ tenantId, teamId: row!.id, memberId })
-        .onConflictDoNothing();
-    }
+  const policy: Record<string, string> = {
+    Platform: "Platform primary",
+    Payments: "Payments escalation",
+    Storefront: "Platform primary",
+  };
+  for (const [team, pathName] of Object.entries(policy)) {
+    const pathId = pathByName.get(pathName) ?? null;
+    if (!ctx.teamId[team]) continue;
+    await tx
+      .update(teams)
+      .set({ policyPathId: pathId, updatedAt: new Date() })
+      .where(eq(teams.id, ctx.teamId[team]!));
   }
 
-  for (const e of entries.filter((x) => x.typeId === ctx.catType.service)) {
-    const attrs = (e.attributes ?? {}) as Record<string, unknown>;
-    const ownerEntry = typeof attrs.owner === "string" ? attrs.owner : null;
-    const ownerTeamId = ownerEntry ? (teamIdByEntry.get(ownerEntry) ?? null) : null;
-    // When it was seen is read from the alerts that name it, not invented: the
-    // "last signal" column has to mean what it says.
+  for (const [key, id] of Object.entries(ctx.serviceId)) {
     const [seen] = await tx
       .select({
         // Aggregates come back as text from the driver, so they are coerced
@@ -3127,31 +3078,19 @@ async function ensureServicesAndTeams(tx: Tx, ctx: Ctx) {
         last: sql<string | null>`max(${alerts.createdAt})`,
       })
       .from(alerts)
-      .where(
-        and(eq(alerts.tenantId, tenantId), sql`${alerts.attributes} ->> 'service' = ${e.name}`),
-      );
+      .where(and(eq(alerts.tenantId, tenantId), sql`${alerts.attributes} ->> 'service' = ${key}`));
     await tx
-      .insert(services)
-      .values({
-        tenantId,
-        key: e.name,
-        ownerTeamId,
-        confirmed: true,
-        seenIn: [],
+      .update(services)
+      .set({
         ...(seen?.first ? { firstSeenAt: new Date(seen.first) } : {}),
         lastSeenAt: seen?.last ? new Date(seen.last) : null,
+        updatedAt: new Date(),
       })
-      .onConflictDoUpdate({
-        target: [services.tenantId, services.key],
-        set: { ownerTeamId, confirmed: true, updatedAt: new Date() },
-      });
+      .where(eq(services.id, id));
   }
 }
 
-function isUuid(v: unknown): v is string {
-  return typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v);
-}
-
+/** Two heartbeats and the managed source that carries their alerts: one healthy, one waiting for its first ping. */
 async function ensureHeartbeats(tx: Tx, ctx: Ctx) {
   const [present] = await tx
     .select({ id: heartbeats.id })
@@ -3190,7 +3129,7 @@ async function ensureHeartbeats(tx: Tx, ctx: Ctx) {
       tenantId,
       name: "Sauvegarde nocturne PostgreSQL",
       description: "pg_dump vers le bucket froid, 03:15 Europe/Paris",
-      serviceEntryId: ctx.entryId["payments-worker"] ?? null,
+      serviceId: ctx.serviceId["payments-worker"] ?? null,
       intervalSeconds: 86_400,
       graceSeconds: 3_600,
       encryptedToken: encryptSecret(randomBytes(16).toString("hex")),
@@ -3201,7 +3140,7 @@ async function ensureHeartbeats(tx: Tx, ctx: Ctx) {
       tenantId,
       name: "Purge des sessions expirées",
       description: "cron toutes les 5 min sur auth-service",
-      serviceEntryId: ctx.entryId["auth-service"] ?? null,
+      serviceId: ctx.serviceId["auth-service"] ?? null,
       intervalSeconds: 300,
       graceSeconds: 60,
       encryptedToken: encryptSecret(randomBytes(16).toString("hex")),

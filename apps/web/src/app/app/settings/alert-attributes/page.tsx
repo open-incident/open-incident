@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { eq } from "drizzle-orm";
-import { alertAttributes, alertSources, catalogTypes, withTenant } from "@openincident/db";
+import { alertAttributes, alertAttributeTypeOf, alertSources, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { isManager, requireMember } from "@/lib/session";
 import { attributeCoverage } from "@/lib/alerting-setup";
@@ -43,9 +43,9 @@ const icon: React.CSSProperties = {
 
 /**
  * The alert attributes: the vocabulary every source maps its payload onto and
- * every route reasons about. Each has a type — text, list, priority, or a
- * catalog type when the workspace wants to bind names to entries — can be
- * required, and says what a repeat of the same alert does to its value. The
+ * every route reasons about. Each has a type — text, list, priority, or the
+ * two that name a real row, service and team — can be required, and says what
+ * a repeat of the same alert does to its value. The
  * coverage column tells how many recent alerts carry it, and how many sources.
  */
 export default async function AlertAttributesPage({
@@ -63,11 +63,6 @@ export default async function AlertAttributesPage({
       .from(alertAttributes)
       .where(eq(alertAttributes.tenantId, tenant.id))
       .orderBy(alertAttributes.position, alertAttributes.createdAt);
-    const types = await tx
-      .select({ key: catalogTypes.key, name: catalogTypes.name })
-      .from(catalogTypes)
-      .where(eq(catalogTypes.tenantId, tenant.id))
-      .orderBy(catalogTypes.position);
     const sources = await tx
       .select({ id: alertSources.id, name: alertSources.name, mappings: alertSources.mappings })
       .from(alertSources)
@@ -77,7 +72,7 @@ export default async function AlertAttributesPage({
       tenant.id,
       rows.map((r) => r.key),
     );
-    return { rows, types, sources, coverage };
+    return { rows, sources, coverage };
   });
   const editing = edit === "new" ? null : data.rows.find((r) => r.id === edit);
   const showForm = edit === "new" || Boolean(editing);
@@ -172,8 +167,12 @@ export default async function AlertAttributesPage({
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <span style={label}>{t("settings.attributes.type")}</span>
-            <select name="type" defaultValue={editing?.type ?? "text"} style={control}>
-              {(["text", "list", "priority", "catalog"] as const).map((k) => (
+            <select
+              name="type"
+              defaultValue={editing ? alertAttributeTypeOf(editing) : "text"}
+              style={control}
+            >
+              {(["text", "list", "priority", "service", "team"] as const).map((k) => (
                 <option key={k} value={k}>
                   {t(`settings.attributes.kind.${k}`)}
                 </option>
@@ -191,21 +190,6 @@ export default async function AlertAttributesPage({
               className="oi-field"
               style={control}
             />
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={label}>{t("settings.attributes.catalogType")}</span>
-            <select
-              name="catalogTypeKey"
-              defaultValue={editing?.catalogTypeKey ?? ""}
-              style={control}
-            >
-              <option value="">{t("settings.attributes.catalogNone")}</option>
-              {data.types.map((ty) => (
-                <option key={ty.key} value={ty.key}>
-                  {ty.name}
-                </option>
-              ))}
-            </select>
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <span style={label}>{t("settings.attributes.merge")}</span>
@@ -315,14 +299,7 @@ export default async function AlertAttributesPage({
                 )}
               </span>
               <span style={{ fontSize: 12 }}>
-                {t(`settings.attributes.kind.${a.type}`)}
-                {a.type === "catalog" && a.catalogTypeKey ? (
-                  <span style={{ color: "var(--ink-3)" }}>
-                    {" "}
-                    ·{" "}
-                    {data.types.find((ty) => ty.key === a.catalogTypeKey)?.name ?? a.catalogTypeKey}
-                  </span>
-                ) : null}
+                {t(`settings.attributes.kind.${alertAttributeTypeOf(a)}`)}
               </span>
               <span
                 style={{

@@ -5,7 +5,7 @@
  * (an alert label, a monitor, later a span) and waits in "seen in traffic"
  * until someone gives it an owner. That single click is the whole configuration:
  * from then on, an alert naming the service pages the owner team's policy, and
- * no rule, catalogue or schema was needed to get there.
+ * no rule and no schema were needed to get there.
  */
 
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";

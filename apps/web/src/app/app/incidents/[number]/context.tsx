@@ -31,12 +31,12 @@ export async function ContextTab({
   inc,
   tenantId,
   services,
-  serviceEntryId,
+  serviceId,
 }: {
   inc: IncidentDetail;
   tenantId: string;
   services: IncidentService[];
-  serviceEntryId: string | null;
+  serviceId: string | null;
 }) {
   const t = await getT();
   const configured = aiConfigured();
@@ -44,11 +44,11 @@ export async function ContextTab({
     onCall: await onCallNow(tx, tenantId),
     monitors: await listMonitors(tx, tenantId),
     changes: await recentChanges(tx, tenantId, {
-      serviceEntryId,
+      serviceId,
       declaredAt: inc.row.declaredAt,
       resolvedAt: inc.row.resolvedAt,
     }),
-    runbooks: await runbooksForService(tx, tenantId, serviceEntryId),
+    runbooks: await runbooksForService(tx, tenantId, serviceId),
   }));
   const keys = new Set(services.map((s) => s.key));
   const mine = monitors.filter((m) => m.serviceKey && keys.has(m.serviceKey));

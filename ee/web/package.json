@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@better-auth/sso": "1.7.2",
-    "@openincident/catalog": "workspace:*",
     "@openincident/config": "workspace:*",
     "@openincident/crypto": "workspace:*",
     "@openincident/db": "workspace:*",

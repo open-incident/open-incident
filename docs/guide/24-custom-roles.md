@@ -2,18 +2,16 @@
 title: Custom roles
 section: enterprise
 order: 24
-summary: Roles as permission sets on a built-in base; the twelve permissions; how to design a role and what changes for its holders.
+summary: Roles as permission sets on a built-in base; the ten permissions; how to design a role and what changes for its holders.
 ---
 
 ## The permission model
 
-Every control in the product asks one question — _may this member do this here?_ — answered by twelve permissions:
+Every control in the product asks one question — _may this member do this here?_ — answered by ten permissions:
 
 | Permission           | Grants                                                               |
 | -------------------- | -------------------------------------------------------------------- |
 | `incidents.respond`  | Declare, update, assign, resolve incidents; act on alerts.           |
-| `catalog.entries`    | Create and edit catalog entries.                                     |
-| `catalog.manage`     | Catalog types, imports, deletions, runbooks.                         |
 | `oncall.manage`      | Schedules, rotations, overrides, escalation paths.                   |
 | `statuspages.manage` | Status pages, components, maintenances.                              |
 | `insights.manage`    | Pay reports and exports in Reports.                                  |
@@ -24,7 +22,9 @@ Every control in the product asks one question — _may this member do this here
 | `settings.platform`  | Integrations, API & webhooks, AI governance.                         |
 | `audit.view`         | The audit log.                                                       |
 
-The built-in roles are fixed sets: **Owner** and **Admin** hold everything; **Responder** holds `incidents.respond` and `catalog.entries`; **Viewer** holds nothing and reads. Nothing changes for them.
+The built-in roles are fixed sets: **Owner** and **Admin** hold everything; **Responder** holds `incidents.respond`; **Viewer** holds nothing and reads. Nothing changes for them.
+
+> Instances upgraded from a version that still had the service catalogue may see two extra checkboxes in the form, `catalog.entries` and `catalog.manage`. The catalogue they governed no longer exists and they grant nothing; leave them unticked.
 
 ## Creating a role
 
@@ -40,17 +40,17 @@ The built-in roles are fixed sets: **Owner** and **Admin** hold everything; **Re
 
 ## Examples
 
-| Role               | Base      | Permissions                                                 | Who it is for                                                                          |
-| ------------------ | --------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Alerting admin     | responder | `incidents.respond`, `catalog.entries`, `settings.alerting` | The SRE who tunes routes and sources but should not touch members or integrations.     |
-| Status page editor | viewer    | `statuspages.manage`                                        | Support or communications: publishes and schedules maintenances, never runs incidents. |
-| Auditor            | viewer    | `audit.view`                                                | Compliance: reads the audit log, nothing else.                                         |
-| Catalog owner      | responder | `incidents.respond`, `catalog.entries`, `catalog.manage`    | The platform team that owns the service catalog.                                       |
+| Role               | Base      | Permissions                              | Who it is for                                                                          |
+| ------------------ | --------- | ---------------------------------------- | -------------------------------------------------------------------------------------- |
+| Alerting admin     | responder | `incidents.respond`, `settings.alerting` | The SRE who tunes routes and sources but should not touch members or integrations.     |
+| Status page editor | viewer    | `statuspages.manage`                     | Support or communications: publishes and schedules maintenances, never runs incidents. |
+| Auditor            | viewer    | `audit.view`                             | Compliance: reads the audit log, nothing else.                                         |
+| On-call manager    | responder | `incidents.respond`, `oncall.manage`     | The team lead who owns the schedules and the escalation paths, and nothing else.       |
 
 ## What changes for a holder
 
 - The **Settings** entry appears when the role holds any settings permission; the settings navigation shows only the screens the role holds, and **Settings** lands on the first of them.
-- On every screen, the controls that manage that area appear or disappear with the corresponding permission — the catalog's type and import controls with `catalog.manage`, the on-call editing with `oncall.manage`…
+- On every screen, the controls that manage that area appear or disappear with the corresponding permission — the status page's components and maintenances with `statuspages.manage`, the on-call editing with `oncall.manage`…
 - Server actions and API routes enforce the same permissions: a control that was hidden would be refused anyway.
 - Without the `customRoles` entitlement, holders fall back to their base role.
 

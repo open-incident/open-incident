@@ -13,7 +13,7 @@ Each case is a story you can replay in the demo workspace. Steps name the screen
 
 **Preparation (once)**
 
-1. **Catalog**: the service `checkout-api` exists with the owner team **Payments**; the team's **escalation path** attribute names _Payments escalation_.
+1. **Services**: `checkout-api` was seen in the traffic long ago and given the owner team **Payments**; that team is paged through _Payments escalation_.
 2. **On-call → Escalation paths**: _Payments escalation_ is published with a level 1 paging the _Payments_ schedule (on call now, high urgency, ack 5 min, 2 retries) and a level 2 paging the _Platform primary_ schedule.
 3. **On-call → Schedules**: the _Payments_ schedule is published with its rotation.
 4. **Settings → Alert sources → + New source → Datadog**: copy the endpoint and secret into a Datadog webhook; attach it to the monitors' notifications.
@@ -22,7 +22,7 @@ Each case is a story you can replay in the demo workspace. Steps name the screen
 
 **During the incident**
 
-1. Datadog posts. The alert appears under **Alerts → Firing** with `service: checkout-api`, priority P1 (high urgency). The **History** reads _Routed by « Datadog → catalog »_, _Incident INC-231 created in triage_, _Level 1 notified — Karim_.
+1. Datadog posts. The alert appears under **Alerts → Firing** with `service: checkout-api`, priority P1 (high urgency). The **History** reads _Routed by « Datadog → service owner »_, _Incident INC-231 created in triage_, _Level 1 notified — Karim_.
 2. Karim receives an SMS with a one-tap link and taps **Acknowledge**. The alert's card reads _Acknowledged by Karim, 1 minute after the page — escalation timers stopped_; Karim is added to the incident.
 3. In **Incidents → Triage**, Karim **accepts** INC-231 with severity SEV2. The incident becomes active; the announcement rule _Announce SEV1 / SEV2_ posts to the workspace and to the Slack announcement channel; the channel `#inc-231-…` is created.
 4. Karim **assigns** himself incident lead, then **Share an update**: status _Investigating_, message _Checkout latency above 3 s in eu-west-1; investigating a deploy at 01:50_, next reminder 30 min. The incident's side panel lists the **Recent changes**: `checkout-api v2.41.0` deployed at 01:50 from CI.
@@ -33,15 +33,15 @@ Each case is a story you can replay in the demo workspace. Steps name the screen
 
 ## Case 2 — Onboarding a new team and its service
 
-1. **Catalog → Teams → + New entry**: _Search_, escalation path _Search escalation_, chat channel `#team-search`.
+1. **Services → Teams → + New team**: _Search_, chat channel `#team-search`, members.
 2. **On-call → Escalation paths → + New path** _Search escalation_: level 1 → schedule _Search_ (on call now, high urgency, ack 5 min), a **condition** _Working hours "EU business"?_ — YES: level 2 pages the _Search_ team members; NO: **delay** until _EU business_ opens, then level 2. **Publish v1**. **Test the path** names who would be paged right now.
 3. **On-call → Schedules → + New schedule** _Search_: weekly, handover Monday 09:00 Europe/Paris, members in order. **Publish**.
-4. **Catalog → Services → + New entry** `search-indexer`, owner **Search**, repository `acme/search-indexer`, tier 2. The routing chain on the right shows _incoming alert → search-indexer → Search → Search escalation_.
-5. **Catalog → search-indexer → Runbooks → Add**: title _Reindex procedure_, URL of the runbook in GitHub. It is fetched and shown on every incident of the service.
-6. **Settings → Heartbeats → New heartbeat** _Nightly reindex_, service `search-indexer`, every 24 h, grace 1 h. Put the URL at the end of the cron. Nothing fires before the first ping.
-7. **Status pages → Skylark status → + Component** _Search_, catalog service `search-indexer`.
+4. Back in **Services**, give the team _Search_ the path it is paged through — _Search escalation_. Until it is set, a service owned by _Search_ has an owner and still reaches nobody.
+5. **Settings → Heartbeats → New heartbeat** _Nightly reindex_, service `search-indexer`, every 24 h, grace 1 h. Put the URL at the end of the cron. Nothing fires before the first ping.
+6. The first signal naming `search-indexer` — that heartbeat, a monitor, a Datadog alert — makes the service appear under **Services → Seen in traffic**. **Assign owner → Search**: the service is confirmed and the chain is complete, _incoming alert → search-indexer → Search → Search escalation_.
+7. **Status pages → Skylark status → + Component** _Search_, service `search-indexer`.
 
-No route was touched: the existing dynamic route follows the catalog.
+No route was touched: the existing dynamic route follows the service to its owner team.
 
 ## Case 3 — The weekly on-call review
 
@@ -57,18 +57,21 @@ Enterprise edition, `OI_ENTITLEMENTS=sso,customRoles`.
 1. In Okta, create an OIDC web application; note the client id and secret.
 2. **Settings → Single sign-on → + Add a connection**: OpenID Connect, label _Okta_, issuer `https://acme.okta.com`, client id and secret, email domains `acme.example`, role of a new member _responder_, **Create the member on first sign-in**. **Create the connection**; copy the **Redirect URI** into Okta; assign the engineering group.
 3. Sign out; the sign-in page shows **Continue with Okta**. A first engineer signs in: a member is created as responder; **Settings → Audit log** shows _Okta SSO sign-in — new session for …_.
-4. **Settings → Provisioning (SCIM) → Enable and issue a token**; in Okta, configure the SCIM integration with the base URL and the token; enable create, update and deactivate; push the _Payments_ and _Search_ groups. **Catalog → Teams** now mirrors the groups' members.
-5. **Settings → Custom roles → + New role** _Alerting admin_: base responder, permissions `incidents.respond`, `catalog.entries`, `settings.alerting`. **Members & roles**: give it to the SRE. They now see **Settings** with the **Alerting** group only.
+4. **Settings → Provisioning (SCIM) → Enable and issue a token**; in Okta, configure the SCIM integration with the base URL and the token; enable create, update and deactivate; push the _Payments_ and _Search_ groups. **Services → Teams** now mirrors the groups' members.
+5. **Settings → Custom roles → + New role** _Alerting admin_: base responder, permissions `incidents.respond`, `settings.alerting`. **Members & roles**: give it to the SRE. They now see **Settings** with the **Alerting** group only.
 6. Once every owner has signed in through Okta at least once, edit the connection's intent by recreating it with **SSO only** — passwords are refused for `acme.example`; the guard refuses the change if it would lock every owner out.
 7. An engineer leaves: Okta deactivates the user; the member is **disabled** in the product, refused at the door, and everything they did stays attributed.
 
-## Case 5 — Migrating the service catalog from Backstage
+## Case 5 — Adopting the services your alerts already name
 
-1. **Settings → API & webhooks → + New key** _Catalog importer_, scope `write`.
-2. From a laptop or CI: `pnpm catalog:import -- --source backstage --url https://backstage.acme.example --token … --api https://acme.your-domain.example --key oi_live_… --dry-run` prints what would be sent — groups as teams, components as services with owner, repository and tier.
-3. Run without `--dry-run`: _entries: 42 created · 0 updated · 0 unchanged_. Run again: _0 created · 0 updated · 42 unchanged_.
-4. Put the command in a nightly job. Add `--lock` if the catalog must be owned by Backstage: the **Team** and **Service** types show _Managed by code_ and the screen stops offering edits.
-5. Squads are not in Backstage: **Catalog → + New type** _Squads_ with a _Team_ reference, then **Import CSV** from the HR export — matched by `external_id`, so re-imports update instead of duplicating.
+**Goal**: a workspace that has been receiving alerts for a fortnight, where nobody has yet said who owns what.
+
+1. **Services → Seen in traffic** lists every name the signals have used — `checkout-api`, `search-indexer`, `billing-worker`… — with where each was seen, its last signal and its incidents over 90 days. Nothing was declared: the list wrote itself.
+2. The banner counts them: _7 services seen in your alerts have no owner._ **Assign owners** narrows the list to those.
+3. Beside each row, the product suggests an owner **read from who actually acknowledged that service's alerts** — and says _no signal yet to suggest an owner_ rather than inventing one. Accept the suggestion, or pick another team.
+4. That single click writes the owner and confirms the service. From the next event on, an alert naming it pages that team's escalation path. No route was edited, no schema was designed.
+5. Open a service to check the rest of the chain: **Owner** names the team and the path it is paged through; when the team has none, the card says _no policy on this team yet_ and offers the published paths right there.
+6. A name nobody recognises is a name your monitoring is emitting: fix it at the source, or leave it. An unowned service pages nobody, and its page says so.
 
 ## Case 6 — Running an incident from Slack
 

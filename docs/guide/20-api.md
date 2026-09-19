@@ -13,11 +13,11 @@ The instance serves its own OpenAPI 3 document at `/api/v1/openapi.json`, built 
 
 Create keys in **Settings → API & webhooks**. A key is `oi_live_` followed by 32 hex characters, shown once; the instance stores its SHA-256. Send it as `Authorization: Bearer oi_live_…` to `https://<workspace host>/api/v1/…` — the key resolves its own workspace, whatever host the request came in on.
 
-| Scope             | Allows                                                                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `read`            | Reading incidents, follow-ups, the catalog, change events, status pages.                                                                    |
-| `write`           | Everything, including declaring and updating incidents, writing the catalog, recording change events. Implies `read` and `incident:create`. |
-| `incident:create` | Declaring incidents only — the narrow scope for an ingestion script.                                                                        |
+| Scope             | Allows                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `read`            | Reading incidents, follow-ups, change events, status pages.                                                               |
+| `write`           | Everything, including declaring and updating incidents and recording change events. Implies `read` and `incident:create`. |
+| `incident:create` | Declaring incidents only — the narrow scope for an ingestion script.                                                      |
 
 ## The contract
 
@@ -41,10 +41,6 @@ Create keys in **Settings → API & webhooks**. A key is `oi_live_` followed by 
 | `GET /incidents/{ref}/post-mortem`                        | The post-mortem as sections and as one markdown document (`404 no_post_mortem` until it exists).                                                                                                                                                             |
 | `GET /follow-ups`                                         | Across incidents, filtered by status.                                                                                                                                                                                                                        |
 | `GET` / `POST /change-events`                             | Deploys, flags and config changes (see below).                                                                                                                                                                                                               |
-| `GET` / `POST /catalog/types`                             | Types and their attribute schemas; create or update by key.                                                                                                                                                                                                  |
-| `GET` / `POST /catalog/entries`                           | Entries, filtered by type; upsert one or a list.                                                                                                                                                                                                             |
-| `GET` / `DELETE /catalog/entries/{id}`                    | One entry with what references it; deletion refused with `409 entry_in_use` while referenced.                                                                                                                                                                |
-| `POST /catalog/import`                                    | A whole bundle in one transaction.                                                                                                                                                                                                                           |
 | `GET /status-pages`, `GET /status-pages/{slug}/incidents` | Pages and their public incidents.                                                                                                                                                                                                                            |
 
 ```bash
@@ -87,10 +83,6 @@ export function verify(rawBody, headers, secret) {
 
 Failures are retried three times, listed with their status, and can be resent by hand; an endpoint failing for seven days is disabled. Webhooks fire after the database commit, never inside it.
 
-## The catalog importer
-
-A CLI that reads Backstage, a `catalog-info.yaml`, a file or a command and talks to `POST /catalog/import` — described in [Catalog](catalog#the-importer-cli).
-
 ## What is not in the API
 
-Members, roles and settings are managed from the product (and, for members, through SCIM in the enterprise edition). Alerts arrive through the alert sources' own ingest endpoints, not through the API keys.
+Members, roles and settings are managed from the product (and, for members and teams, through SCIM in the enterprise edition). Services and teams have no endpoints of their own: a service appears when a signal names it, and its owner is set in the product. Alerts arrive through the alert sources' own ingest endpoints, not through the API keys.

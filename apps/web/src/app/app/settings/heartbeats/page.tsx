@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 import { decryptSecret } from "@openincident/crypto";
-import { catalogEntries, catalogTypes, heartbeats, withTenant } from "@openincident/db";
+import { heartbeats, services, withTenant } from "@openincident/db";
 import { isManagerRole } from "@openincident/config";
 import { heartbeatPingUrl } from "@openincident/oncall";
 import { getT } from "@/i18n/server";
@@ -27,23 +27,17 @@ export default async function HeartbeatsPage({
   const manages = isManagerRole(member);
   const data = await withTenant(tenant.id, async (tx) => {
     const rows = await tx
-      .select({ hb: heartbeats, serviceName: catalogEntries.name })
+      .select({ hb: heartbeats, serviceName: services.key })
       .from(heartbeats)
-      .leftJoin(catalogEntries, eq(catalogEntries.id, heartbeats.serviceEntryId))
+      .leftJoin(services, eq(services.id, heartbeats.serviceId))
       .where(eq(heartbeats.tenantId, tenant.id))
       .orderBy(asc(heartbeats.name));
-    const [svcType] = await tx
-      .select({ id: catalogTypes.id })
-      .from(catalogTypes)
-      .where(eq(catalogTypes.key, "service"));
-    const services = svcType
-      ? await tx
-          .select({ id: catalogEntries.id, name: catalogEntries.name })
-          .from(catalogEntries)
-          .where(eq(catalogEntries.typeId, svcType.id))
-          .orderBy(asc(catalogEntries.name))
-      : [];
-    return { rows, services };
+    const known = await tx
+      .select({ id: services.id, name: services.key })
+      .from(services)
+      .where(eq(services.tenantId, tenant.id))
+      .orderBy(asc(services.key));
+    return { rows, services: known };
   });
   const tone = (s: "waiting" | "up" | "down") =>
     s === "up"
@@ -336,7 +330,7 @@ export default async function HeartbeatsPage({
               </div>
               <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <span style={label}>{t("heartbeats.service")}</span>
-                <select name="serviceEntryId" defaultValue="" className="oi-field" style={control}>
+                <select name="serviceId" defaultValue="" className="oi-field" style={control}>
                   <option value="">—</option>
                   {data.services.map((s) => (
                     <option key={s.id} value={s.id}>

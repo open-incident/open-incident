@@ -18,7 +18,7 @@ summary: Five tabs over 30, 90 or 365 days, each compared with the previous peri
 | **Median acknowledgement**         | From detection to the first acknowledgement (TTA).                                |
 | **Median resolution**              | From detection to resolution (TTR).                                               |
 | **Incidents per week / per month** | The current period is partial — the chart says so rather than showing a collapse. |
-| **By severity**, **By service**    | The service dimension comes from the catalog.                                     |
+| **By severity**, **By service**    | The service dimension is the incident's affected service.                         |
 
 ## Alerts
 
@@ -54,7 +54,7 @@ summary: Five tabs over 30, 90 or 365 days, each compared with the previous peri
 | ------------------------ | --------------------------------------------------------------------------- |
 | **Created**, **Closed**  | In the period.                                                              |
 | **Median closure**       | From creation to done, against the P1 policy.                               |
-| **Closure rate by team** | Teams come from the catalog's service owners.                               |
+| **Closure rate by team** | Teams are the owner teams of the services involved.                         |
 | **Overdue now**          | With the priority and the days late, and a link to the **Follow-ups** view. |
 
 ## On-call pay

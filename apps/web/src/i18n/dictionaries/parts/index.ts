@@ -23,6 +23,7 @@ import { statusPagesPart } from "./status-pages";
 import { settingsPart } from "./settings";
 import { bellPart } from "./bell";
 import { syntheticPart } from "./synthetic";
+import { servicesPart } from "./services";
 
 export const partsEn = {
   ...incidentsPart.en,
@@ -32,6 +33,7 @@ export const partsEn = {
   ...settingsPart.en,
   ...bellPart.en,
   ...syntheticPart.en,
+  ...servicesPart.en,
 } as const;
 
 export const partsFr = {
@@ -42,6 +44,7 @@ export const partsFr = {
   ...settingsPart.fr,
   ...bellPart.fr,
   ...syntheticPart.fr,
+  ...servicesPart.fr,
 };
 
 export const partsDe = {
@@ -52,4 +55,5 @@ export const partsDe = {
   ...settingsPart.de,
   ...bellPart.de,
   ...syntheticPart.de,
+  ...servicesPart.de,
 };

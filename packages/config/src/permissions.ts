@@ -10,10 +10,8 @@ import type { MemberRole } from "./index";
 export const PERMISSIONS = [
   /** Declare, update, assign, resolve incidents; act on alerts. */
   "incidents.respond",
-  /** Create and edit catalog entries. */
-  "catalog.entries",
-  /** Catalog types, imports, deletions, runbooks. */
-  "catalog.manage",
+  /** Adopt a service, give it an owner, set that owner's policy, its runbooks. */
+  "services.manage",
   /** Schedules, rotations, overrides, escalation paths. */
   "oncall.manage",
   /** Status pages, components, maintenances. */
@@ -42,7 +40,7 @@ const ALL: readonly Permission[] = PERMISSIONS;
 export const ROLE_PERMISSIONS: Record<MemberRole, readonly Permission[]> = {
   owner: ALL,
   admin: ALL,
-  responder: ["incidents.respond", "catalog.entries"],
+  responder: ["incidents.respond"],
   viewer: [],
 };
 
@@ -94,7 +92,7 @@ export function managePermissionForPath(pathname: string): Permission {
   }
   if (p.startsWith("/app/on-call")) return "oncall.manage";
   if (p.startsWith("/app/status-pages")) return "statuspages.manage";
-  if (p.startsWith("/app/catalog")) return "catalog.manage";
+  if (p.startsWith("/app/services")) return "services.manage";
   if (p.startsWith("/app/insights") || p.startsWith("/api/insights")) return "insights.manage";
   if (p.startsWith("/api/slack") || p.startsWith("/api/teams")) return "settings.platform";
   return "settings.workspace";

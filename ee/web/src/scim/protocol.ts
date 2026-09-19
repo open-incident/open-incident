@@ -207,7 +207,7 @@ export function schemas(base: string) {
       schemas: [SCHEMA_SCHEMA],
       id: SCHEMA_GROUP,
       name: "Group",
-      description: "A catalog team",
+      description: "A team of the workspace",
       attributes: [
         attr("displayName", "string", { required: true }),
         attr("externalId", "string"),

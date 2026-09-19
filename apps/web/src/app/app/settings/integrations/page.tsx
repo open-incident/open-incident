@@ -46,7 +46,7 @@ type Card = {
   /** The glyph to draw; defaults to the card's id (see icons.tsx). */
   icon?: string;
   name: string;
-  category: "sources" | "trackers" | "docs" | "chat" | "sso" | "catalog" | "migration";
+  category: "sources" | "trackers" | "docs" | "chat" | "sso" | "iac" | "migration";
   kind?: string;
   connect?:
     | "slack"
@@ -70,7 +70,7 @@ type Card = {
 };
 
 /**
- * Settings → Integrations: the catalog of connectors. Alert sources and the
+ * Settings → Integrations: every connector, in one grid. Alert sources and the
  * Slack app are live; video-call links are a template attached to every new
  * incident; trackers, Teams and SSO are drawn with their milestone, never as
  * buttons that do nothing. The Slack connect flow is the design's three-step
@@ -296,23 +296,9 @@ export default async function IntegrationsPage({
       desc: t("settings.integrations.desc.scim"),
     },
     {
-      id: "backstage",
-      name: "Backstage",
-      category: "catalog",
-      href: "/app/settings/api",
-      desc: t("settings.integrations.desc.backstage"),
-    },
-    {
-      id: "cli",
-      name: t("settings.integrations.importerName"),
-      category: "catalog",
-      href: "/app/catalog",
-      desc: t("settings.integrations.desc.importer"),
-    },
-    {
       id: "terraform",
       name: "Terraform",
-      category: "catalog",
+      category: "iac",
       soon: "V2+",
       desc: t("settings.integrations.desc.terraform"),
     },
@@ -359,16 +345,7 @@ export default async function IntegrationsPage({
       desc: t("settings.integrations.desc.sso"),
     },
   ];
-  const cats = [
-    "all",
-    "sources",
-    "chat",
-    "trackers",
-    "docs",
-    "sso",
-    "catalog",
-    "migration",
-  ] as const;
+  const cats = ["all", "sources", "chat", "trackers", "docs", "sso", "iac", "migration"] as const;
   const cat = cats.includes(q.cat as (typeof cats)[number])
     ? (q.cat as (typeof cats)[number])
     : "all";

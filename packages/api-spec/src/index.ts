@@ -122,38 +122,6 @@ export function openApiDocument(origin: string): OpenApiDocument {
       schemas: {
         Incident: incident,
         Error: error,
-        CatalogAttribute: {
-          type: "object",
-          required: ["key", "label", "type"],
-          properties: {
-            key: { type: "string", pattern: "^[a-z][a-z0-9_]{0,39}$" },
-            label: { type: "string" },
-            type: { type: "string", enum: ["text", "link", "select", "entry", "member_list"] },
-            refTypeKey: { type: "string", description: "For entry: the referenced type's key" },
-            options: { type: "array", items: { type: "string" }, description: "For select" },
-          },
-        },
-        CatalogTypeSpec: {
-          type: "object",
-          required: ["key", "name"],
-          properties: {
-            key: { type: "string" },
-            name: { type: "string" },
-            description: { type: "string" },
-            attributes: { type: "array", items: { $ref: "#/components/schemas/CatalogAttribute" } },
-          },
-        },
-        CatalogEntrySpec: {
-          type: "object",
-          required: ["type", "name"],
-          properties: {
-            type: { type: "string", example: "service" },
-            name: { type: "string" },
-            description: { type: "string" },
-            external_id: { type: "string" },
-            attributes: { type: "object", additionalProperties: true },
-          },
-        },
       },
     },
     security: [{ apiKey: [] }],
@@ -205,7 +173,10 @@ export function openApiDocument(origin: string): OpenApiDocument {
                       description: "Type name or id; the default type when omitted.",
                     },
                     severity: { type: "string", example: "SEV2" },
-                    service: { type: "string", description: "Catalog service name or id." },
+                    service: {
+                      type: "string",
+                      description: "The affected service, by key (`checkout-api`) or id.",
+                    },
                     mode: {
                       type: "string",
                       enum: ["live", "retrospective", "test"],
@@ -406,84 +377,6 @@ export function openApiDocument(origin: string): OpenApiDocument {
           responses: { "200": { description: "Follow-ups" }, ...errors },
         },
       },
-      "/catalog/types": {
-        get: {
-          summary: "Catalog types and their attribute schemas",
-          responses: { "200": { description: "Types" }, ...errors },
-        },
-        post: {
-          summary: "Create or update a catalog type by key (scope write)",
-          description:
-            "Attributes: `text`, `link`, `select` (with `options`), `entry` (with `refTypeKey`), `member_list`. Removing an attribute that still holds values answers 409 unless `force` is true. `lock: true` makes the type read-only in the UI (managed by code).",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  required: ["key", "name"],
-                  properties: {
-                    key: { type: "string", pattern: "^[a-z][a-z0-9_]{0,39}$", example: "squad" },
-                    name: { type: "string" },
-                    description: { type: "string" },
-                    attributes: {
-                      type: "array",
-                      items: { $ref: "#/components/schemas/CatalogAttribute" },
-                    },
-                    lock: { type: "boolean" },
-                    force: { type: "boolean" },
-                  },
-                },
-              },
-            },
-          },
-          responses: {
-            "200": { description: "Updated" },
-            "201": { description: "Created" },
-            "409": { description: "An attribute still holds values (attribute_in_use)" },
-            "422": { description: "Invalid body" },
-            ...errors,
-          },
-        },
-      },
-      "/catalog/import": {
-        post: {
-          summary: "Apply a whole catalog bundle in one transaction (scope write)",
-          description:
-            "What the catalog-importer CLI sends. Types are upserted by key, entries by external_id then by name; one invalid item and nothing is written (422 lists every problem). `source` is `code` or `sync`; `lock` freezes the declared types in the UI.",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  type: "object",
-                  properties: {
-                    types: {
-                      type: "array",
-                      items: { $ref: "#/components/schemas/CatalogTypeSpec" },
-                    },
-                    entries: {
-                      type: "array",
-                      items: { $ref: "#/components/schemas/CatalogEntrySpec" },
-                    },
-                    lock: { type: "boolean" },
-                    source: { type: "string", enum: ["code", "sync"] },
-                    force: { type: "boolean" },
-                  },
-                },
-              },
-            },
-          },
-          responses: {
-            "200": {
-              description: "Report: counts of created, updated and unchanged types and entries",
-            },
-            "413": { description: "More than 5000 items" },
-            "422": { description: "Invalid bundle (details list every problem)" },
-            ...errors,
-          },
-        },
-      },
       "/change-events": {
         get: {
           summary: "Deploys, flags and config changes (7 days by default)",
@@ -506,7 +399,10 @@ export function openApiDocument(origin: string): OpenApiDocument {
                     kind: { type: "string", enum: ["deploy", "flag", "config", "other"] },
                     title: { type: "string" },
                     description: { type: "string" },
-                    service: { type: "string", description: "Catalog service name or id" },
+                    service: {
+                      type: "string",
+                      description: "The service this changed, by key (`checkout-api`) or id",
+                    },
                     environment: { type: "string" },
                     actor: { type: "string" },
                     external_ref: { type: "string", format: "uri" },
@@ -537,70 +433,6 @@ export function openApiDocument(origin: string): OpenApiDocument {
           responses: {
             "200": { description: "Public incidents" },
             "404": { description: "No such page" },
-            ...errors,
-          },
-        },
-      },
-      "/catalog/entries": {
-        get: {
-          summary: "Catalog entries",
-          parameters: [
-            { name: "type", in: "query", schema: { type: "string", example: "service" } },
-          ],
-          responses: { "200": { description: "Entries" }, ...errors },
-        },
-        post: {
-          summary: "Create or update entries (scope write)",
-          description:
-            "One entry, or `{ type, entries: [...] }`. Matched by external_id, then by name. `entry` attributes accept an id, an external_id or a name of the referenced type; `member_list` accepts emails. One invalid row and nothing is written.",
-          requestBody: {
-            required: true,
-            content: {
-              "application/json": {
-                schema: {
-                  oneOf: [
-                    { $ref: "#/components/schemas/CatalogEntrySpec" },
-                    {
-                      type: "object",
-                      required: ["type", "entries"],
-                      properties: {
-                        type: { type: "string" },
-                        entries: {
-                          type: "array",
-                          items: { $ref: "#/components/schemas/CatalogEntrySpec" },
-                        },
-                      },
-                    },
-                  ],
-                },
-              },
-            },
-          },
-          responses: {
-            "200": { description: "Updated (counts and ids)" },
-            "201": { description: "Created (counts and ids)" },
-            "422": { description: "Invalid body (details list every problem)" },
-            ...errors,
-          },
-        },
-      },
-      "/catalog/entries/{id}": {
-        get: {
-          summary: "One entry and what references it",
-          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-          responses: {
-            "200": { description: "Entry" },
-            "404": { description: "No such entry" },
-            ...errors,
-          },
-        },
-        delete: {
-          summary: "Delete an entry (scope write) — refused while anything references it",
-          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-          responses: {
-            "204": { description: "Deleted" },
-            "404": { description: "No such entry" },
-            "409": { description: "Still referenced (entry_in_use, with referenced_by)" },
             ...errors,
           },
         },

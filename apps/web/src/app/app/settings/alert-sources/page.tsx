@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
  * The sources live with the alerts now.
  *
  * Kept as a redirect because the settings rail, the alerting checklist and the
- * integrations catalogue all point here, and a bookmark from before the move
+ * integrations list all point here, and a bookmark from before the move
  * should land on the screen rather than on a 404.
  */
 export default async function AlertSourcesSettingsPage({

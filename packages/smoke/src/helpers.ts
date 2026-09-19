@@ -53,16 +53,21 @@ export async function linkFromMail(
   email: string,
   pathFragment: string,
   since: number,
-  // A minute, not twenty seconds. Transactional mail shares one queue with the
-  // fan-out to a status page's subscribers, and the demo workspace has a
-  // hundred and twenty-eight of them: publishing one update puts that many
-  // messages ahead of the next reset link. The wait is long because the
-  // product really is slower here, not to paper over a flake.
+  // A minute. Mail the product queues — an invitation, a notification — can sit
+  // behind a fan-out to a status page's subscribers; the demo workspace has a
+  // hundred and twenty-eight. A reset link is sent straight to SMTP and does
+  // not queue, so for that one the wait is only generosity.
   timeoutMs = 60_000,
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const res = await fetch(`${MAILPIT_URL}/api/v1/messages?limit=30`);
+    // Asked of Mailpit by recipient rather than read off the last thirty
+    // messages: one publication to a hundred and twenty-eight subscribers used
+    // to push the message being waited for out of that window before the next
+    // poll, and the journey failed for a reason that had nothing to do with it.
+    const res = await fetch(
+      `${MAILPIT_URL}/api/v1/search?limit=50&query=${encodeURIComponent(`to:${email}`)}`,
+    );
     const { messages } = (await res.json()) as { messages: MailpitMessage[] };
     const hits = messages.filter(
       (m) =>

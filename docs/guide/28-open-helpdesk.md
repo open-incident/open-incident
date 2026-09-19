@@ -2,10 +2,10 @@
 title: Use case — running Open Helpdesk on Open Incident
 section: use-cases
 order: 28
-summary: A complete, step-by-step configuration for our first product, Open Helpdesk — what it is made of, what can break, the catalog to import, the alert sources, routes, heartbeats, on-call and status page, then a dry run and an honest assessment of what works as-is.
+summary: A complete, step-by-step configuration for our first product, Open Helpdesk — what it is made of, what can break, the services and the team, the alert sources, routes, heartbeats, on-call and status page, then a dry run and an honest assessment of what works as-is.
 ---
 
-Open Helpdesk is the support desk we ship (ticketing, bidirectional email, automations, SLA, portal). It runs as a hosted service — `*.stg.open-helpdesk.com` today, production soon, same code — with a control plane that provisions workspaces and bills them. This chapter configures Open Incident to watch it: the services to declare, the signals to send, who gets paged, what customers see. Every step names the screen and gives the payload or command to use; the last section says plainly what works today and what still needs a few lines in Open Helpdesk itself.
+Open Helpdesk is the support desk we ship (ticketing, bidirectional email, automations, SLA, portal). It runs as a hosted service — `*.stg.open-helpdesk.com` today, production soon, same code — with a control plane that provisions workspaces and bills them. This chapter configures Open Incident to watch it: the signals to send, the services they name, who gets paged, what customers see. Every step names the screen and gives the payload or command to use; the last section says plainly what works today and what still needs a few lines in Open Helpdesk itself.
 
 ## 1. What we are monitoring
 
@@ -33,11 +33,11 @@ Monitoring today is Better Stack (uptime on `www` and a canary tenant, a heartbe
 | **Workers**      | worker (7 queues), worker-cloud (3 queues)                                                                                                                                                                                                                                                 | No worker connected to Redis (the sampler's `worker` check); a scheduled tick missing — `sla-timers` stopped means SLA breaches go unnoticed; a queue piling failed jobs; the nightly `backup.sh` not running.                                                                   |
 | **Provisioning** | worker-cloud `provisioning` jobs, `packages/provisioning` steps engine, Brevo and Scaleway DNS APIs                                                                                                                                                                                        | A `create` job failing or stuck at a step (`create_tenant`, `seed_defaults`, `provided_mailbox`, `welcome_email`); the `mail_route` job failing DKIM verification for longer than expected; a purge job failing.                                                                 |
 
-Underneath them, five platform pieces that the sampler already measures and that every service depends on: the **web app** (a real tenant page), **PostgreSQL**, **Redis**, **S3 storage**, and the host (CPU, memory, disk). We declare them as services too: an incident on `postgres` is not a billing incident, and the status page's components need them.
+Underneath them, five platform pieces that the sampler already measures and that every service depends on: the **web app** (a real tenant page), **PostgreSQL**, **Redis**, **S3 storage**, and the host (CPU, memory, disk). They are services of their own here too: an incident on `postgres` is not a billing incident, and the status page's components need them.
 
 ### The principle
 
-Open Incident is not a prober: it does not fetch URLs, read metrics or tail logs. It receives **alerts** (from a monitoring tool, or from the application itself), routes them through the **catalog** to the right people, opens **incidents**, and tells customers on a **status page**. So the configuration has two halves: what we declare in Open Incident, and the small number of places where Open Helpdesk has to _tell_ Open Incident something.
+Open Incident is not a prober: it does not fetch URLs, read metrics or tail logs. It receives **alerts** (from a monitoring tool, or from the application itself), routes them to the right people — the team that owns the service the alert names — opens **incidents**, and tells customers on a **status page**. So the configuration has two halves: the little we set up in Open Incident, and the small number of places where Open Helpdesk has to _tell_ Open Incident something.
 
 ## 2. Workspace, members, roles
 
@@ -45,148 +45,30 @@ Open Incident is not a prober: it does not fetch URLs, read metrics or tail logs
 2. **Settings → Members & roles → + Invite** the team as **Responder**; the two people who own the configuration as **Admin**. A stakeholder who only reads gets **Viewer**.
 3. Each responder verifies a phone in **On-call → My notifications**, sets _SMS immediately, voice call after 3 minutes_ on the high-urgency rule, and links Slack if the workspace uses it.
 
-## 3. The catalog
+## 3. The team, and the services that appear on their own
 
 One owning team is enough for a small team; the routing still deserves the chain, because the day a second team exists, nothing else changes. If billing and provisioning are owned by different people than the platform, make two teams (_Platform_, _Cloud_) and set the owners accordingly.
 
-**Catalog → Import CSV**, or the importer with the bundle below, saved as `open-helpdesk-catalog.yaml`:
+**Services → Teams → + New team** _Open Helpdesk_, chat channel `#open-helpdesk-ops`, and the escalation path it is paged through, _Open Helpdesk on-call_ — the path created in step 4.
 
-```yaml
-types: []
-entries:
-  # Teams — the escalation path names the path created in step 4.
-  - {
-      type: team,
-      name: Open Helpdesk,
-      external_id: team_oh,
-      attributes: { escalation_path: Open Helpdesk on-call, chat_channel: "#open-helpdesk-ops" },
-    }
+That team is the only thing declared. The ten services below are **not** created by hand and there is nothing to import: each appears under **Services** the first time a signal names it, and the sampler of section 5 names all of them within a minute of being switched on. The work is to adopt them — **Services → Seen in traffic**, then **Assign owner → Open Helpdesk** on each row, which confirms the service and makes every later alert about it page the team's path.
 
-  # Environments — the `environment` attribute of every alert.
-  - { type: environment, name: production, external_id: env_prod, attributes: { paging: pages } }
-  - { type: environment, name: staging, external_id: env_stg, attributes: { paging: silent } }
+| Service        | What it covers                                                                |
+| -------------- | ----------------------------------------------------------------------------- |
+| `billing`      | Stripe webhook, checkout and portal gateway, dunning, trials                  |
+| `email`        | Outbound outbox and transports; inbound ingress, IMAP poll and mail routes    |
+| `workers`      | worker (7 queues) and worker-cloud (provisioning, housekeeping, health-check) |
+| `provisioning` | Tenant creation, mail route (Brevo + DNS), suspend, reactivate, purge         |
+| `web-app`      | Agent workspace, portal, API — one tenant page probed per minute              |
+| `console`      | Internal console and gateway                                                  |
+| `postgres`     | Managed PostgreSQL                                                            |
+| `redis`        | Redis, AOF                                                                    |
+| `storage`      | S3 attachments and backups                                                    |
+| `host`         | The VM: CPU, memory, disk                                                     |
 
-  # The four services you named
-  - {
-      type: service,
-      name: billing,
-      external_id: oh_billing,
-      description: "Stripe webhook, checkout and portal gateway, dunning, trials",
-      attributes:
-        {
-          owner: Open Helpdesk,
-          repository: Open-HelpDesk/cloud,
-          tier: tier 1,
-          environments: "production, staging",
-        },
-    }
-  - {
-      type: service,
-      name: email,
-      external_id: oh_email,
-      description: "Outbound outbox and transports; inbound ingress, IMAP poll and mail routes",
-      attributes:
-        {
-          owner: Open Helpdesk,
-          repository: Open-HelpDesk/open-helpdesk,
-          tier: tier 1,
-          environments: "production, staging",
-        },
-    }
-  - {
-      type: service,
-      name: workers,
-      external_id: oh_workers,
-      description: "worker (7 queues) and worker-cloud (provisioning, housekeeping, health-check)",
-      attributes:
-        {
-          owner: Open Helpdesk,
-          repository: Open-HelpDesk/open-helpdesk,
-          tier: tier 1,
-          environments: "production, staging",
-        },
-    }
-  - {
-      type: service,
-      name: provisioning,
-      external_id: oh_provisioning,
-      description: "Tenant creation, mail route (Brevo + DNS), suspend, reactivate, purge",
-      attributes:
-        {
-          owner: Open Helpdesk,
-          repository: Open-HelpDesk/cloud,
-          tier: tier 2,
-          environments: "production, staging",
-        },
-    }
+The names matter: they are what the `service` field of every alert carries, and a service is matched on that exact string. Send `billing`, not `Billing` — a new spelling is a new service, seen in traffic and owned by nobody until someone notices. Keep the emitter's table (section 5.1) as the single place those names are written.
 
-  # The platform underneath
-  - {
-      type: service,
-      name: web-app,
-      external_id: oh_web,
-      description: "Agent workspace, portal, API — one tenant page probed per minute",
-      attributes:
-        {
-          owner: Open Helpdesk,
-          repository: Open-HelpDesk/open-helpdesk,
-          tier: tier 1,
-          environments: "production, staging",
-        },
-    }
-  - {
-      type: service,
-      name: console,
-      external_id: oh_console,
-      description: "Internal console and gateway",
-      attributes:
-        {
-          owner: Open Helpdesk,
-          repository: Open-HelpDesk/cloud,
-          tier: tier 2,
-          environments: "production, staging",
-        },
-    }
-  - {
-      type: service,
-      name: postgres,
-      external_id: oh_postgres,
-      attributes: { owner: Open Helpdesk, tier: tier 1, environments: "production, staging" },
-    }
-  - {
-      type: service,
-      name: redis,
-      external_id: oh_redis,
-      attributes: { owner: Open Helpdesk, tier: tier 1, environments: "production, staging" },
-    }
-  - {
-      type: service,
-      name: storage,
-      external_id: oh_storage,
-      description: "S3 attachments and backups",
-      attributes: { owner: Open Helpdesk, tier: tier 2, environments: "production, staging" },
-    }
-  - {
-      type: service,
-      name: host,
-      external_id: oh_host,
-      description: "The VM: CPU, memory, disk",
-      attributes: { owner: Open Helpdesk, tier: tier 1, environments: "production, staging" },
-    }
-```
-
-```bash
-pnpm catalog:import -- --source local --file open-helpdesk-catalog.yaml \
-  --api https://openhelpdesk.<your open incident domain> --key oi_live_…
-```
-
-The names matter: they are the `service` attribute every alert will carry, and the parser binds an alert to a service by that exact name.
-
-![The catalog after the import](img/catalog.png "Each service shows its routing chain: alert → service → owner team → escalation path.")
-
-### Runbooks
-
-On the `workers`, `provisioning` and `billing` services, **Runbooks → Add** the operator's runbook (`infra/RUNBOOK.md` of the private repository: topology, deployment, backups, restoration, secrets). The repository is private, so either paste the text, or give the GitHub URL once a GitHub tracker with a token that can read the repository is connected in **Settings → Integrations**. The runbook is then shown on every incident of those services, and quoted to the assistant when documentation is an allowed source.
+**Environment, tier, repository: nothing to declare.** `environment: production` or `staging` travels on the alert as a label, routes read it (section 6 keeps staging quiet with it) and the alert page shows it. There is no list of environments to maintain, and nowhere to record a tier or a repository: the product keeps what the signals say, and nothing more.
 
 ## 4. On-call
 
@@ -211,7 +93,7 @@ The sampler in `worker-cloud` already decides, every minute, whether each of the
 | `description` (or `body`)                    | Its description                                                        |
 | `status` (or `state`)                        | `firing` unless it matches _resolved, ok, recovered, closed, up_       |
 | `dedup_key` (or `fingerprint`, `id`)         | The deduplication key — the same key means the same alert, more events |
-| `service`, `environment`, `priority`         | Attributes bound to the catalog and to the priorities                  |
+| `service`, `environment`, `priority`         | The service named, the environment label, and the alert's priority     |
 | `attributes` or `labels` (object of strings) | More attributes for the routes                                         |
 | `url` (or `link`)                            | A link back — the console's health screen                              |
 
@@ -347,16 +229,16 @@ The defaults fit. Two adjustments:
 This replaces the Better Stack status page.
 
 1. **Status pages → + New page** `openhelpdesk`, visibility **Public**, language English (the customers' language), accent the product's colour, privacy and legal URLs of `open-helpdesk.com`, reply-to `support@open-helpdesk.com`.
-2. **+ Component**, each bound to a catalog service:
+2. **+ Component**, each bound to a service:
 
-   | Component                | Group       | Catalog service |
-   | ------------------------ | ----------- | --------------- |
-   | Agent workspace & portal | Application | `web-app`       |
-   | Inbound email            | Email       | `email`         |
-   | Outbound email           | Email       | `email`         |
-   | Sign-up & provisioning   | Platform    | `provisioning`  |
-   | Billing                  | Platform    | `billing`       |
-   | API & webhooks           | Application | `web-app`       |
+   | Component                | Group       | Service        |
+   | ------------------------ | ----------- | -------------- |
+   | Agent workspace & portal | Application | `web-app`      |
+   | Inbound email            | Email       | `email`        |
+   | Outbound email           | Email       | `email`        |
+   | Sign-up & provisioning   | Platform    | `provisioning` |
+   | Billing                  | Platform    | `billing`      |
+   | API & webhooks           | Application | `web-app`      |
 
    Two components on the same service both take the impact of an incident on it; that is what customers expect (an email outage touches both directions).
 
@@ -381,7 +263,7 @@ for svc in web-app workers console provisioning; do
 done
 ```
 
-The incident's side panel then lists the deploys of the day before it. With an inference provider configured on the Open Incident instance and **Settings → AI governance** allowing it, the assistant reads them, the runbook and the timeline to draft the summary and the post-mortem.
+The incident's side panel then lists the deploys of the day before it. With an inference provider configured on the Open Incident instance and **Settings → AI governance** allowing it, the assistant reads them, any runbook the service carries and the timeline to draft the summary and the post-mortem.
 
 ## 10. Dry run — proving the chain before trusting it
 
@@ -399,7 +281,7 @@ If step 3 pages nobody, **On-call → Escalation paths → Test the path** says 
 
 | Need                                                                                       | Works today, without touching Open Helpdesk                                                     | Needs a small change in Open Helpdesk                                                                                                                                                 | Not covered by Open Incident                                                              |
 | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Catalog, on-call, escalation, incidents, timeline, post-incident, reports                  | Yes — the bundle above, the path, the schedule.                                                 |                                                                                                                                                                                       |                                                                                           |
+| Services, on-call, escalation, incidents, timeline, post-incident, reports                 | Yes — the team, the path, the schedule; the services adopt themselves.                          |                                                                                                                                                                                       |                                                                                           |
 | Public probes (www, canary tenant, console, ingress)                                       | Yes, through the existing prober's webhook (Better Stack or Uptime Kuma) into a generic source. |                                                                                                                                                                                       | Open Incident does not probe URLs itself; a prober must exist.                            |
 | Platform health (app, worker, postgres, redis, mail-in, mail-out, storage, webhooks, host) | The sampler measures it already; the console shows it.                                          | **Yes**: the ~40-line emitter in `worker-cloud` (section 5.1) and three environment variables.                                                                                        |                                                                                           |
 | Scheduled jobs (SLA timers, housekeeping, health-check, backups)                           | The `backup.sh` heartbeat is one `curl` line in a script we own.                                | One `fetch` line per processor in the two workers.                                                                                                                                    |                                                                                           |
@@ -410,12 +292,12 @@ If step 3 pages nobody, **On-call → Escalation paths → Test the path** says 
 | Logs, metrics dashboards, tracing                                                          |                                                                                                 |                                                                                                                                                                                       | Not Open Incident's job; the console's health screen and Scaleway Cockpit keep that role. |
 | A synthetic "email → ticket" journey (the product's key path)                              |                                                                                                 | Worth building: a cron sends an email to a canary mailbox, checks through the API that a ticket exists within two minutes, and pings a heartbeat; silence raises an alert on `email`. |                                                                                           |
 
-Two things we learnt while mapping, worth a note for Open Incident itself: alerts from the built-in _Heartbeats_ source carry no `environment` unless a mapping adds one — on a single-workspace instance that watches both staging and production, the environment must come from the source or from separate workspaces; and the generic parser binds a service by its exact name, so the catalog names and the emitter's table must be kept in step — the importer with `--lock` on a `services.yaml` owned by the cloud repository is the way to keep them so.
+Two things we learnt while mapping, worth a note for Open Incident itself: alerts from the built-in _Heartbeats_ source carry no `environment` unless a mapping adds one — on a single-workspace instance that watches both staging and production, the environment must come from the source or from separate workspaces; and the generic parser binds a service by its exact name, so a typo in the emitter's table does not fail, it quietly creates a second service — which is why that table is the one place those names should be written.
 
 ## 12. Order of operations
 
 1. Workspace, members, phones verified.
-2. Catalog bundle imported; working hours, path published, schedule published, coverage 100 %.
+2. Team created; working hours, path published, schedule published, coverage 100 %.
 3. Priorities checked; routes 1–4 created, _Staging_ in test mode.
 4. Sources created; secrets stored on the VM as environment variables.
 5. Emitter and heartbeat pings merged in `open-helpdesk-cloud` and `open-helpdesk`, deployed to staging.
