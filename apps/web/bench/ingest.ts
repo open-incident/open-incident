@@ -5,7 +5,7 @@
  * the incident decision cost, not what Next.js adds around them. Every alert
  * is sent in test mode, so the whole path runs and pages nobody.
  */
-import { withTenant, alertSources, getTenantBySlug, alerts } from "@openincident/db";
+import { withTenant, alertSources, getTenantBySlug, alerts, services } from "@openincident/db";
 import { and, eq, like } from "drizzle-orm";
 import { ingestPayload } from "../src/lib/alert-ingest";
 
@@ -59,13 +59,18 @@ async function main() {
     }),
   );
 
-  // Its own mess, cleaned up.
-  const removed = await withTenant(tenant.id, (tx) =>
-    tx
+  // Its own mess, cleaned up — the alerts and the services they taught the
+  // workspace about. A benchmark that leaves four nameless services behind is a
+  // benchmark that lies to the next person reading that screen.
+  await withTenant(tenant.id, async (tx) => {
+    await tx
       .delete(alerts)
-      .where(and(eq(alerts.tenantId, tenant.id), like(alerts.title, `Bench ${stamp}%`))),
-  );
-  console.log("cleaned", removed?.count ?? "rows");
+      .where(and(eq(alerts.tenantId, tenant.id), like(alerts.title, `Bench ${stamp}%`)));
+    await tx
+      .delete(services)
+      .where(and(eq(services.tenantId, tenant.id), like(services.key, "bench-%")));
+  });
+  console.log("cleaned");
   process.exit(0);
 }
 

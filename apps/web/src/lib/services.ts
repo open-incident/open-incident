@@ -161,7 +161,10 @@ export async function ownerSuggestions(
     .where(
       and(
         eq(alerts.tenantId, tenantId),
-        sql`lower(${alerts.attributes} ->> 'service') = any(${serviceKeys})`,
+        // `inArray`, not `= any(...)`: drizzle interpolates a JavaScript array
+        // into a row constructor, and Postgres refuses `= any((a, b, c))` with
+        // "op ANY/ALL (array) requires array on right side".
+        inArray(sql`lower(${alerts.attributes} ->> 'service')`, serviceKeys),
       ),
     )
     .groupBy(sql`lower(${alerts.attributes} ->> 'service')`, teamMembers.teamId, teams.name)
