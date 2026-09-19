@@ -9,6 +9,7 @@
  */
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { schemeFor } from "@openincident/config";
 
 export type QaCapabilities = {
   repoRoot: string | null;
@@ -70,7 +71,7 @@ export async function probeQaTargets(
       return false;
     }
   };
-  const proto = /localhost|127\.0\.0\.1/.test(caps.webHost) ? "http" : "https";
+  const proto = schemeFor(caps.webHost);
   const [web, mailpit] = await Promise.all([
     head(`${proto}://${caps.webHost}/login`),
     head(`${caps.mailpitUrl.replace(/\/$/, "")}/api/v1/info`),

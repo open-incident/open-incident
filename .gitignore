@@ -12,3 +12,6 @@ coverage/
 # Smoke test — run artefacts
 packages/smoke/test-results/
 packages/smoke/playwright-report/
+
+# Local TLS material (scripts/dev-certs.sh). Never committed.
+certs/

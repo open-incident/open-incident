@@ -21,6 +21,7 @@ import {
   workspaces,
 } from "@openincident/db";
 import { computeUptime, dayTicks, overallState } from "./uptime";
+import { originFor } from "@openincident/config";
 
 export type Snapshot = {
   page: {
@@ -420,6 +421,5 @@ export function statusPageUrl(page: {
   const verified = page.customDomainVerified ?? Boolean(page.customDomainVerifiedAt);
   if (page.customDomain && verified) return `https://${page.customDomain}`;
   const base = process.env.STATUS_BASE_DOMAIN ?? "status.localhost:3107";
-  const proto = /localhost|127\.0\.0\.1/.test(base) ? "http" : "https";
-  return `${proto}://${page.slug}.${base}`;
+  return originFor(`${page.slug}.${base}`);
 }

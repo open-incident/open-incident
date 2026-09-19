@@ -12,6 +12,7 @@
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
+    "@openincident/config": "workspace:*",
     "@openincident/db": "workspace:*",
     "@openincident/mail": "workspace:*",
     "better-auth": "^1.3.0"

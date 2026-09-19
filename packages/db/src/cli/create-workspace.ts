@@ -8,6 +8,7 @@
 import { inviteToken } from "@openincident/crypto";
 import { isValidSlug } from "@openincident/config";
 import { provisionWorkspace } from "../provision";
+import { originFor } from "@openincident/config";
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -41,8 +42,7 @@ const result = await provisionWorkspace({
 });
 
 const baseDomain = process.env.BASE_DOMAIN ?? "localhost:3100";
-const proto = baseDomain.startsWith("localhost") ? "http" : "https";
-const link = `${proto}://${slug}.${baseDomain}/invite/${inviteToken(result.tenantId, result.ownerMemberId)}`;
+const link = `${originFor(`${slug}.${baseDomain}`)}/invite/${inviteToken(result.tenantId, result.ownerMemberId)}`;
 
 console.log(
   result.created

@@ -143,3 +143,4 @@ export const TENANT_RETENTION_DAYS = 60;
 export * from "./edition";
 export * from "./entitlements";
 export * from "./permissions";
+export * from "./scheme";

@@ -29,6 +29,9 @@ importers:
 
   apps/status:
     dependencies:
+      '@openincident/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@openincident/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -341,6 +344,9 @@ importers:
 
   packages/auth:
     dependencies:
+      '@openincident/config':
+        specifier: workspace:*
+        version: link:../config
       '@openincident/db':
         specifier: workspace:*
         version: link:../db
@@ -533,6 +539,9 @@ importers:
       '@openincident/chat':
         specifier: workspace:*
         version: link:../chat
+      '@openincident/config':
+        specifier: workspace:*
+        version: link:../config
       '@openincident/crypto':
         specifier: workspace:*
         version: link:../crypto
@@ -576,6 +585,9 @@ importers:
 
   packages/qa:
     dependencies:
+      '@openincident/config':
+        specifier: workspace:*
+        version: link:../config
       '@openincident/db':
         specifier: workspace:*
         version: link:../db
@@ -616,6 +628,9 @@ importers:
 
   packages/statuspages:
     dependencies:
+      '@openincident/config':
+        specifier: workspace:*
+        version: link:../config
       '@openincident/db':
         specifier: workspace:*
         version: link:../db

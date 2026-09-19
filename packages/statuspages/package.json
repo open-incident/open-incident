@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@openincident/config": "workspace:*",
     "@openincident/db": "workspace:*",
     "@openincident/mail": "workspace:*",
     "@openincident/webhooks": "workspace:*",

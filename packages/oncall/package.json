@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@openincident/chat": "workspace:*",
+    "@openincident/config": "workspace:*",
     "@openincident/crypto": "workspace:*",
     "@openincident/db": "workspace:*",
     "@openincident/mail": "workspace:*",

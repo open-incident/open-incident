@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@openincident/config": "workspace:*",
     "@openincident/db": "workspace:*",
     "bullmq": "^5.44.0",
     "drizzle-orm": "^0.44.0",

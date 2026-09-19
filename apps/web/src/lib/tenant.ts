@@ -9,6 +9,7 @@ import {
   workspaces,
   type Tenant,
 } from "@openincident/db";
+import { schemeOf } from "@openincident/config";
 
 export type Workspace = typeof workspaces.$inferSelect;
 
@@ -96,6 +97,5 @@ export async function currentOrigin(): Promise<string> {
   const h = await headers();
   const host =
     h.get("x-forwarded-host") ?? h.get("host") ?? process.env.BASE_DOMAIN ?? "localhost:3100";
-  const proto = h.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
+  return `${schemeOf(host, h.get("x-forwarded-proto"))}://${host}`;
 }

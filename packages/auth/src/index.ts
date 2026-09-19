@@ -17,6 +17,7 @@ import {
   authUsers,
   authVerifications,
 } from "@openincident/db";
+import { originFor, schemeFor, schemeOf } from "@openincident/config";
 
 const socialProviders: Record<string, { clientId: string; clientSecret: string }> = {};
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -44,7 +45,6 @@ export const SOCIAL_PROVIDERS = Object.keys(socialProviders) as Array<
 >;
 
 const baseDomain = process.env.BASE_DOMAIN ?? "localhost:3100";
-const localDomain = /^localhost(:\d+)?$/.test(baseDomain);
 
 /*
  * Control-plane options, inert when self-hosted:
@@ -67,12 +67,7 @@ const verificationDeadlineDays = Number(process.env.EMAIL_VERIFICATION_DEADLINE_
 /** The workspace host the request came in on — where every link must land. */
 function originOf(request: Request | undefined): string {
   const host = request?.headers.get("host") ?? baseDomain;
-  const proto =
-    request?.headers.get("x-forwarded-proto") ??
-    (host.startsWith("localhost") || host.endsWith(".localhost") || /localhost:\d+$/.test(host)
-      ? "http"
-      : "https");
-  return `${proto}://${host}`;
+  return `${schemeOf(host, request?.headers.get("x-forwarded-proto"))}://${host}`;
 }
 
 /**
@@ -91,8 +86,8 @@ export function createAuth(extra: { plugins?: BetterAuthPlugin[] } = {}) {
     baseURL: process.env.BETTER_AUTH_URL ?? {
       // Derived from each request, checked against the workspace hosts.
       allowedHosts: [baseDomain, `*.${baseDomain}`],
-      protocol: localDomain ? "http" : "https",
-      fallback: `${localDomain ? "http" : "https"}://${baseDomain}`,
+      protocol: schemeFor(baseDomain),
+      fallback: originFor(baseDomain),
     },
     plugins: extra.plugins ?? [],
     // Every workspace lives on its own subdomain: {slug}.BASE_DOMAIN.

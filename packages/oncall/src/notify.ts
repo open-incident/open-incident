@@ -30,6 +30,7 @@ import { smsConfigured, smsTransport, voiceConfigured, voiceTransport } from "@o
 import { dmSlackUser, dmTeamsUser, slackConfigured, teamsConfigured } from "@openincident/chat";
 import { NOTIFY_QUEUE } from "./queues";
 import { recordInbox } from "./inbox";
+import { originFor } from "@openincident/config";
 
 export type NotifyChannel = "email" | "sms" | "voice" | "webpush" | "slack" | "teams";
 export type Urgency = "high" | "low";
@@ -318,8 +319,7 @@ export async function jobFromDelivery(
 export function tenantOrigin(slug: string, customDomain?: string | null): string {
   if (customDomain) return `https://${customDomain}`;
   const base = process.env.BASE_DOMAIN ?? "localhost:3100";
-  const proto = /^(localhost|127\.0\.0\.1)/.test(base) ? "http" : "https";
-  return `${proto}://${slug}.${base}`;
+  return originFor(`${slug}.${base}`);
 }
 
 /* ---------- Web push, the one operator that is us ---------- */

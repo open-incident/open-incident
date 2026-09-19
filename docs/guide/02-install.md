@@ -136,6 +136,21 @@ Every variable the instance reads, grouped as in `.env.example`. Variables marke
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`       | Any relay.                                           |
 | `RESEND_API_KEY`, `BREVO_API_KEY`, `MAILJET_API_KEY` + `MAILJET_API_SECRET` | Native APIs; the first one filled in wins over SMTP. |
 
+### Serving over TLS
+
+| Variable                      | Meaning                                                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_SCHEME`               | `http` or `https`: the scheme every link built outside a request uses. A proxy's `x-forwarded-proto` wins. |
+| `DEV_TLS_CERT`, `DEV_TLS_KEY` | Certificate and key for `pnpm dev`. Generate them with `./scripts/dev-certs.sh` (needs mkcert).            |
+
+In production, terminate TLS at the proxy and let it send `x-forwarded-proto`;
+nothing else is needed. In development the two are worth setting anyway: plain
+http hides a `Secure` cookie being dropped, a session shared across workspace
+subdomains behaving differently under `SameSite`, and an identity provider
+refusing an `http` callback — three failures that otherwise wait for
+production. `./scripts/dev-certs.sh` writes a certificate covering `localhost`,
+`*.localhost` and `*.status.localhost` into `certs/`, which is never committed.
+
 ### On-call notifications
 
 | Variable                                                                   | Meaning                                                                                    |

@@ -1,6 +1,7 @@
 import { cookies, headers } from "next/headers";
 import { getStatusSnapshotForHost, type statusSnapshots } from "@openincident/db";
 import { STATUS_ACCESS_COOKIE, verifyStatusAccess, type Snapshot } from "@openincident/statuspages";
+import { schemeOf } from "@openincident/config";
 
 export type SnapshotRow = typeof statusSnapshots.$inferSelect;
 
@@ -23,8 +24,7 @@ export async function currentSnapshot(opts: { skipAccess?: boolean } = {}): Prom
     process.env.STATUS_DEFAULT_PAGE || undefined,
   ).catch(() => null);
   if (!row) return null;
-  const proto =
-    h.get("x-forwarded-proto") ?? (/localhost|127\.0\.0\.1/.test(host) ? "http" : "https");
+  const proto = schemeOf(host, h.get("x-forwarded-proto"));
   const snap = row.snapshot as unknown as Snapshot;
   if (snap.page.visibility === "internal" && !opts.skipAccess) {
     const jar = await cookies();

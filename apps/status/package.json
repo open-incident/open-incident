@@ -4,12 +4,13 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "scripts": {
-    "dev": "next dev --port 3107",
+    "dev": "../../scripts/next-dev.sh --port 3107",
     "build": "next build",
     "start": "next start --port 3107",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@openincident/config": "workspace:*",
     "@openincident/db": "workspace:*",
     "@openincident/statuspages": "workspace:*",
     "@openincident/ui": "workspace:*",
