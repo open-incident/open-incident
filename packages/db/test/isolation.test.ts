@@ -14,7 +14,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { db, withTenant } from "../src/client";
 import { adminClient, provisionWorkspace } from "../src/provision";
-import { incidentTypes, incidents, members } from "../src/schema/app";
+import { incidentTypes, incidents, members, probes } from "../src/schema/app";
 import { tenants } from "../src/schema/directory";
 
 const run = randomUUID().slice(0, 8);
@@ -59,6 +59,8 @@ afterAll(async () => {
   try {
     await admin.db.delete(tenants).where(eq(tenants.slug, slugA));
     await admin.db.delete(tenants).where(eq(tenants.slug, slugB));
+    // The instance probe belongs to no workspace, so no cascade takes it away.
+    await admin.db.delete(probes).where(eq(probes.name, `probe-shared-${run}`));
   } finally {
     await admin.end();
   }
@@ -161,6 +163,62 @@ describe("row-level security", () => {
       tx.select({ name: incidents.name }).from(incidents),
     );
     expect(stillThere).toEqual([{ name: "B's incident" }]);
+  });
+
+  /**
+   * The one table with rows that belong to no workspace. A probe run by the
+   * instance is shared by everyone, so its `tenant_id` is null — and `NULL =
+   * uuid` is never true, which made the general policy hide those rows from
+   * the application for ever. Whoever shipped the probes would have lost half
+   * a day to it.
+   */
+  it("lets a workspace read the instance's probes and never write one", async () => {
+    const admin = adminClient();
+    const shared = `probe-shared-${run}`;
+    try {
+      await admin.db.insert(probes).values({ tenantId: null, name: shared, region: "eu-west" });
+    } finally {
+      await admin.end();
+    }
+
+    const seen = await withTenant(tenantA, (tx) =>
+      tx.select({ name: probes.name, tenantId: probes.tenantId }).from(probes),
+    );
+    expect(seen.map((p) => p.name)).toContain(shared);
+
+    // Its own probe is visible to it and to nobody else.
+    await withTenant(tenantA, (tx) =>
+      tx.insert(probes).values({ tenantId: tenantA, name: `probe-a-${run}`, region: "eu-west" }),
+    );
+    const byB = await withTenant(tenantB, (tx) => tx.select({ name: probes.name }).from(probes));
+    expect(byB.map((p) => p.name)).toContain(shared);
+    expect(byB.map((p) => p.name)).not.toContain(`probe-a-${run}`);
+
+    // Reading the instance's probes is not writing them: a workspace cannot
+    // add one, cannot rename one, cannot delete one.
+    expect(
+      await reasonOf(
+        withTenant(tenantA, (tx) =>
+          tx.insert(probes).values({ tenantId: null, name: `probe-x-${run}`, region: "eu-west" }),
+        ),
+      ),
+    ).toMatch(/row-level security/);
+    const renamed = await withTenant(tenantA, (tx) =>
+      tx
+        .update(probes)
+        .set({ name: "stolen" })
+        .where(eq(probes.name, shared))
+        .returning({ id: probes.id }),
+    );
+    expect(renamed).toEqual([]);
+    const removed = await withTenant(tenantA, (tx) =>
+      tx.delete(probes).where(eq(probes.name, shared)).returning({ id: probes.id }),
+    );
+    expect(removed).toEqual([]);
+    const survived = await withTenant(tenantB, (tx) =>
+      tx.select({ name: probes.name }).from(probes),
+    );
+    expect(survived.map((p) => p.name)).toContain(shared);
   });
 
   it("keeps the directory readable and the app role away from writing it", async () => {
