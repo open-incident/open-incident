@@ -122,6 +122,8 @@ export const en = {
   "services.owner": "OWNER",
   "services.pagesPolicy": "pages « {policy} »",
   "services.noPolicy": "no policy on this team yet",
+  "services.setPolicy": "Choose the policy this team is paged through",
+  "services.usePolicy": "Use",
   "services.noOwner": "No owner — nobody is paged for this service.",
   "services.seenIn": "SEEN IN",
   "services.seenNowhere": "Not seen anywhere yet.",

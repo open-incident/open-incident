@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { withTenant } from "@openincident/db";
+import { asc, eq } from "drizzle-orm";
+import { escalationPaths, withTenant } from "@openincident/db";
 import { aiConfigured } from "@openincident/ai";
 import { getT } from "@/i18n/server";
 import { canRespond, requireMember } from "@/lib/session";
 import { getService, listTeams } from "@/lib/services";
 import { telemetryInstalled } from "@/lib/telemetry-module";
-import { assignOwner } from "../actions";
+import { assignOwner, setTeamPolicy } from "../actions";
 
 const CARD: React.CSSProperties = {
   background: "var(--panel)",
@@ -40,10 +41,17 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
   const data = await withTenant(tenant.id, async (tx) => {
     const svc = await getService(tx, tenant.id, id);
     if (!svc) return null;
-    return { svc, teams: await listTeams(tx, tenant.id) };
+    // The policies on offer, for the case where the owner team has none: the
+    // chain has to be completable where the reader notices it is broken.
+    const paths = await tx
+      .select({ id: escalationPaths.id, name: escalationPaths.name })
+      .from(escalationPaths)
+      .where(eq(escalationPaths.tenantId, tenant.id))
+      .orderBy(asc(escalationPaths.name));
+    return { svc, teams: await listTeams(tx, tenant.id), paths };
   });
   if (!data) notFound();
-  const { svc, teams } = data;
+  const { svc, teams, paths } = data;
   const mayEdit = canRespond(member);
 
   const STATE_DOT: Record<string, string> = {
@@ -261,6 +269,58 @@ export default async function ServiceDetailPage({ params }: { params: Promise<{ 
                     </div>
                   </div>
                 </div>
+                {!svc.ownerPolicyName && mayEdit && paths.length > 0 && svc.ownerTeamId && (
+                  <form
+                    action={setTeamPolicy}
+                    style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 2 }}
+                  >
+                    <input type="hidden" name="serviceId" value={svc.id} />
+                    <input type="hidden" name="teamId" value={svc.ownerTeamId} />
+                    <label style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.4 }}>
+                      {t("services.setPolicy")}
+                    </label>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <select
+                        name="pathId"
+                        defaultValue={paths[0]!.id}
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          height: 30,
+                          border: "1px solid var(--line)",
+                          borderRadius: 8,
+                          background: "var(--panel)",
+                          color: "var(--ink)",
+                          fontSize: 12.5,
+                          padding: "0 7px",
+                        }}
+                      >
+                        {paths.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="submit"
+                        className="oi-hover-brand-2"
+                        style={{
+                          height: 30,
+                          padding: "0 11px",
+                          border: "none",
+                          borderRadius: 8,
+                          background: "var(--brand)",
+                          color: "var(--on-brand)",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {t("services.usePolicy")}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </>
             ) : (
               <div style={{ fontSize: 12.5, color: "var(--wait)", fontWeight: 600 }}>

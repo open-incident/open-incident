@@ -119,6 +119,8 @@ export const de: Dictionary = {
   "services.owner": "VERANTWORTLICH",
   "services.pagesPolicy": "alarmiert « {policy} »",
   "services.noPolicy": "noch keine Richtlinie für dieses Team",
+  "services.setPolicy": "Wählen Sie die Richtlinie, über die dieses Team gerufen wird",
+  "services.usePolicy": "Verwenden",
   "services.noOwner": "Ohne Verantwortlichen — niemand wird für diesen Service alarmiert.",
   "services.seenIn": "GESEHEN IN",
   "services.seenNowhere": "Bisher nirgends gesehen.",

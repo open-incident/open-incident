@@ -768,6 +768,10 @@ async function ingestOne(
           typeId: plan.incident.typeId,
           severityId: plan.incident.severityId,
           serviceEntryId: attributes.service_id ?? null,
+          // The service the signal named — `observeService` created it at
+          // ingestion, so the incident carries the same one the Services
+          // screen and the Insights count.
+          serviceKey: attributes.service ?? null,
           customFields: await coerceCustomFields(tx, tenantId, custom),
           source: "alert",
           phase: template.startPhase,

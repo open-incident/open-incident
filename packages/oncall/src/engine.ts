@@ -20,6 +20,8 @@ import {
   escalationEvents,
   escalationPathVersions,
   escalationPaths,
+  services,
+  teams,
   escalations,
   incidentEvents,
   incidentParticipants,
@@ -1021,10 +1023,55 @@ async function pathOfEntry(
 }
 
 /**
+ * The owner of an observed service, and the path that owner is paged through.
+ *
+ * `app.services` is where the product now records who owns what: a service
+ * appears the moment a signal names it, and the Services screen assigns it a
+ * team. That assignment has to be what decides who is paged, otherwise the
+ * screen records a decision the engine never applies — which it did, until
+ * this function existed.
+ *
+ * The catalog stays as a fallback below, for the workspaces that keep one up
+ * to date. It is no longer the source.
+ */
+export async function resolvePathFromService(
+  tx: Tx,
+  tenantId: string,
+  value: string | null | undefined,
+): Promise<{ pathId: string; via: string } | null> {
+  if (!value) return null;
+  const [row] = await tx
+    .select({
+      serviceKey: services.key,
+      teamName: teams.name,
+      pathId: teams.policyPathId,
+    })
+    .from(services)
+    .innerJoin(teams, eq(teams.id, services.ownerTeamId))
+    .where(
+      and(
+        eq(services.tenantId, tenantId),
+        UUID.test(value) ? eq(services.id, value) : sql`lower(${services.key}) = lower(${value})`,
+      ),
+    );
+  if (!row?.pathId) return null;
+  const [path] = await tx
+    .select({ name: escalationPaths.name })
+    .from(escalationPaths)
+    .where(and(eq(escalationPaths.tenantId, tenantId), eq(escalationPaths.id, row.pathId)));
+  if (!path) return null;
+  return { pathId: row.pathId, via: `${row.serviceKey} → ${row.teamName} → ${path.name}` };
+}
+
+/**
  * Dynamic resolution from any catalog type: the entry named by the alert
  * attribute carries an escalation path, or its owner team does. Nothing is
  * required of the catalog for a route to page someone — this is the option a
  * workspace grows into.
+ *
+ * For services, the observed service and its owner team are consulted first:
+ * that is the model the screens write to. The catalog answers only when the
+ * service has no owner team, or no policy on it.
  */
 export async function resolvePathFromCatalog(
   tx: Tx,
@@ -1033,6 +1080,10 @@ export async function resolvePathFromCatalog(
   value: string | null | undefined,
 ): Promise<{ pathId: string; via: string } | null> {
   if (!value) return null;
+  if (typeKey === "service") {
+    const owned = await resolvePathFromService(tx, tenantId, value);
+    if (owned) return owned;
+  }
   const [type] = await tx
     .select({ id: catalogTypes.id })
     .from(catalogTypes)

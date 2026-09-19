@@ -5,7 +5,7 @@
  * the caller needs. The side effects that must happen AFTER the commit —
  * announcements, webhooks — are gathered by `afterIncidentChange`.
  */
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import {
   catalogEntries,
   followUpPriorities,
@@ -22,6 +22,7 @@ import {
   postIncidentTaskDefs,
   postIncidentTasks,
   roleAssignments,
+  services,
   severities,
   withTenant,
   type Tx,
@@ -48,6 +49,14 @@ export type DeclareInput = {
   typeId: string;
   severityId?: string | null;
   serviceEntryId?: string | null;
+  /**
+   * The observed service, by its key — the model the screens write to.
+   *
+   * It is resolved here rather than by each caller, so the one column every
+   * per-service figure reads is filled whichever road the incident came in
+   * by: the screen, the API, chat, or an alert being promoted.
+   */
+  serviceKey?: string | null;
   customFields: Record<string, unknown>;
   declaredAt?: Date;
   source: "web" | "api" | "alert" | "chat";
@@ -129,6 +138,17 @@ export async function declareIncidentCore(
           and(eq(catalogEntries.tenantId, tenantId), eq(catalogEntries.id, input.serviceEntryId)),
         )
     : [];
+  // The observed service: by key when the caller knows one, otherwise by the
+  // name of the catalog entry it picked — the two models name the same thing.
+  const serviceName = input.serviceKey ?? service?.name ?? null;
+  const [observed] = serviceName
+    ? await tx
+        .select({ id: services.id })
+        .from(services)
+        .where(
+          and(eq(services.tenantId, tenantId), sql`lower(${services.key}) = lower(${serviceName})`),
+        )
+    : [];
   const declaredAt =
     input.mode === "retrospective" && input.declaredAt ? input.declaredAt : new Date();
   const now = new Date();
@@ -151,6 +171,7 @@ export async function declareIncidentCore(
           phase: input.phase ?? "active",
           statusId: input.phase === "triage" ? null : (first?.id ?? null),
           serviceEntryId: service?.id ?? null,
+          serviceId: observed?.id ?? null,
           creatorMemberId: actor.memberId,
           source: input.source,
           customFields: input.customFields,

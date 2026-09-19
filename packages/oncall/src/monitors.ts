@@ -685,6 +685,9 @@ export async function sweepMonitors(tenantIds: string[], now = new Date()): Prom
         attributes: {
           ...(m.serviceKey ? { service: m.serviceKey } : {}),
           monitor: m.name,
+          // The id, not only the name: a rule that has to single out one
+          // monitor needs something a rename cannot break.
+          monitor_id: m.id,
           monitor_type: m.type,
         },
         url: `${origin}/app/monitors/${m.id}`,

@@ -117,6 +117,8 @@ export const fr: Dictionary = {
   "services.owner": "PROPRIÉTAIRE",
   "services.pagesPolicy": "page « {policy} »",
   "services.noPolicy": "pas encore de politique sur cette équipe",
+  "services.setPolicy": "Choisissez la politique par laquelle cette équipe est appelée",
+  "services.usePolicy": "Utiliser",
   "services.noOwner": "Sans propriétaire — personne n'est pagé pour ce service.",
   "services.seenIn": "VU DANS",
   "services.seenNowhere": "Vu nulle part pour l'instant.",
