@@ -19,6 +19,12 @@ import { recordAudit } from "@/lib/audit";
 import { requireResponder } from "@/lib/session";
 import { DEFAULT_ACTION, defaultCriteria } from "@/lib/monitors";
 import { observeService } from "@/lib/services";
+import {
+  applyMonitorChoices,
+  dropMonitorRoute,
+  isDefaultChoices,
+  type MonitorChoices,
+} from "@/lib/monitor-choices";
 
 const TYPES = [
   "http",
@@ -39,7 +45,9 @@ const createSchema = z.object({
   intervalSeconds: z.coerce.number().int().min(30).max(86_400),
   service: z.string().trim().max(120).optional(),
   page: z.enum(["owner", "me", "nobody"]).default("owner"),
-  incident: z.enum(["triage", "p1", "p2", "never"]).default("p2"),
+  // Three, not four: the pipeline knows "always", "when urgent" and "never".
+  // Offering P1 and P2 separately promised a distinction nothing could make.
+  incident: z.enum(["triage", "urgent", "never"]).default("urgent"),
   autoResolve: z.enum(["on", "off"]).default("on"),
 });
 
@@ -91,6 +99,29 @@ export async function createMonitor(formData: FormData) {
       name: v.name,
       type: v.type,
     });
+    // The choices become a rule of this monitor's own, so the next alert
+    // really follows them. Nothing is written when they match what the
+    // pipeline already does: an extra rule nobody asked for is noise in the
+    // list of rules.
+    const choices: MonitorChoices = {
+      page:
+        v.page === "me"
+          ? { kind: "member", memberId: current.member.id }
+          : v.page === "nobody"
+            ? { kind: "nobody" }
+            : { kind: "owner" },
+      incident: v.incident,
+      autoResolve: v.autoResolve === "on",
+    };
+    if (!isDefaultChoices(choices)) {
+      await applyMonitorChoices(
+        tx,
+        current.tenant.id,
+        { memberId: current.member.id, name: current.member.name },
+        { id: row!.id, name: v.name },
+        choices,
+      );
+    }
     return row!.id;
   });
 
@@ -182,6 +213,9 @@ export async function deleteMonitor(formData: FormData) {
       .where(and(eq(monitors.tenantId, current.tenant.id), eq(monitors.id, id)))
       .returning({ name: monitors.name });
     if (row) await recordAudit(tx, current, "config", "monitor.deleted", { name: row.name });
+    // Its rule goes with it: an orphan rule keeps deciding for a monitor that
+    // no longer exists, and nobody would think to look for it.
+    await dropMonitorRoute(tx, current.tenant.id, id);
   });
   revalidatePath("/app/monitors");
   redirect("/app/monitors");

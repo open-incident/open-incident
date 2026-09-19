@@ -104,7 +104,7 @@ test.describe("On-call & alerting", () => {
     await page.getByTestId("source-row").filter({ hasText: "Datadog" }).first().click();
     await page.getByTestId("source-test").click();
     await page.waitForURL(/tested=/);
-    await page.getByRole("link", { name: /Ouvrir l'alerte|Open the test alert|Testalarm/ }).click();
+    await page.getByRole("link", { name: /^(Open it|L'ouvrir|Öffnen)$/ }).click();
     await expect(page.getByText(/mode test|test mode|Testmodus/i).first()).toBeVisible();
     await expect(page.getByTestId("escalation-card")).toHaveCount(0);
     await signOut(page);
@@ -131,14 +131,14 @@ test.describe("On-call & alerting", () => {
         .filter({ hasText: /override|remplacement|Ersetzung/i })
         .first(),
     ).toBeVisible();
-    await page
-      .getByRole("button", { name: /Retirer l'override|Remove the override|Override entfernen/ })
-      .first()
-      .click();
+    // Removing means reopening the same cell: the picker closes when the
+    // override is created, and the remove button lives inside it.
+    await cells.nth(2).click();
+    await page.getByTestId("override-remove").first().click();
     // iCal really answers. The subscription link lives with the schedules.
     await page.goto("/app/on-call?tab=schedules");
     const ical = await page.request.get(
-      (await page.locator('a[href^="/api/oncall/ical/"]').getAttribute("href"))!,
+      (await page.locator('a[href^="/api/oncall/ical/"]').first().getAttribute("href"))!,
     );
     expect(ical.status()).toBe(200);
     expect(await ical.text()).toContain("BEGIN:VCALENDAR");

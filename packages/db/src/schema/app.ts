@@ -2506,8 +2506,15 @@ export type SignalAction = {
     | { kind: "schedule"; scheduleId: string }
     | { kind: "policy"; pathId: string }
     | { kind: "nobody" };
-  /** From which alert severity an incident opens — "never" opens none. */
-  incident: { from: "p1" | "p2" | "p3" | "p4" | "triage" | "never" };
+  /**
+   * When an incident opens: in triage whatever the alert, only when the alert
+   * is urgent, or never.
+   *
+   * The per-priority spellings are what the first version stored and are kept
+   * so old rows still read; the pipeline only knows the three above, and
+   * offering a choice it cannot make is a promise the product would break.
+   */
+  incident: { from: "triage" | "urgent" | "never" | "p1" | "p2" | "p3" | "p4" };
   autoResolve: boolean;
 };
 

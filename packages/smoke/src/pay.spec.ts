@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MEMBERS, signIn } from "./helpers";
+import { MEMBERS, signIn, signOut } from "./helpers";
 
 /** On-call pay: rules saved, a month computed into a draft, published and frozen, exported as CSV. */
 test.describe("On-call pay", () => {
@@ -42,7 +42,9 @@ test.describe("On-call pay", () => {
     expect(body).toContain("published");
 
     // A responder sees only their own lines of the published month, and no rules panel.
-    await page.goto("/login");
+    // Signed out first: /login sends an already-signed-in member straight into
+    // the app, so the form the sign-in helper fills would never be rendered.
+    await signOut(page);
     await signIn(page, MEMBERS.responder);
     await page.goto(`/app/insights?tab=pay&period=${period}`);
     await expect(page.getByTestId("pay-rules")).toHaveCount(0);

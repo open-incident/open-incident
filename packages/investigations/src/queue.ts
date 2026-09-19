@@ -27,7 +27,7 @@ const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> =>
 
 export async function enqueueInvestigation(
   job: InvestigationJob,
-  opts: { delayMs?: number } = {},
+  opts: { delayMs?: number; followUp?: boolean } = {},
 ): Promise<boolean> {
   // The same default as the worker's own connection (see @openincident/qa).
   const url = process.env.REDIS_URL ?? "redis://localhost:6381";
@@ -41,7 +41,10 @@ export async function enqueueInvestigation(
     try {
       await withTimeout(
         queue.add("assess", job, {
-          jobId: `inv-${job.incidentId}`,
+          // One job per incident, so two clicks are one assessment. A
+          // follow-up asked for while one runs needs its own id, or the queue
+          // would treat it as the job already in flight and drop it.
+          jobId: opts.followUp ? `inv-${job.incidentId}-next` : `inv-${job.incidentId}`,
           attempts: 1,
           removeOnComplete: true,
           removeOnFail: true,
@@ -62,15 +65,25 @@ export async function enqueueInvestigation(
 
 /**
  * Asks for an assessment: the row is queued, the job enqueued — or run here,
- * detached, when no queue answers. A running assessment is not interrupted;
- * the trigger waits on the row for it to finish.
+ * detached, when no queue answers.
+ *
+ * A running assessment is never interrupted. What is asked for while one runs
+ * is queued behind it rather than dropped: the trigger is usually a person
+ * writing what the analysis got wrong, and losing that because the machine
+ * happened to be busy is the worst moment to lose it.
  */
 export async function startInvestigation(
   job: InvestigationJob,
   opts: { delayMs?: number } = {},
 ): Promise<"queued" | "coalesced" | "inline"> {
   const row = await ensureInvestigationRow(job.tenantId, job.incidentId, job.trigger);
-  if (row.status === "running") return "coalesced";
+  if (row.status === "running") {
+    await enqueueInvestigation(job, {
+      delayMs: Math.max(opts.delayMs ?? 0, 5_000),
+      followUp: true,
+    });
+    return "coalesced";
+  }
   if (await enqueueInvestigation(job, opts)) return "queued";
   void runInvestigation(job).catch((err) =>
     console.error("[investigation] inline assessment failed:", err),

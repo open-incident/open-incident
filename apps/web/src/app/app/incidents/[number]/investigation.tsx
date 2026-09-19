@@ -128,7 +128,17 @@ export async function Investigation({
   const citations = new Map<string, Citation>((inv?.citations ?? []).map((c) => [c.id, c]));
   const top = inv?.hypotheses.find((h) => h.id === inv.summary?.topHypothesisId) ?? null;
   const others = (inv?.hypotheses ?? []).filter((h) => h.id !== top?.id);
-  const findings = inv ? inv.findings.filter((f) => !top || top.findings.includes(f.id)) : [];
+  // Every finding, the ones holding up the leading hypothesis first. Filtering
+  // to that hypothesis hid the rest — and the one a responder's own steering
+  // note produced is attached to no hypothesis, so the reader lost exactly the
+  // finding they had asked for.
+  const findings = inv
+    ? [...inv.findings].sort((a, b) => {
+        const supports = (f: (typeof inv.findings)[number]) =>
+          top && top.findings.includes(f.id) ? 0 : 1;
+        return supports(a) - supports(b);
+      })
+    : [];
   const challenges = (inv?.hypotheses ?? []).filter((h) => h.challenge);
   const objections = (inv?.hypotheses ?? []).filter((h) => h.state === "contradicted").length;
   const rcaSection = inc.postMortem?.sections.find((s) => s.key === "root_cause");
@@ -159,6 +169,20 @@ export async function Investigation({
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={eyebrow}>✦ {t("ai.investigation.title")}</span>
+          {/*
+            Here too, not only once an assessment exists. This is the card
+            someone is looking at when they ask for the first one, and without
+            the live refresh the answer lands in the database while the screen
+            still says there is nothing.
+          */}
+          {access.ok && (
+            <InvestigationLive
+              incidentId={inc.row.id}
+              lastEventId={inc.events.at(-1)?.id ?? ""}
+              running={running}
+              label={t("ai.investigation.refreshing")}
+            />
+          )}
           <span style={{ flex: 1 }} />
           {acts && !running && (
             <form action={rerunInvestigation} style={{ display: "contents" }}>
@@ -497,7 +521,11 @@ export async function Investigation({
             </div>
           ) : (
             challenges.map((h) => (
-              <div key={h.id} style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-2)" }}>
+              <div
+                key={h.id}
+                data-testid="rca-review"
+                style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-2)" }}
+              >
                 <span style={{ fontWeight: 600, color: "var(--ink)" }}>{h.id}</span> {h.challenge}
                 {h.challengeCitations.length > 0 && (
                   <span

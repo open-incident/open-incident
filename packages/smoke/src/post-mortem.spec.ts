@@ -53,13 +53,18 @@ test.describe("Post-mortem editor", () => {
       .locator("textarea")
       .fill("Smoke comment: check the percentage.");
     await section.getByTestId("pm-comment-form").getByRole("button").click();
-    // Comments live in the right drawer now; it has to be opened to be read.
-    await page.getByTestId("pm-comments-toggle").click();
-    await expect(page.getByTestId("pm-open-comments")).toContainText("Smoke comment");
+    // Resolved where it is written, in the section — posting closes the panel,
+    // so it is reopened first.
+    await section.getByTestId("pm-comment-toggle").click();
+    await expect(section).toContainText("Smoke comment");
     await section.getByRole("button", { name: /Resolve|Résoudre|Erledigen/ }).click();
-    await expect(page.getByTestId("pm-open-comments")).not.toContainText("Smoke comment");
+    // The drawer's counter is the open ones; the resolved comment stays in the
+    // list with its mark, and the count drops back to none.
+    await expect(page.getByTestId("pm-comments-toggle")).toContainText(/\b0\b/);
 
-    // The history records every step and restores the earlier text.
+    // The history records every step and restores the earlier text. It shares
+    // the right drawer with the comments.
+    await page.getByTestId("pm-comments-toggle").click();
     const history = page.getByTestId("pm-history");
     await expect(history).toContainText(/edited|a modifié|hat bearbeitet/);
     // The first "Restore" is the previous version: the impact written, the section not yet added.
@@ -67,6 +72,9 @@ test.describe("Post-mortem editor", () => {
     await expect(history).toContainText(/restored|a restauré|wiederhergestellt/);
 
     // The assistant checks the draft against the facts: badges, nothing rewritten.
+    // The drawer is closed first — it is fixed to the right and covers the
+    // document's own actions while it is open.
+    await page.getByTestId("pm-comments-toggle").click();
     await page.getByTestId("pm-review").click();
     await expect(page.getByTestId("pm-review-summary")).toBeVisible();
     await expect(page.getByTestId("pm-review-note").first()).toBeVisible();

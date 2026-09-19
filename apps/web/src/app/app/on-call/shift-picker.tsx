@@ -99,6 +99,7 @@ export async function ShiftPicker({
             <input type="hidden" name="id" value={overrideId} />
             <button
               type="submit"
+              data-testid="override-remove"
               style={{
                 border: 0,
                 background: "transparent",

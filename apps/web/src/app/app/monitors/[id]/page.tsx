@@ -3,8 +3,9 @@ import { notFound } from "next/navigation";
 import { withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { canRespond, requireMember } from "@/lib/session";
+import { readMonitorChoices } from "@/lib/monitor-choices";
 import { getMonitor } from "@/lib/monitors";
-import { checkNow, togglePause } from "../actions";
+import { checkNow, deleteMonitor, togglePause } from "../actions";
 import type { MessageKey } from "@/i18n/dictionaries/en";
 
 const CARD: React.CSSProperties = {
@@ -53,6 +54,9 @@ export default async function MonitorDetailPage({ params }: { params: Promise<{ 
 
   const m = await withTenant(tenant.id, (tx) => getMonitor(tx, tenant.id, id));
   if (!m) notFound();
+  // Read from the rule, not from the monitor row: the rule is what the next
+  // alert obeys, and the two would drift the moment someone edits it.
+  const choices = await withTenant(tenant.id, (tx) => readMonitorChoices(tx, tenant.id, id));
   const mayEdit = canRespond(member);
   const tone = STATE_TONE[m.state] ?? STATE_TONE.waiting!;
 
@@ -155,6 +159,22 @@ export default async function MonitorDetailPage({ params }: { params: Promise<{ 
                 </button>
               </form>
             )}
+            {/*
+              A monitor could be created and never removed: the action existed
+              and no screen called it. Here rather than in a menu, next to the
+              other two things one does to a monitor.
+            */}
+            <form action={deleteMonitor}>
+              <input type="hidden" name="id" value={m.id} />
+              <button
+                type="submit"
+                data-testid="monitor-delete"
+                className="oi-hover-dang"
+                style={{ ...GHOST, color: "var(--dang)" }}
+              >
+                {t("monitors.delete")}
+              </button>
+            </form>
           </div>
         )}
       </div>
@@ -370,18 +390,18 @@ export default async function MonitorDetailPage({ params }: { params: Promise<{ 
             <div style={EYEBROW}>{t("monitors.whenOffline")}</div>
             <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
               <strong>{t("monitors.page")}:</strong>{" "}
-              {m.action.page.kind === "owner"
+              {choices.choices.page.kind === "owner"
                 ? t("monitors.pageOwner")
-                : m.action.page.kind === "nobody"
+                : choices.choices.page.kind === "nobody"
                   ? t("monitors.pageNobody")
-                  : t("monitors.pageSomeone")}{" "}
+                  : (choices.pageName ?? t("monitors.pageSomeone"))}{" "}
               · <strong>{t("monitors.incident")}:</strong>{" "}
-              {t(`monitors.incidentFrom.${m.action.incident.from}` as MessageKey)} ·{" "}
+              {t(`monitors.incidentFrom.${choices.choices.incident}` as MessageKey)} ·{" "}
               <strong>{t("monitors.autoResolve")}:</strong>{" "}
-              {m.action.autoResolve ? t("common.on") : t("common.off")}
+              {choices.choices.autoResolve ? t("common.on") : t("common.off")}
             </div>
             <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-              {t("monitors.sameThreeChoices")}
+              {t(choices.own ? "monitors.choicesRule" : "monitors.sameThreeChoices")}
             </div>
           </div>
 

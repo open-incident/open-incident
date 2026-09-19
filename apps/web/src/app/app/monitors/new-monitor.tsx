@@ -368,11 +368,10 @@ export function NewMonitor({
                     name="incident"
                     options={[
                       { v: "triage", l: t("monitors.incidentTriage") },
-                      { v: "p2", l: t("monitors.incidentP2") },
-                      { v: "p1", l: t("monitors.incidentP1") },
+                      { v: "urgent", l: t("monitors.incidentUrgent") },
                       { v: "never", l: t("monitors.incidentNever") },
                     ]}
-                    defaultValue="p2"
+                    defaultValue="urgent"
                   />
                   <Choice
                     label={t("monitors.autoResolve")}
