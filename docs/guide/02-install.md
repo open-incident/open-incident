@@ -141,9 +141,19 @@ Every variable the instance reads, grouped as in `.env.example`. Variables marke
 | Variable                                                                   | Meaning                                                                                    |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | `WEBPUSH_VAPID_PUBLIC_KEY`, `WEBPUSH_VAPID_PRIVATE_KEY`, `WEBPUSH_SUBJECT` | Web push. Generate a pair with `pnpm --filter @openincident/oncall exec tsx src/vapid.ts`. |
-| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`                   | SMS and voice calls (E.164 sender). Voice acknowledges with the key **4**.                 |
+| `BREVO_API_KEY` + `BREVO_SMS_SENDER`                                       | SMS through Brevo. The sender is up to 11 alphanumeric characters or 15 digits.            |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`                   | Voice calls, and SMS when Brevo is not set (E.164 sender). Voice acknowledges with **4**.  |
 
-Without a provider, the channel is shown as unavailable in every member's notification rules — and never silently skipped.
+SMS and voice are resolved separately. The texts go through Brevo as soon as
+`BREVO_SMS_SENDER` is filled in — it reuses the key the mail already uses, and
+it costs less per message — and fall back to Twilio otherwise. The calls only
+ever go through Twilio: reading a sentence out loud is the easy half, handing
+the keypress back so the escalation can be acknowledged is the half the other
+operators of the shortlist do not do.
+
+An instance can therefore be able to text and not to call. That is a supported
+state, not a broken one: without a provider the channel is shown as unavailable
+in every member's notification rules — and never silently skipped.
 
 ### Chat
 

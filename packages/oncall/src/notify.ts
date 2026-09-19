@@ -1,10 +1,15 @@
 /**
- * Notifications to responders — the outbox and the providers.
+ * Notifications to responders — the outbox.
  *
  * Every send is a row written BEFORE the attempt, with honest statuses:
  * queued → sent | failed, then delivered / handled when we learn more. The
  * channels that wake people (SMS, voice, web push) need a provider configured
  * on the instance; without one the channel is unavailable, never faked.
+ *
+ * The operators themselves live in `@openincident/notify`: this file decides
+ * who is paged, in which order, and what is written down — not which company
+ * carries the message. Which is why SMS and voice are asked about separately
+ * below: an instance can very well be able to text and not to call.
  */
 import { createHash, randomBytes } from "node:crypto";
 import { Queue } from "bullmq";
@@ -21,6 +26,7 @@ import {
   type Tx,
 } from "@openincident/db";
 import { sendTenantEmail } from "@openincident/mail";
+import { smsConfigured, smsTransport, voiceConfigured, voiceTransport } from "@openincident/notify";
 import { dmSlackUser, dmTeamsUser, slackConfigured, teamsConfigured } from "@openincident/chat";
 import { NOTIFY_QUEUE } from "./queues";
 import { recordInbox } from "./inbox";
@@ -33,8 +39,8 @@ export const CHANNELS: NotifyChannel[] = ["email", "sms", "voice", "webpush", "s
 /** The channels this instance can actually use. Email always; the others need their provider. */
 export function availableChannels(): NotifyChannel[] {
   const out: NotifyChannel[] = ["email"];
-  if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM)
-    out.push("sms", "voice");
+  if (smsConfigured()) out.push("sms");
+  if (voiceConfigured()) out.push("voice");
   if (process.env.WEBPUSH_VAPID_PUBLIC_KEY && process.env.WEBPUSH_VAPID_PRIVATE_KEY)
     out.push("webpush");
   if (slackConfigured()) out.push("slack");
@@ -316,35 +322,7 @@ export function tenantOrigin(slug: string, customDomain?: string | null): string
   return `${proto}://${slug}.${base}`;
 }
 
-/* ---------- Providers ---------- */
-
-async function twilio(
-  path: string,
-  form: Record<string, string>,
-): Promise<{ ok: boolean; ref?: string; error?: string }> {
-  const sid = process.env.TWILIO_ACCOUNT_SID!;
-  const token = process.env.TWILIO_AUTH_TOKEN!;
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/${path}.json`, {
-    method: "POST",
-    headers: {
-      authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`,
-      "content-type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams(form).toString(),
-    signal: AbortSignal.timeout(10_000),
-  });
-  const body = (await res.json().catch(() => ({}))) as { sid?: string; message?: string };
-  return res.ok
-    ? { ok: true, ref: body.sid }
-    : { ok: false, error: body.message ?? `HTTP ${res.status}` };
-}
-
-function escapeXml(s: string): string {
-  return s.replace(
-    /[<>&'"]/g,
-    (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[c]!,
-  );
-}
+/* ---------- Web push, the one operator that is us ---------- */
 
 async function sendWebPush(
   subscription: string,
@@ -433,28 +411,33 @@ export async function deliverNotification(
         break;
       }
       case "sms": {
+        const sms = smsTransport();
+        if (!sms) {
+          result = { ok: false, error: "no SMS operator configured" };
+          break;
+        }
         const body = `${job.subject}\n${job.text}${ackUrl ? `\nAck: ${ackUrl}` : ""}`.slice(
           0,
           1500,
         );
-        result = await twilio("Messages", {
-          To: job.target,
-          From: process.env.TWILIO_FROM!,
-          Body: body,
-        });
+        const r = await sms.send({ to: job.target, text: body });
+        result = r.ok ? { ok: true, ref: r.ref } : { ok: false, error: r.error };
         break;
       }
       case "voice": {
-        const say = escapeXml(`${job.subject}. ${job.text}. Press 4 to acknowledge.`);
-        const action = job.ackToken ? `${job.origin}/api/notify/voice/${job.ackToken}` : null;
-        const twiml = action
-          ? `<Response><Gather numDigits="1" action="${escapeXml(action)}" method="POST"><Say>${say}</Say></Gather><Say>No answer recorded. Goodbye.</Say></Response>`
-          : `<Response><Say>${say}</Say></Response>`;
-        result = await twilio("Calls", {
-          To: job.target,
-          From: process.env.TWILIO_FROM!,
-          Twiml: twiml,
-        });
+        const voice = voiceTransport();
+        if (!voice) {
+          result = { ok: false, error: "no voice operator configured" };
+          break;
+        }
+        // The sentence names the key, the transport wires it: the caller hears
+        // "press 4" only when there is a route for the 4 to land on.
+        const ack = job.ackToken ? { url: `${job.origin}/api/notify/voice/${job.ackToken}` } : null;
+        const say = ack
+          ? `${job.subject}. ${job.text}. Press 4 to acknowledge.`
+          : `${job.subject}. ${job.text}.`;
+        const r = await voice.call({ to: job.target, say, ack });
+        result = r.ok ? { ok: true, ref: r.ref } : { ok: false, error: r.error };
         break;
       }
       case "webpush": {

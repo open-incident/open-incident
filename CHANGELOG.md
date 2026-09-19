@@ -57,6 +57,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **SMS and voice are two operators, not one.** A new `@openincident/notify`
+  package holds the transports, and the two channels are resolved separately:
+  the texts go through Brevo as soon as `BREVO_SMS_SENDER` is set — it reuses
+  the key the mail already uses and costs less per message — and fall back to
+  Twilio, while the calls stay on Twilio, the one operator of the shortlist
+  that hands the keypress back so an escalation can be acknowledged. An
+  instance can therefore text without being able to call: the phone field
+  offers only SMS, and a dead row says which operator is missing. A call
+  without a token to come back to no longer says "press 4", because nothing
+  was listening for the 4.
+
 - **Routing no longer needs the catalog.** A route names who to page directly —
   an escalation path, or a path found from an alert attribute through the
   catalog when a workspace has one, with a fallback — and stacks several rules,

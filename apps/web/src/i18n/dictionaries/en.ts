@@ -2225,7 +2225,6 @@ export const en = {
   "notif.enterCode": "Code sent to {target}:",
   "notif.verify": "Verify",
   "notif.addPhone": "Add & send a code",
-  "notif.providerMissing": "No SMS/voice provider configured on this instance (TWILIO_*).",
   "notif.providerMissingPush": "No VAPID keys configured on this instance (WEBPUSH_*).",
   "notif.instanceConfig": "instance",
   "notif.thisBrowser": "This browser",

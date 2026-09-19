@@ -572,12 +572,20 @@ export async function NotificationsTab({ q }: { q: Record<string, string | undef
                 {t("oc2.notif.addPhone")}
               </button>
             </form>
-          ) : (
-            <>
-              {dead("voice-off", t("oc2.notif.ch.voice"), t("oc2.notif.unavailableVoice"))}
-              {dead("sms-off", t("oc2.notif.ch.sms"), t("oc2.notif.unavailableSms"))}
-            </>
-          )}
+          ) : null}
+          {/*
+           * A missing channel says so even when the other one works. Both dead
+           * rows used to appear only when neither was available, because one
+           * operator always carried the two together. An instance can now text
+           * without being able to call, and the missing call has to be read on
+           * the screen rather than look like something the product never had.
+           */}
+          {available.includes("voice")
+            ? null
+            : dead("voice-off", t("oc2.notif.ch.voice"), t("oc2.notif.unavailableVoice"))}
+          {available.includes("sms")
+            ? null
+            : dead("sms-off", t("oc2.notif.ch.sms"), t("oc2.notif.unavailableSms"))}
 
           {slackMethod
             ? row(

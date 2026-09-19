@@ -2267,7 +2267,6 @@ export const de: Dictionary = {
   "notif.enterCode": "Code gesendet an {target}:",
   "notif.verify": "Verifizieren",
   "notif.addPhone": "Hinzufügen & Code senden",
-  "notif.providerMissing": "Kein SMS-/Sprachanbieter auf dieser Instanz konfiguriert (TWILIO_*).",
   "notif.providerMissingPush": "Keine VAPID-Schlüssel auf dieser Instanz konfiguriert (WEBPUSH_*).",
   "notif.instanceConfig": "Instanz",
   "notif.thisBrowser": "Dieser Browser",

@@ -52,7 +52,7 @@ Open the menu under your initials in the top bar and choose **My account**.
 ### Contact methods
 
 - **Email** is always available: it reuses the instance's mail transport.
-- **SMS** and **Voice call** need a phone number in international format (`+33…`). A code is sent; enter it to verify. They need the operator to have configured Twilio on the instance; otherwise the row says so.
+- **SMS** and **Voice call** need a phone number in international format (`+33…`). A code is sent; enter it to verify. Each needs its own operator configured on the instance — they can be two different companies, and one can be available without the other; a channel without one is drawn as a dead row that says which is missing.
 - **Web push** is enabled per browser: click **Enable on this browser**, accept the browser's prompt. It wakes the screen even when the tab is closed. Needs VAPID keys on the instance.
 - **Slack DM** and **Teams DM** appear when the workspace connected Slack or Microsoft Teams: click **Link my Slack account** (the product finds your Slack user by email) and pages arrive as a direct message with an **Acknowledge** button.
 

@@ -516,6 +516,18 @@ importers:
         specifier: ^5.8.0
         version: 5.9.3
 
+  packages/notify:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@7.2.0)(tsx@4.23.13)
+
   packages/oncall:
     dependencies:
       '@openincident/chat':
@@ -530,6 +542,9 @@ importers:
       '@openincident/mail':
         specifier: workspace:*
         version: link:../mail
+      '@openincident/notify':
+        specifier: workspace:*
+        version: link:../notify
       '@openincident/webhooks':
         specifier: workspace:*
         version: link:../webhooks
