@@ -79,6 +79,8 @@ export const oncallPart = {
     "oc2.now.whoTakes": "{label} — who takes this shift?",
     "oc2.now.overrideNote":
       "One click creates an override for this shift only — the rotation is untouched, everything is logged.",
+    "oc2.now.overridesTitle": "OVERRIDES AHEAD",
+    "oc2.now.overrideNobody": "nobody",
     "oc2.now.removeOverride": "Remove the override",
     "oc2.now.coverSent": {
       one: "Cover request sent to {count} member — the first to accept gets the override.",
@@ -328,6 +330,8 @@ export const oncallPart = {
     "oc2.now.whoTakes": "{label} — qui prend ce créneau ?",
     "oc2.now.overrideNote":
       "Un clic crée un override sur ce créneau seulement — la rotation n'est pas touchée, tout est tracé.",
+    "oc2.now.overridesTitle": "REMPLACEMENTS À VENIR",
+    "oc2.now.overrideNobody": "personne",
     "oc2.now.removeOverride": "Retirer l'override",
     "oc2.now.coverSent": {
       one: "Demande de remplacement envoyée à {count} personne — la première qui accepte prend l'override.",
@@ -581,6 +585,8 @@ export const oncallPart = {
     "oc2.now.whoTakes": "{label} — wer übernimmt diese Schicht?",
     "oc2.now.overrideNote":
       "Ein Klick erzeugt eine Ersetzung nur für diese Schicht — die Rotation bleibt unberührt, alles wird protokolliert.",
+    "oc2.now.overridesTitle": "KOMMENDE VERTRETUNGEN",
+    "oc2.now.overrideNobody": "niemand",
     "oc2.now.removeOverride": "Ersetzung entfernen",
     "oc2.now.coverSent": {
       one: "Vertretungsanfrage an {count} Person gesendet — wer zuerst zusagt, bekommt die Ersetzung.",

@@ -29,9 +29,17 @@ test.describe("Reports & AI", () => {
     // The chip names the configured endpoint; with no provider it reads
     // "NO PROVIDER" instead, so this still fails on an unconfigured instance.
     await expect(page.getByText(/^(INFERENCE|INFÉRENCE|INFERENZ) · /)).toBeVisible();
-    // Off: the update dialog has no draft button.
-    const row = page.getByTestId("ai-cap-update_draft");
-    await row.locator("label").click();
+    // Off: the update dialog has no draft button. Set, not toggled — a run
+    // that stopped between the two halves used to leave the switch inverted,
+    // and the next one turned it on here and asserted it was off.
+    const capRow = page.getByTestId("ai-cap-update_draft");
+    const capInput = capRow.locator('input[name="cap_update_draft"]');
+    // The switch is a checkbox hidden behind its own track, so it is set by
+    // clicking the label — and only when it is not already where it should be.
+    const setCap = async (on: boolean) => {
+      if ((await capInput.isChecked()) !== on) await capRow.locator("label").click();
+    };
+    await setCap(false);
     await page.getByTestId("ai-save").click();
     await page.waitForURL(/saved=1/);
     await page.goto("/app/incidents/221");
@@ -40,7 +48,7 @@ test.describe("Reports & AI", () => {
     await page.keyboard.press("Escape");
     // On again: the draft fills the message, labelled.
     await page.goto("/app/settings/ai");
-    await page.getByTestId("ai-cap-update_draft").locator("label").click();
+    await setCap(true);
     await page.getByTestId("ai-save").click();
     await page.waitForURL(/saved=1/);
     const before = (await calls()).length;

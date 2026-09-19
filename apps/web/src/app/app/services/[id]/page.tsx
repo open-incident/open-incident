@@ -385,6 +385,7 @@ export default async function ServiceDetailPage({
                       <input type="hidden" name="serviceId" value={svc.id} />
                       <button
                         type="submit"
+                        data-testid="runbook-delete"
                         className="oi-hover-dang"
                         aria-label={t("common.delete")}
                         style={{ ...RUNBOOK_BTN, color: "var(--dang)" }}

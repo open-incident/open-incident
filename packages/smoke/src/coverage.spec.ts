@@ -49,5 +49,26 @@ test.describe("Coverage", () => {
       )
       .toBeGreaterThan(before);
     await expect(summary).toContainText(/nobody|personne|niemand/i);
+
+    // Put the week back. The gap stays open otherwise, and the next run makes
+    // the same one — the figure does not rise, and the test fails on a
+    // workspace it is pointed at twice.
+    await page.goto("/app/on-call?tab=now");
+    const rows = page.getByTestId("override-row");
+    for (let guard = 0; guard < 10; guard++) {
+      const left = await rows.count();
+      if (left === 0) break;
+      await rows.first().getByTestId("override-row-remove").click();
+      await expect(rows).toHaveCount(left - 1);
+    }
+    await expect
+      .poll(
+        async () => {
+          await page.goto("/app/on-call?tab=schedules");
+          return hours();
+        },
+        { timeout: 20_000 },
+      )
+      .toBe(before);
   });
 });

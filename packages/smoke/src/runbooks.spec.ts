@@ -54,10 +54,34 @@ test.describe("Runbooks", () => {
     await page.goto("/app/incidents/217?tab=atlas");
     await page.getByTestId("ai-summary-generate").click();
     await expect(page.getByTestId("ai-summary")).toContainText("Mock summary");
+    // The summary lands in the page as soon as the action returns, and the
+    // mock records the call a moment before that — but an incident that
+    // already carries a summary shows the old one straight away, so the text
+    // assertion above can pass before anything was asked. Poll the mock.
+    await expect
+      .poll(() => ai.calls.filter((c) => c.path === "/v1/chat/completions").length)
+      .toBeGreaterThan(0);
     const calls = ai.calls.filter((c) => c.path === "/v1/chat/completions");
-    expect(calls.length).toBeGreaterThan(0);
     const prompt = JSON.stringify(calls[calls.length - 1]!.body);
     expect(prompt).toContain("Runbooks of the affected service");
     expect(prompt).toContain("connection pool");
+
+    // Put the service back as it was: a second run would otherwise find two
+    // runbooks by that title and every assertion on "the" row would be
+    // ambiguous. A suite pointed at a workspace it keeps has to leave it as it
+    // found it.
+    await page.goto("/app/services");
+    await page.getByRole("link", { name: "checkout-api" }).first().click();
+    await page.waitForURL(/\/app\/services\/[0-9a-f-]+/);
+    const created = page.getByTestId("runbook-row").filter({ hasText: "Checkout latency runbook" });
+    // Re-counted every turn: the click reloads the page, so a count taken
+    // before the loop is stale by the second iteration.
+    for (let guard = 0; guard < 5; guard++) {
+      const left = await created.count();
+      if (left === 0) break;
+      await created.first().getByTestId("runbook-delete").click();
+      await expect(created).toHaveCount(left - 1);
+    }
+    await expect(created).toHaveCount(0);
   });
 });

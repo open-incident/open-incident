@@ -459,6 +459,7 @@ export default async function AlertSourcePage({
                     <input type="hidden" name="id" value={source.id} />
                     <button
                       type="submit"
+                      data-testid="source-delete"
                       className="oi-hover-dang"
                       style={{ ...btn, color: "var(--dang)" }}
                     >

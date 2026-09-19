@@ -13,7 +13,7 @@ import {
   type ScheduleDetail,
 } from "@/lib/oncall";
 import { chainSentence, loadNameSource, namesOf, policyForSchedule } from "./policy";
-import { acceptCover, pageOnCall, requestCover } from "./actions";
+import { acceptCover, deleteOverride, pageOnCall, requestCover } from "./actions";
 import { OverrideDialog } from "./override-dialog";
 import { ShiftPicker } from "./shift-picker";
 
@@ -123,6 +123,18 @@ export async function NowTab({ q }: { q: Record<string, string | undefined> }) {
       .map((c) => ({ detail, cover: c })),
   );
   const many = data.details.length > 1;
+  /**
+   * The overrides in the window, listed so one can be taken back.
+   *
+   * A slot handed over covers part of a shift as often as all of it, and the
+   * picker under the grid only knows the override that covers a whole one — so
+   * a two-hour hand-over made from the dialog could be written and never
+   * unwritten. This is the list that undoes it.
+   */
+  const overrides = data.details
+    .flatMap((detail) => detail.overrides.map((o) => ({ detail, o })))
+    .filter((x) => x.o.endAt.getTime() > now.getTime())
+    .sort((a, b) => a.o.startAt.getTime() - b.o.startAt.getTime());
   const selected = q.cell
     ? { rotationId: q.cell.split(":")[0]!, dayKey: q.cell.split(":")[1]! }
     : null;
@@ -623,6 +635,65 @@ export async function NowTab({ q }: { q: Record<string, string | undefined> }) {
             );
           })()}
       </div>
+
+      {overrides.length > 0 && (
+        <div
+          style={{
+            background: "var(--panel)",
+            border: "1px solid var(--line)",
+            borderRadius: "var(--radius-card)",
+            boxShadow: "var(--shadow-card)",
+            padding: "12px 16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <div
+            style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", color: "var(--ink-3)" }}
+          >
+            {t("oc2.now.overridesTitle")}
+          </div>
+          {overrides.map(({ detail, o }) => (
+            <div
+              key={o.id}
+              data-testid="override-row"
+              style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}
+            >
+              <span style={{ fontSize: 12.5, flex: 1, minWidth: 220 }}>
+                {many ? `${detail.schedule.name}${t("oc2.sep")}` : ""}
+                {t.fmt.dateTime(o.startAt, detail.schedule.timezone)} –{" "}
+                {t.fmt.time(o.endAt, detail.schedule.timezone)}
+                {t("oc2.sep")}
+                <strong>{o.memberId ? nameOf(o.memberId) : t("oc2.now.overrideNobody")}</strong>
+              </span>
+              {acts && (
+                <form action={deleteOverride}>
+                  <input type="hidden" name="id" value={o.id} />
+                  <button
+                    type="submit"
+                    data-testid="override-row-remove"
+                    className="oi-hover-dang"
+                    style={{
+                      height: 26,
+                      padding: "0 10px",
+                      border: "1px solid var(--line)",
+                      borderRadius: 8,
+                      background: "var(--panel)",
+                      color: "var(--dang)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {t("oc2.now.removeOverride")}
+                  </button>
+                </form>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

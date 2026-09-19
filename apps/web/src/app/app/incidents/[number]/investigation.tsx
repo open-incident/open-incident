@@ -346,7 +346,7 @@ export async function Investigation({
                 {t("ai.investigation.error", { error: inv.error })}
               </div>
             )}
-            {written ? (
+            {written && (
               <div
                 style={{
                   display: "flex",
@@ -365,56 +365,61 @@ export async function Investigation({
                 />
                 {t("inc2.rca.accepted")}
               </div>
-            ) : (
-              acts &&
-              top && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {afterResolution && (
-                    <form action={investigationToPostMortem} style={{ display: "contents" }}>
-                      <input type="hidden" name="number" value={number} />
-                      <button
-                        type="submit"
-                        data-testid="rca-to-pm"
-                        style={{
-                          ...btn,
-                          background: "var(--viol)",
-                          borderColor: "var(--viol)",
-                          color: "var(--on-brand)",
-                        }}
-                      >
-                        {t("inc2.rca.accept")}
-                      </button>
-                    </form>
-                  )}
-                  {!running && (
-                    <form action={rerunInvestigation} style={{ display: "contents" }}>
-                      <input type="hidden" name="number" value={number} />
-                      <button
-                        type="submit"
-                        data-testid="rca-rerun"
-                        className="oi-hover-edge-fill"
-                        style={{ ...btn, fontWeight: 500 }}
-                      >
-                        {t("inc2.rca.anotherPass")}
-                      </button>
-                    </form>
-                  )}
-                  {inv.runs > 0 && (
-                    <form action={toggleInvestigationPause} style={{ display: "contents" }}>
-                      <input type="hidden" name="number" value={number} />
-                      <input type="hidden" name="paused" value={inv.paused ? "0" : "1"} />
-                      <button
-                        type="submit"
-                        data-testid="rca-pause"
-                        className="oi-hover-edge-fill"
-                        style={{ ...btn, fontWeight: 500 }}
-                      >
-                        {inv.paused ? t("ai.investigation.resume") : t("ai.investigation.pause")}
-                      </button>
-                    </form>
-                  )}
-                </div>
-              )
+            )}
+            {/*
+              Accepting the cause into the post-mortem used to take every
+              control with it, "another pass" included: an assessment written
+              once was frozen, and evidence arriving afterwards had nowhere to
+              go. The banner says it was written; asking for another pass is
+              still allowed, and writing it again is the same button as before.
+            */}
+            {acts && top && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {afterResolution && !written && (
+                  <form action={investigationToPostMortem} style={{ display: "contents" }}>
+                    <input type="hidden" name="number" value={number} />
+                    <button
+                      type="submit"
+                      data-testid="rca-to-pm"
+                      style={{
+                        ...btn,
+                        background: "var(--viol)",
+                        borderColor: "var(--viol)",
+                        color: "var(--on-brand)",
+                      }}
+                    >
+                      {t("inc2.rca.accept")}
+                    </button>
+                  </form>
+                )}
+                {!running && (
+                  <form action={rerunInvestigation} style={{ display: "contents" }}>
+                    <input type="hidden" name="number" value={number} />
+                    <button
+                      type="submit"
+                      data-testid="rca-rerun"
+                      className="oi-hover-edge-fill"
+                      style={{ ...btn, fontWeight: 500 }}
+                    >
+                      {t("inc2.rca.anotherPass")}
+                    </button>
+                  </form>
+                )}
+                {inv.runs > 0 && (
+                  <form action={toggleInvestigationPause} style={{ display: "contents" }}>
+                    <input type="hidden" name="number" value={number} />
+                    <input type="hidden" name="paused" value={inv.paused ? "0" : "1"} />
+                    <button
+                      type="submit"
+                      data-testid="rca-pause"
+                      className="oi-hover-edge-fill"
+                      style={{ ...btn, fontWeight: 500 }}
+                    >
+                      {inv.paused ? t("ai.investigation.resume") : t("ai.investigation.pause")}
+                    </button>
+                  </form>
+                )}
+              </div>
             )}
           </div>
         </div>
