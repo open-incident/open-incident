@@ -47,7 +47,6 @@ export const fieldType = app.enum("field_type", [
   "link",
   "catalog_entry",
 ]);
-export const catalogSource = app.enum("catalog_source", ["ui", "code", "sync"]);
 export const mailStatus = app.enum("mail_status", ["queued", "sent", "failed", "handled"]);
 export const alertStatus = app.enum("alert_status", ["firing", "resolved"]);
 export const alertUrgency = app.enum("alert_urgency", ["high", "low"]);
@@ -296,55 +295,6 @@ export const qaRuns = app.table(
   (t) => [index("qa_runs_tenant_queued").on(t.tenantId, t.queuedAt)],
 );
 
-/* ---------- Tables kept only until the drop migration ---------- */
-
-/**
- * These two tables are the retired catalogue. Nothing in the product reads or
- * writes them any more: services live in `app.services`, teams in `app.teams`
- * and `app.team_members`, and everything else that used to be described here
- * is a label on the signal. They are declared only because columns still
- * carrying a `service_entry_id` reference them, and both go in the migration
- * that drops those columns.
- */
-export const catalogTypes = app.table(
-  "catalog_types",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    tenantId: tenantId(),
-    key: text("key").notNull(),
-    name: text("name").notNull(),
-    description: text("description"),
-    source: catalogSource("source").notNull().default("ui"),
-    attributes: jsonb("attributes").$type<Record<string, unknown>[]>().notNull().default([]),
-    position: integer("position").notNull().default(0),
-    locked: boolean("locked").notNull().default(false),
-    createdAt: createdAt(),
-  },
-  (t) => [uniqueIndex("catalog_types_tenant_key").on(t.tenantId, t.key)],
-);
-
-export const catalogEntries = app.table(
-  "catalog_entries",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    tenantId: tenantId(),
-    typeId: uuid("type_id")
-      .notNull()
-      .references(() => catalogTypes.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    description: text("description"),
-    externalId: text("external_id"),
-    attributes: jsonb("attributes").$type<Record<string, unknown>>().notNull().default({}),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (t) => [
-    uniqueIndex("catalog_entries_type_name").on(t.typeId, t.name),
-    uniqueIndex("catalog_entries_type_external").on(t.typeId, t.externalId),
-    index("catalog_entries_tenant").on(t.tenantId),
-  ],
-);
-
 /* ---------- Response — configuration ---------- */
 
 export const severities = app.table(
@@ -449,10 +399,6 @@ export const incidentFields = app.table(
     type: fieldType("type").notNull(),
     description: text("description"),
     options: jsonb("options").$type<string[]>().notNull().default([]),
-    /** Dead: the retired catalogue's type. Dropped with the two tables. */
-    catalogTypeId: uuid("catalog_type_id").references(() => catalogTypes.id, {
-      onDelete: "set null",
-    }),
     /** The type whose declare form carries this field; null = available to every type. */
     incidentTypeId: uuid("incident_type_id").references(() => incidentTypes.id, {
       onDelete: "cascade",
@@ -500,7 +446,7 @@ export const incidents = app.table(
     /** Meaningful in the active phase only. */
     statusId: uuid("status_id").references(() => incidentStatuses.id, { onDelete: "set null" }),
     /** The service the incident is about — the one paging and reporting read. */
-    serviceId: uuid("service_id"),
+    serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
     creatorMemberId: uuid("creator_member_id").references(() => members.id, {
       onDelete: "set null",
     }),
@@ -689,10 +635,6 @@ export const followUps = app.table(
       onDelete: "set null",
     }),
     assigneeMemberId: uuid("assignee_member_id").references(() => members.id, {
-      onDelete: "set null",
-    }),
-    /** Dead: a team from the retired catalogue. Dropped with the two tables. */
-    assigneeTeamEntryId: uuid("assignee_team_entry_id").references(() => catalogEntries.id, {
       onDelete: "set null",
     }),
     status: followUpStatus("status").notNull().default("open"),
@@ -1939,10 +1881,6 @@ export const statusPageComponents = app.table(
     name: text("name").notNull(),
     groupName: text("group_name"),
     position: integer("position").notNull().default(0),
-    /** Dead: the retired catalogue's entry. Dropped with the two tables. */
-    serviceEntryId: uuid("service_entry_id").references(() => catalogEntries.id, {
-      onDelete: "set null",
-    }),
     /** The service behind it — how an incident finds its components. */
     serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
     /**
@@ -2192,10 +2130,6 @@ export const changeEvents = app.table(
     kind: text("kind").$type<"deploy" | "flag" | "config" | "other">().notNull().default("deploy"),
     title: text("title").notNull(),
     description: text("description"),
-    /** Dead: the retired catalogue's entry. Dropped with the two tables. */
-    serviceEntryId: uuid("service_entry_id").references(() => catalogEntries.id, {
-      onDelete: "set null",
-    }),
     /** The service this belongs to. */
     serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
     environment: text("environment"),
@@ -2360,10 +2294,6 @@ export const heartbeats = app.table(
     tenantId: tenantId(),
     name: text("name").notNull(),
     description: text("description"),
-    /** Dead: the retired catalogue's entry. Dropped with the two tables. */
-    serviceEntryId: uuid("service_entry_id").references(() => catalogEntries.id, {
-      onDelete: "set null",
-    }),
     /** The service this belongs to. */
     serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
     intervalSeconds: integer("interval_seconds").notNull().default(3600),
@@ -2448,10 +2378,6 @@ export const runbooks = app.table(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: tenantId(),
-    /** Dead: the retired catalogue's entry. Dropped with the two tables. */
-    serviceEntryId: uuid("service_entry_id").references(() => catalogEntries.id, {
-      onDelete: "cascade",
-    }),
     /** The service this belongs to. */
     serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
     title: text("title").notNull(),
@@ -2466,7 +2392,7 @@ export const runbooks = app.table(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("runbooks_tenant_service").on(t.tenantId, t.serviceEntryId)],
+  (t) => [index("runbooks_tenant_service").on(t.tenantId, t.serviceId)],
 );
 
 /* ---------- Monitors, probes, services ---------- */

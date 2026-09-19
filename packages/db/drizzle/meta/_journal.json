@@ -204,6 +204,13 @@
       "when": 1789816436463,
       "tag": "0028_service_links",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1789820956024,
+      "tag": "0029_drop_catalog",
+      "breakpoints": true
     }
   ]
 }
