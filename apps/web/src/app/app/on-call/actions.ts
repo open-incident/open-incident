@@ -3,14 +3,18 @@
 import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   coverRequests,
+  escalationPaths,
   members,
   rotations,
   scheduleOverrides,
   schedules,
+  services,
+  teamMembers,
+  teams,
   withTenant,
 } from "@openincident/db";
 import { availableChannels, notifyMember } from "@openincident/oncall";
@@ -337,4 +341,193 @@ export async function pageOnCall(formData: FormData) {
   redirect(
     name ? `/app/on-call?tab=now&paged=${encodeURIComponent(name)}` : "/app/on-call?tab=now",
   );
+}
+
+/* ---------- Teams ---------- */
+
+/**
+ * A team: a name, and the escalation path it is paged through.
+ *
+ * Until now the only way a team existed was the seed. Everything that pages
+ * "the owner" of a service resolves to a team, so a fresh workspace could
+ * declare services and route alerts and still have nobody to hand them to —
+ * the one thing the product asks for in its first hour.
+ *
+ * The policy is optional at creation and the list says so, loudly: a team with
+ * no path is a team the engine reaches and cannot page.
+ */
+export async function createTeam(formData: FormData) {
+  const current = await requireManager();
+  const parsed = z
+    .object({
+      name: z.string().trim().min(2).max(80),
+      policyPathId: uuid.or(z.literal("")).optional(),
+      chatChannel: z.string().trim().max(120).optional(),
+    })
+    .safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect("/app/on-call?tab=teams&error=invalid");
+  const input = parsed.data;
+  const memberIds = formData
+    .getAll("members")
+    .map(String)
+    .filter((x) => uuid.safeParse(x).success);
+
+  const outcome = await withTenant(current.tenant.id, async (tx) => {
+    if (input.policyPathId) {
+      const [path] = await tx
+        .select({ id: escalationPaths.id })
+        .from(escalationPaths)
+        .where(
+          and(
+            eq(escalationPaths.tenantId, current.tenant.id),
+            eq(escalationPaths.id, input.policyPathId),
+          ),
+        );
+      if (!path) return "invalid" as const;
+    }
+    const [row] = await tx
+      .insert(teams)
+      .values({
+        tenantId: current.tenant.id,
+        name: input.name,
+        policyPathId: input.policyPathId || null,
+        chatChannel: input.chatChannel || null,
+      })
+      .onConflictDoNothing({ target: [teams.tenantId, teams.name] })
+      .returning({ id: teams.id });
+    // The name is unique per workspace, and two teams called Payments are two
+    // teams nobody can tell apart on an escalation.
+    if (!row) return "taken" as const;
+    if (memberIds.length > 0) {
+      const own = await tx
+        .select({ id: members.id })
+        .from(members)
+        .where(and(eq(members.tenantId, current.tenant.id), inArray(members.id, memberIds)));
+      if (own.length > 0)
+        await tx.insert(teamMembers).values(
+          own.map((m) => ({
+            tenantId: current.tenant.id,
+            teamId: row.id,
+            memberId: m.id,
+          })),
+        );
+    }
+    await recordAudit(tx, current, "config", "team.created", {
+      name: input.name,
+      members: memberIds.length,
+    });
+    return "created" as const;
+  });
+  if (outcome !== "created") redirect(`/app/on-call?tab=teams&error=${outcome}`);
+  revalidatePath("/app/on-call");
+  revalidatePath("/app/services");
+  redirect("/app/on-call?tab=teams");
+}
+
+/** Rename a team, change the path it is paged through, or its chat channel. */
+export async function updateTeam(formData: FormData) {
+  const current = await requireManager();
+  const parsed = z
+    .object({
+      id: uuid,
+      name: z.string().trim().min(2).max(80),
+      policyPathId: uuid.or(z.literal("")).optional(),
+      chatChannel: z.string().trim().max(120).optional(),
+    })
+    .safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect("/app/on-call?tab=teams&error=invalid");
+  const input = parsed.data;
+  const outcome = await withTenant(current.tenant.id, async (tx) => {
+    const [team] = await tx
+      .select({ id: teams.id })
+      .from(teams)
+      .where(and(eq(teams.tenantId, current.tenant.id), eq(teams.id, input.id)));
+    if (!team) return "invalid" as const;
+    const [clash] = await tx
+      .select({ id: teams.id })
+      .from(teams)
+      .where(and(eq(teams.tenantId, current.tenant.id), eq(teams.name, input.name)));
+    if (clash && clash.id !== input.id) return "taken" as const;
+    await tx
+      .update(teams)
+      .set({
+        name: input.name,
+        policyPathId: input.policyPathId || null,
+        chatChannel: input.chatChannel || null,
+        updatedAt: new Date(),
+      })
+      .where(eq(teams.id, input.id));
+    await recordAudit(tx, current, "config", "team.updated", { name: input.name });
+    return "saved" as const;
+  });
+  if (outcome !== "saved") redirect(`/app/on-call?tab=teams&error=${outcome}`);
+  revalidatePath("/app/on-call");
+  revalidatePath("/app/services");
+  redirect("/app/on-call?tab=teams");
+}
+
+/** Add or remove one member. A team the engine pages is a team with people in it. */
+export async function updateTeamMember(formData: FormData) {
+  const current = await requireManager();
+  const teamId = uuid.parse(formData.get("teamId"));
+  const memberId = uuid.parse(formData.get("memberId"));
+  const op = z.enum(["add", "remove"]).parse(formData.get("op"));
+  await withTenant(current.tenant.id, async (tx) => {
+    const [team] = await tx
+      .select({ name: teams.name })
+      .from(teams)
+      .where(and(eq(teams.tenantId, current.tenant.id), eq(teams.id, teamId)));
+    if (!team) return;
+    if (op === "add") {
+      const [m] = await tx
+        .select({ id: members.id })
+        .from(members)
+        .where(and(eq(members.tenantId, current.tenant.id), eq(members.id, memberId)));
+      if (!m) return;
+      await tx
+        .insert(teamMembers)
+        .values({ tenantId: current.tenant.id, teamId, memberId })
+        .onConflictDoNothing();
+    } else {
+      await tx
+        .delete(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.memberId, memberId)));
+    }
+    await recordAudit(tx, current, "config", "team.members_changed", { team: team.name, op });
+  });
+  revalidatePath("/app/on-call");
+  redirect(`/app/on-call?tab=teams&members=${teamId}`);
+}
+
+/**
+ * Remove a team — only one nothing points at.
+ *
+ * A service handed to it would silently lose its owner (the foreign key sets
+ * it to null) and nobody would be paged for it any more; an escalation rule
+ * naming it would page nobody. Both are refused with the count, so the reader
+ * knows what to undo first.
+ */
+export async function deleteTeam(formData: FormData) {
+  const current = await requireManager();
+  const id = uuid.parse(formData.get("id"));
+  const outcome = await withTenant(current.tenant.id, async (tx) => {
+    const [team] = await tx
+      .select({ name: teams.name })
+      .from(teams)
+      .where(and(eq(teams.tenantId, current.tenant.id), eq(teams.id, id)));
+    if (!team) return "gone" as const;
+    const owned = await tx
+      .select({ id: services.id })
+      .from(services)
+      .where(and(eq(services.tenantId, current.tenant.id), eq(services.ownerTeamId, id)))
+      .limit(1);
+    if (owned.length > 0) return "owns" as const;
+    await tx.delete(teams).where(eq(teams.id, id));
+    await recordAudit(tx, current, "config", "team.deleted", { name: team.name });
+    return "deleted" as const;
+  });
+  if (outcome === "owns") redirect("/app/on-call?tab=teams&error=owns");
+  revalidatePath("/app/on-call");
+  revalidatePath("/app/services");
+  redirect("/app/on-call?tab=teams");
 }

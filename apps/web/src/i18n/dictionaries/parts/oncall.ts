@@ -19,9 +19,38 @@ export const oncallPart = {
     "oc2.title": "On-call",
     "oc2.tab.now": "Now",
     "oc2.tab.schedules": "Schedules",
+    "oc2.tab.teams": "Teams",
     "oc2.tab.policies": "Policies",
     "oc2.tab.notifications": "My notifications",
     "oc2.sep": " · ",
+
+    /* ---------- Teams ---------- */
+    "oc2.teams.intro":
+      "A team is what pages when something names a service it owns: a path, and the people behind it.",
+    "oc2.teams.new": "+ New team",
+    "oc2.teams.newTitle": "New team",
+    "oc2.teams.editTitle": "Edit the team",
+    "oc2.teams.name": "Name",
+    "oc2.teams.policy": "Paged through",
+    "oc2.teams.policyHint":
+      "The escalation path the engine follows when this team is paged. Without one the team is reached and nobody is woken.",
+    "oc2.teams.noPathOption": "No path for now",
+    "oc2.teams.channel": "Chat channel",
+    "oc2.teams.members": "Members",
+    "oc2.teams.create": "Create the team",
+    "oc2.teams.paged": "paged through « {policy} »",
+    "oc2.teams.pathDraft": "« {policy} » is still a draft — it pages nobody",
+    "oc2.teams.noPath": "no path — reached, and nobody is woken",
+    "oc2.teams.owns": { one: "owns {count} service", other: "owns {count} services" },
+    "oc2.teams.nobody": "nobody in it",
+    "oc2.teams.unreachable": "pages nobody",
+    "oc2.teams.noMembers": "No member yet.",
+    "oc2.teams.addMember": "Add a member",
+    "oc2.teams.empty":
+      "No team yet. A service handed to a team pages that team's path — that is the whole configuration.",
+    "oc2.teams.errTaken": "A team already goes by that name.",
+    "oc2.teams.errOwns": "This team owns services — hand them to another team first.",
+    "oc2.teams.errInvalid": "Give the team a name of at least two characters.",
 
     /* ---------- Now ---------- */
     "oc2.now.live": "live",
@@ -239,9 +268,38 @@ export const oncallPart = {
     "oc2.title": "Astreinte",
     "oc2.tab.now": "Maintenant",
     "oc2.tab.schedules": "Calendriers",
+    "oc2.tab.teams": "Équipes",
     "oc2.tab.policies": "Politiques",
     "oc2.tab.notifications": "Mes notifications",
     "oc2.sep": " · ",
+
+    /* ---------- Teams ---------- */
+    "oc2.teams.intro":
+      "Une équipe, c'est ce qui sonne quand quelque chose nomme un service qu'elle possède : une politique, et les gens derrière.",
+    "oc2.teams.new": "+ Nouvelle équipe",
+    "oc2.teams.newTitle": "Nouvelle équipe",
+    "oc2.teams.editTitle": "Modifier l'équipe",
+    "oc2.teams.name": "Nom",
+    "oc2.teams.policy": "Appelée via",
+    "oc2.teams.policyHint":
+      "La politique d'escalade que le moteur suit quand cette équipe est appelée. Sans elle, l'équipe est atteinte et personne n'est réveillé.",
+    "oc2.teams.noPathOption": "Aucune politique pour l'instant",
+    "oc2.teams.channel": "Canal de discussion",
+    "oc2.teams.members": "Membres",
+    "oc2.teams.create": "Créer l'équipe",
+    "oc2.teams.paged": "appelée via « {policy} »",
+    "oc2.teams.pathDraft": "« {policy} » est encore un brouillon — elle n'appelle personne",
+    "oc2.teams.noPath": "aucune politique — atteinte, et personne n'est réveillé",
+    "oc2.teams.owns": { one: "possède {count} service", other: "possède {count} services" },
+    "oc2.teams.nobody": "personne dedans",
+    "oc2.teams.unreachable": "n'appelle personne",
+    "oc2.teams.noMembers": "Aucun membre pour l'instant.",
+    "oc2.teams.addMember": "Ajouter un membre",
+    "oc2.teams.empty":
+      "Aucune équipe. Un service confié à une équipe appelle la politique de cette équipe — c'est toute la configuration.",
+    "oc2.teams.errTaken": "Une équipe porte déjà ce nom.",
+    "oc2.teams.errOwns": "Cette équipe possède des services — confiez-les d'abord à une autre.",
+    "oc2.teams.errInvalid": "Donnez à l'équipe un nom d'au moins deux caractères.",
 
     /* ---------- Now ---------- */
     "oc2.now.live": "en direct",
@@ -463,9 +521,38 @@ export const oncallPart = {
     "oc2.title": "Bereitschaft",
     "oc2.tab.now": "Jetzt",
     "oc2.tab.schedules": "Dienstpläne",
+    "oc2.tab.teams": "Teams",
     "oc2.tab.policies": "Richtlinien",
     "oc2.tab.notifications": "Meine Benachrichtigungen",
     "oc2.sep": " · ",
+
+    /* ---------- Teams ---------- */
+    "oc2.teams.intro":
+      "Ein Team ist das, was alarmiert wird, sobald etwas einen Service nennt, der ihm gehört: ein Pfad und die Menschen dahinter.",
+    "oc2.teams.new": "+ Neues Team",
+    "oc2.teams.newTitle": "Neues Team",
+    "oc2.teams.editTitle": "Team bearbeiten",
+    "oc2.teams.name": "Name",
+    "oc2.teams.policy": "Alarmiert über",
+    "oc2.teams.policyHint":
+      "Der Eskalationspfad, dem die Engine folgt, wenn dieses Team alarmiert wird. Ohne ihn wird das Team erreicht und niemand geweckt.",
+    "oc2.teams.noPathOption": "Vorerst kein Pfad",
+    "oc2.teams.channel": "Chat-Kanal",
+    "oc2.teams.members": "Mitglieder",
+    "oc2.teams.create": "Team anlegen",
+    "oc2.teams.paged": "alarmiert über « {policy} »",
+    "oc2.teams.pathDraft": "« {policy} » ist noch ein Entwurf — er alarmiert niemanden",
+    "oc2.teams.noPath": "kein Pfad — erreicht, und niemand wird geweckt",
+    "oc2.teams.owns": { one: "besitzt {count} Service", other: "besitzt {count} Services" },
+    "oc2.teams.nobody": "niemand darin",
+    "oc2.teams.unreachable": "alarmiert niemanden",
+    "oc2.teams.noMembers": "Noch kein Mitglied.",
+    "oc2.teams.addMember": "Mitglied hinzufügen",
+    "oc2.teams.empty":
+      "Noch kein Team. Ein Service, der einem Team übergeben wird, alarmiert dessen Pfad — das ist die ganze Konfiguration.",
+    "oc2.teams.errTaken": "Ein Team trägt diesen Namen bereits.",
+    "oc2.teams.errOwns": "Dieses Team besitzt Services — übergeben Sie sie zuerst einem anderen.",
+    "oc2.teams.errInvalid": "Geben Sie dem Team einen Namen mit mindestens zwei Zeichen.",
 
     /* ---------- Now ---------- */
     "oc2.now.live": "live",

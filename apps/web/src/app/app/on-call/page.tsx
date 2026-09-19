@@ -5,16 +5,22 @@ import { NowTab } from "./now-tab";
 import { SchedulesTab } from "./schedules-tab";
 import { PoliciesTab } from "./policies-tab";
 import { NotificationsTab } from "./notifications-tab";
+import { TeamsTab } from "./teams-tab";
 
-const TABS = ["now", "schedules", "policies", "notifications"] as const;
+const TABS = ["now", "schedules", "teams", "policies", "notifications"] as const;
 type Tab = (typeof TABS)[number];
 
 const LABEL: Record<
   Tab,
-  "oc2.tab.now" | "oc2.tab.schedules" | "oc2.tab.policies" | "oc2.tab.notifications"
+  | "oc2.tab.now"
+  | "oc2.tab.schedules"
+  | "oc2.tab.teams"
+  | "oc2.tab.policies"
+  | "oc2.tab.notifications"
 > = {
   now: "oc2.tab.now",
   schedules: "oc2.tab.schedules",
+  teams: "oc2.tab.teams",
   policies: "oc2.tab.policies",
   notifications: "oc2.tab.notifications",
 };
@@ -99,6 +105,7 @@ export default async function OnCallPage({
       </div>
       {tab === "now" && <NowTab q={q} />}
       {tab === "schedules" && <SchedulesTab q={q} />}
+      {tab === "teams" && <TeamsTab q={q} />}
       {tab === "policies" && <PoliciesTab />}
       {tab === "notifications" && <NotificationsTab q={q} />}
     </div>
