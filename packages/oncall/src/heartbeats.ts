@@ -6,7 +6,7 @@
  * grouping and escalation apply unchanged. The next ping resolves it.
  */
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, eq, isNotNull, ne } from "drizzle-orm";
+import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { decryptSecret, encryptSecret } from "@openincident/crypto";
 import {
   alertSources,
@@ -201,13 +201,14 @@ export async function sweepHeartbeats(tenantIds: string[], now = new Date()): Pr
             eq(heartbeats.active, true),
             ne(heartbeats.status, "down"),
             isNotNull(heartbeats.lastPingAt),
+            // Asked of the database rather than read back and filtered here:
+            // the deadline is arithmetic on two columns, so a workspace with a
+            // thousand heartbeats would have shipped a thousand rows across
+            // every thirty seconds to keep the handful that are late.
+            sql`${heartbeats.lastPingAt} + make_interval(secs => ${heartbeats.intervalSeconds} + ${heartbeats.graceSeconds}) < ${now.toISOString()}::timestamptz`,
           ),
         );
-      const due = rows.filter(
-        (r) =>
-          r.hb.lastPingAt!.getTime() + (r.hb.intervalSeconds + r.hb.graceSeconds) * 1000 <
-          now.getTime(),
-      );
+      const due = rows;
       if (due.length === 0) return null;
       for (const r of due)
         await tx
