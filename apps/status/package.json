@@ -4,7 +4,7 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "scripts": {
-    "dev": "../../scripts/next-dev.sh --port 3107",
+    "dev": "../../scripts/next-dev.sh --port ${PORT:-3107}",
     "build": "next build",
     "start": "next start --port 3107",
     "typecheck": "tsc --noEmit"

@@ -8,9 +8,15 @@
 # refuses an http callback. Developing over TLS is the only way to exercise
 # them, so this is the default here rather than a flag somebody remembers.
 #
-# The certificate covers the apex, every workspace subdomain, and the status
-# subdomains underneath it — a wildcard matches one label, so *.localhost does
-# not cover acme.status.localhost and both are listed.
+# Why the base domain is oi.localhost and not plain localhost: a wildcard is
+# only honoured when at least two labels follow it. `*.localhost` has one, so
+# curl, OpenSSL and the browsers all refuse it for acme.localhost — the
+# certificate looks right and every workspace host fails. `*.oi.localhost` has
+# two and is accepted, and everything under .localhost resolves to 127.0.0.1
+# at any depth, so nothing has to be added to /etc/hosts.
+#
+# The certificate therefore covers the apex, every workspace subdomain, and the
+# status subdomains beneath it. Extra hostnames can be passed as arguments.
 #
 # Requires mkcert (brew install mkcert), whose local authority the system and
 # the browsers already trust after `mkcert -install`.
@@ -31,7 +37,9 @@ if [ ! -s "$(mkcert -CAROOT)/rootCA.pem" ]; then
 fi
 
 mkcert -cert-file "$out/dev.pem" -key-file "$out/dev-key.pem" \
-  localhost '*.localhost' '*.status.localhost' 127.0.0.1 ::1
+  localhost \
+  oi.localhost '*.oi.localhost' '*.status.oi.localhost' \
+  127.0.0.1 ::1 "$@"
 
 chmod 600 "$out/dev-key.pem"
 echo

@@ -148,8 +148,22 @@ nothing else is needed. In development the two are worth setting anyway: plain
 http hides a `Secure` cookie being dropped, a session shared across workspace
 subdomains behaving differently under `SameSite`, and an identity provider
 refusing an `http` callback — three failures that otherwise wait for
-production. `./scripts/dev-certs.sh` writes a certificate covering `localhost`,
-`*.localhost` and `*.status.localhost` into `certs/`, which is never committed.
+production. `./scripts/dev-certs.sh` writes a certificate into `certs/`, which is never
+committed.
+
+One catch worth knowing before it costs an hour: a wildcard certificate is only
+honoured when at least two labels follow the star. `*.localhost` has one, so
+curl, OpenSSL and every browser refuse it for `acme.localhost` — the
+certificate looks correct and each workspace host fails. Serve development from
+a two-label base instead:
+
+```
+BASE_DOMAIN=oi.localhost:3106
+STATUS_BASE_DOMAIN=status.oi.localhost:3107
+```
+
+Nothing goes into `/etc/hosts`: everything under `.localhost` resolves to
+127.0.0.1 at any depth.
 
 ### On-call notifications
 
