@@ -8,8 +8,23 @@ const connectionString =
   process.env.DATABASE_URL ??
   "postgres://openincident_app:openincident_app@localhost:5441/openincident";
 
-/** Lazy connection: postgres.js only opens the connection on the first query. */
-const queryClient = postgres(connectionString, { prepare: false });
+/**
+ * Lazy connection: postgres.js only opens the connection on the first query.
+ *
+ * Cached on `globalThis`, and that is not a micro-optimisation. In
+ * development, every recompile re-evaluates this module and leaves the
+ * previous pool behind, holding up to ten connections that nothing will ever
+ * close. Half an hour of editing exhausts a hundred-connection Postgres, and
+ * the symptom is the least helpful one imaginable: every page answers 404,
+ * because the tenant lookup is the first query each request makes and a
+ * workspace that cannot be read is a workspace that does not exist.
+ *
+ * In production the module is evaluated once and the cache changes nothing.
+ */
+const POOL = Symbol.for("openincident.db.pool");
+type PoolHolder = { [POOL]?: ReturnType<typeof postgres> };
+const holder = globalThis as unknown as PoolHolder;
+const queryClient = (holder[POOL] ??= postgres(connectionString, { prepare: false }));
 
 /**
  * The whole schema, for THIS package: seeds, the workspace command, the tests.
