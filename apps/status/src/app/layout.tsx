@@ -5,7 +5,9 @@ import { currentSnapshot } from "@/lib/snapshot";
 export async function generateMetadata(): Promise<Metadata> {
   const cur = await currentSnapshot();
   return {
-    title: cur ? `${cur.snap.page.name} Status` : "Status",
+    // The operator named the page; most names already end in "Status" and
+    // "Skylark Status Status" is what appending it blindly produced.
+    title: cur?.snap.page.name || "Status",
     robots:
       cur?.snap.page.noindex === false
         ? { index: true, follow: true }

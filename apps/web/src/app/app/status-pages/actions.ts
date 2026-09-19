@@ -207,6 +207,7 @@ export async function createComponent(formData: FormData) {
     .object({
       pageId: uuid,
       name: z.string().trim().min(1).max(60),
+      description: z.string().trim().max(120).optional(),
       groupName: z.string().trim().max(60).optional(),
       serviceId: uuid.or(z.literal("")).optional(),
       source: z.enum(["monitor", "manual"]).default("manual"),
@@ -238,6 +239,7 @@ export async function createComponent(formData: FormData) {
       tenantId: current.tenant.id,
       pageId: input.pageId,
       name: input.name,
+      description: input.description || null,
       groupName: input.groupName || null,
       serviceId: monitorId ? null : input.serviceId || null,
       monitorId,
@@ -254,6 +256,46 @@ export async function createComponent(formData: FormData) {
   await refreshStatusSnapshot(current.tenant.id, input.pageId);
   revalidatePath(PAGE);
   redirect(`${PAGE}?page=${input.pageId}`);
+}
+
+/**
+ * The two things about a component a human writes: its public name and the one
+ * line under it. Everything else — its state, its bars — is either the
+ * monitor's word or an incident's, and neither is edited from a form.
+ */
+export async function updateComponent(formData: FormData) {
+  const current = await requireManager();
+  const parsed = z
+    .object({
+      id: uuid,
+      name: z.string().trim().min(1).max(60),
+      description: z.string().trim().max(120).optional(),
+    })
+    .safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect(`${PAGE}?error=invalid`);
+  const input = parsed.data;
+  const pageId = await withTenant(current.tenant.id, async (tx) => {
+    const [c] = await tx
+      .select({ pageId: statusPageComponents.pageId, name: statusPageComponents.name })
+      .from(statusPageComponents)
+      .where(
+        and(
+          eq(statusPageComponents.tenantId, current.tenant.id),
+          eq(statusPageComponents.id, input.id),
+        ),
+      );
+    if (!c) return null;
+    await tx
+      .update(statusPageComponents)
+      .set({ name: input.name, description: input.description || null })
+      .where(eq(statusPageComponents.id, input.id));
+    await recordAudit(tx, current, "config", "status_component.updated", { name: input.name });
+    return c.pageId;
+  });
+  if (!pageId) redirect(`${PAGE}?error=invalid`);
+  await refreshStatusSnapshot(current.tenant.id, pageId);
+  revalidatePath(PAGE);
+  redirect(`${PAGE}?page=${pageId}`);
 }
 
 export async function updateComponentState(formData: FormData) {

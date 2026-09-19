@@ -1,0 +1,1 @@
+ALTER TABLE "app"."status_page_components" ADD COLUMN "description" text;

@@ -1880,6 +1880,8 @@ export const statusPageComponents = app.table(
       .references(() => statusPages.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     groupName: text("group_name"),
+    /** One line under the name: what a visitor needs to recognise the thing. */
+    description: text("description"),
     position: integer("position").notNull().default(0),
     /** The service behind it — how an incident finds its components. */
     serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),

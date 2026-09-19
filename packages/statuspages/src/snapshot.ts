@@ -2,9 +2,10 @@
  * The projection: everything the public page shows, as one JSON document per
  * page, written to directory.status_snapshots on every change.
  */
-import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import {
   componentImpactHistory,
+  monitorChecks,
   monitorDays,
   monitors,
   statusPageComponents,
@@ -40,17 +41,25 @@ export type Snapshot = {
   components: Array<{
     id: string;
     name: string;
+    /** One line under the name, written by whoever runs the page. */
+    description: string | null;
     groupName: string | null;
     /** The five component states, plus `unknown` when a tracked monitor has never answered. */
     state: string;
     /** Null when nothing is known yet — a monitor without a single rolled-up day. */
     uptime90: number | null;
+    /** The same over thirty days — what the expanded row shows. */
+    uptime30: number | null;
     /** One per day, oldest first; `none` is a day without any measurement. */
     ticks: string[];
     /** Where the state comes from: a monitor decides it, or a human does. */
     source: "monitor" | "manual";
     monitorId: string | null;
     monitorName: string | null;
+    /** Median of the monitor's recent checks; null when nothing measures it. */
+    responseMs: number | null;
+    /** When this component last appeared in a published incident. */
+    lastIncidentAt: string | null;
   }>;
   incidents: Array<{
     id: string;
@@ -92,6 +101,13 @@ const MONITOR_STATE: Record<string, string> = {
 };
 
 /** The day keys the monitor bars are drawn on, oldest first, so gaps still line up. */
+/**
+ * Ninety bars, the window the public page draws. The uptime figure has always
+ * been ninety days; showing thirty bars beside it invited the reader to add up
+ * a month and wonder why the percentage disagreed.
+ */
+export const BAR_DAYS = 90;
+
 function dayKeys(n: number, now: Date): string[] {
   const out: string[] = [];
   for (let i = n - 1; i >= 0; i--)
@@ -156,20 +172,28 @@ export async function buildSnapshot(
     mine.set(d.day, d);
     daysOf.set(d.monitorId, mine);
   }
-  const barKeys = dayKeys(30, now);
+  const barKeys = dayKeys(BAR_DAYS, now);
+  const since30Key = dayKeys(30, now)[0]!;
   const monitorView = (id: string) => {
     const m = tracked.find((r) => r.id === id);
     const mine = daysOf.get(id);
     let up = 0;
     let total = 0;
+    let up30 = 0;
+    let total30 = 0;
     for (const d of mine?.values() ?? []) {
       up += d.onlineSeconds;
       total += d.onlineSeconds + d.degradedSeconds + d.offlineSeconds;
+      if (d.day >= since30Key) {
+        up30 += d.onlineSeconds;
+        total30 += d.onlineSeconds + d.degradedSeconds + d.offlineSeconds;
+      }
     }
     return {
       name: m?.name ?? null,
       state: MONITOR_STATE[m?.state ?? "waiting"] ?? "unknown",
       uptime90: total > 0 ? Math.round((up / total) * 10_000) / 100 : null,
+      uptime30: total30 > 0 ? Math.round((up30 / total30) * 10_000) / 100 : null,
       ticks: barKeys.map((k) => {
         const d = mine?.get(k);
         if (!d) return "none";
@@ -239,19 +263,57 @@ export async function buildSnapshot(
   const underMaintenance = new Set(
     maints.filter((m) => m.status === "in_progress").flatMap((m) => m.componentIds),
   );
+  // The response time a visitor sees is the median of the monitor's recent
+  // checks, not its last one: a single slow answer is weather, and the number
+  // sits next to a ninety-day uptime.
+  const latency = new Map<string, number>();
+  if (monitorIds.length > 0) {
+    const rows = await tx
+      .select({ monitorId: monitorChecks.monitorId, latencyMs: monitorChecks.latencyMs })
+      .from(monitorChecks)
+      .where(
+        and(
+          inArray(monitorChecks.monitorId, monitorIds),
+          isNotNull(monitorChecks.latencyMs),
+          gte(monitorChecks.at, new Date(now.getTime() - DAY)),
+        ),
+      );
+    const byMonitor = new Map<string, number[]>();
+    for (const r of rows) {
+      const list = byMonitor.get(r.monitorId) ?? [];
+      list.push(r.latencyMs!);
+      byMonitor.set(r.monitorId, list);
+    }
+    for (const [id, list] of byMonitor) {
+      list.sort((a, b) => a - b);
+      latency.set(id, list[Math.floor(list.length / 2)]!);
+    }
+  }
+  // When each component was last named by a published incident.
+  const lastIncident = new Map<string, string>();
+  for (const inc of incidents) {
+    for (const id of inc.componentIds) {
+      if (!lastIncident.has(id)) lastIncident.set(id, inc.startedAt.toISOString());
+    }
+  }
+
   const components = comps.map((c) => {
     if (c.monitorId) {
       const v = monitorView(c.monitorId);
       return {
         id: c.id,
         name: c.name,
+        description: c.description,
         groupName: c.groupName,
         state: underMaintenance.has(c.id) ? "maintenance" : v.state,
         uptime90: v.uptime90,
+        uptime30: v.uptime30,
         ticks: v.ticks,
         source: "monitor" as const,
         monitorId: c.monitorId,
         monitorName: v.name,
+        responseMs: latency.get(c.monitorId) ?? null,
+        lastIncidentAt: lastIncident.get(c.id) ?? null,
       };
     }
     const mine = history
@@ -260,13 +322,18 @@ export async function buildSnapshot(
     return {
       id: c.id,
       name: c.name,
+      description: c.description,
       groupName: c.groupName,
       state: c.state as string,
       uptime90: computeUptime(mine, since90, now),
-      ticks: dayTicks(mine, 30, now),
+      uptime30: computeUptime(mine, new Date(now.getTime() - 30 * DAY), now),
+      ticks: dayTicks(mine, BAR_DAYS, now),
       source: "manual" as const,
       monitorId: null,
       monitorName: null,
+      // Nothing measures a component a person sets by hand.
+      responseMs: null,
+      lastIncidentAt: lastIncident.get(c.id) ?? null,
     };
   });
   return {

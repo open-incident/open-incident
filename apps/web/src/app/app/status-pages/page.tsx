@@ -18,7 +18,12 @@ import { isManagerRole } from "@openincident/config";
 import { getT } from "@/i18n/server";
 import { canRespond, requireMember } from "@/lib/session";
 import { listMonitors } from "@/lib/monitors";
-import { MaintenanceDialog, NewComponentDialog, NewPageDialog } from "./dialogs";
+import {
+  EditComponentDialog,
+  MaintenanceDialog,
+  NewComponentDialog,
+  NewPageDialog,
+} from "./dialogs";
 import {
   cancelMaintenance,
   deleteComponent,
@@ -629,9 +634,9 @@ export default async function StatusPagesPage({
                       style={{
                         display: "grid",
                         gridTemplateColumns: acts
-                          ? "minmax(150px,1fr) minmax(160px,2fr) 150px auto"
+                          ? "minmax(110px,1fr) minmax(110px,2fr) 138px auto"
                           : "minmax(150px,1fr) minmax(200px,2fr) 150px",
-                        gap: 14,
+                        gap: acts ? 10 : 14,
                         alignItems: "center",
                         padding: "11px 16px",
                         borderBottom: "1px solid var(--line-2)",
@@ -681,7 +686,10 @@ export default async function StatusPagesPage({
                         style={{ display: "flex", gap: 1.5, alignItems: "flex-end" }}
                         title={t("monitors.colLast30")}
                       >
-                        {c.ticks.map((tk, k) => (
+                        {/* The public page draws ninety; this column is a
+                            glance the width of a thumb, and ninety bars in it
+                            are a smear. The last thirty, as the title says. */}
+                        {c.ticks.slice(-30).map((tk, k) => (
                           <span
                             key={k}
                             title={tk === "none" ? t("sp2.noData") : stateLabel(tk)}
@@ -776,6 +784,13 @@ export default async function StatusPagesPage({
                                 ✓
                               </button>
                             </form>
+                          )}
+                          {manages && (
+                            <EditComponentDialog
+                              id={c.id}
+                              name={c.name}
+                              description={row?.description ?? null}
+                            />
                           )}
                           {manages && (
                             <form action={deleteComponent}>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useT } from "@/i18n/client";
-import { createComponent, createMaintenance, createStatusPage } from "./actions";
+import { createComponent, createMaintenance, createStatusPage, updateComponent } from "./actions";
 
 /** A monitor as the "add a component" choice needs it: a name and how it is. */
 export type MonitorChoice = {
@@ -343,6 +343,18 @@ export function NewComponentDialog({
           </label>
           <label style={field}>
             <span style={label}>
+              {t("sp2.descriptionLabel")} · {t("common.optional")}
+            </span>
+            <input
+              name="description"
+              maxLength={120}
+              placeholder={t("sp2.descriptionHint")}
+              className="oi-field"
+              style={control}
+            />
+          </label>
+          <label style={field}>
+            <span style={label}>
               {t("statusPages.group")} · {t("common.optional")}
             </span>
             <input name="groupName" maxLength={60} className="oi-field" style={control} />
@@ -551,6 +563,87 @@ export function MaintenanceDialog({
             {t("statusPages.autoTransitionsLabel")}
           </label>
           <div style={note}>{t("statusPages.maintenanceNote")}</div>
+        </Frame>
+      )}
+    </>
+  );
+}
+
+/**
+ * Rename a component, or write the line the public page shows under its name.
+ * Nothing else: what a component *is* — the monitor behind it — is not
+ * something to change after the fact, it is a different component.
+ */
+export function EditComponentDialog({
+  id,
+  name,
+  description,
+}: {
+  id: string;
+  name: string;
+  description: string | null;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="component-edit"
+        onClick={() => setOpen(true)}
+        aria-label={t("common.edit")}
+        title={t("common.edit")}
+        className="oi-hover"
+        style={{
+          width: 26,
+          height: 26,
+          border: "1px solid var(--line)",
+          borderRadius: 8,
+          background: "var(--panel)",
+          display: "grid",
+          placeItems: "center",
+          fontSize: 11,
+          cursor: "pointer",
+          color: "inherit",
+          flex: "none",
+        }}
+      >
+        ✎
+      </button>
+      {open && (
+        <Frame
+          title={t("sp2.editComponentTitle")}
+          testId="component-edit-form"
+          action={updateComponent}
+          onClose={() => setOpen(false)}
+          submit={t("common.save")}
+        >
+          <input type="hidden" name="id" value={id} />
+          <label style={field}>
+            <span style={label}>{t("sp2.publicName")}</span>
+            <input
+              name="name"
+              required
+              autoFocus
+              maxLength={60}
+              defaultValue={name}
+              className="oi-field"
+              style={control}
+            />
+          </label>
+          <label style={field}>
+            <span style={label}>
+              {t("sp2.descriptionLabel")} · {t("common.optional")}
+            </span>
+            <input
+              name="description"
+              maxLength={120}
+              defaultValue={description ?? ""}
+              placeholder={t("sp2.descriptionHint")}
+              className="oi-field"
+              style={control}
+            />
+          </label>
         </Frame>
       )}
     </>

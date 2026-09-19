@@ -211,6 +211,13 @@
       "when": 1789820956024,
       "tag": "0029_drop_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1789828218304,
+      "tag": "0030_component_description",
+      "breakpoints": true
     }
   ]
 }

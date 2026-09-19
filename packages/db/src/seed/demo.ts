@@ -2590,20 +2590,22 @@ async function ensureStatusPage(tx: Tx, ctx: Ctx) {
         .where(eq(incidentStatuses.id, st.id));
 
   const comp: Record<string, string> = {};
-  const defs: Array<[string, string]> = [
-    ["Checkout", "checkout-api"],
-    ["Paiements", "payments-worker"],
-    ["Storefront", "web-storefront"],
-    ["API", "checkout-api"],
-    ["Connexion", "auth-service"],
+  // Name, the line the public page shows under it, and the service behind it.
+  const defs: Array<[string, string, string]> = [
+    ["Checkout", "Panier et passage en caisse", "checkout-api"],
+    ["Paiements", "Encaissement et remboursements", "payments-worker"],
+    ["Storefront", "Le site public et ses pages", "web-storefront"],
+    ["API", "API publique et webhooks", "checkout-api"],
+    ["Connexion", "Authentification et SSO", "auth-service"],
   ];
-  for (const [i, [name, svc]] of defs.entries()) {
+  for (const [i, [name, description, svc]] of defs.entries()) {
     const [row] = await tx
       .insert(statusPageComponents)
       .values({
         tenantId,
         pageId,
         name,
+        description,
         serviceId: ctx.serviceId[svc] ?? null,
         position: i,
         state: "operational",
