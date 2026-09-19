@@ -6,7 +6,6 @@
  */
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
-  catalogEntries,
   componentImpactHistory,
   incidentEvents,
   incidentStatuses,
@@ -74,7 +73,7 @@ export async function publishIncidentUpdate(
         inc: incidents,
         statusPublic: incidentStatuses.publicStatus,
         sevRank: severities.rank,
-        serviceId: incidents.serviceEntryId,
+        serviceId: incidents.serviceId,
       })
       .from(incidents)
       .leftJoin(incidentStatuses, eq(incidentStatuses.id, incidents.statusId))
@@ -105,7 +104,7 @@ export async function publishIncidentUpdate(
             .where(
               and(
                 eq(statusPageComponents.pageId, page.id),
-                eq(statusPageComponents.serviceEntryId, row.serviceId),
+                eq(statusPageComponents.serviceId, row.serviceId),
               ),
             )
         : [];
@@ -197,50 +196,72 @@ export async function publishIncidentUpdate(
       },
       occurredAt: now,
     });
-    // Subscribers: one email per update.
+    // Subscribers: one email per update, sent once this transaction has
+    // committed — the loop itself is below.
     const subs = await tx
       .select()
       .from(statusPageSubscribers)
       .where(and(eq(statusPageSubscribers.pageId, page.id)));
-    const confirmed = subs.filter((s) => s.confirmedAt);
-    const url = statusPageUrl(page);
-    const [svcName] = row.serviceId
-      ? await tx
-          .select({ name: catalogEntries.name })
-          .from(catalogEntries)
-          .where(eq(catalogEntries.id, row.serviceId))
-      : [];
-    void svcName;
-    let notified = 0;
-    for (const s of confirmed) {
-      const r = await sendTenantEmail({
-        tenantId,
-        to: s.email,
-        subject: `[${page.name}] ${existing.title} — ${status}`,
-        text: `${input.body.trim()}\n\n${url}\n\nUnsubscribe: ${url}/unsubscribe/${s.unsubscribeToken}`,
-        kind: "other",
-        ref: existing.id,
-        headers: page.replyTo ? { "reply-to": page.replyTo } : undefined,
-      }).catch(() => null);
-      if (r && (r.queued || r.delivered)) notified++;
-    }
-    await tx
-      .update(statusPageIncidentUpdates)
-      .set({ notifiedCount: notified })
-      .where(eq(statusPageIncidentUpdates.id, upd!.id));
-    return { publicIncidentId: existing.id, created, notified, page };
+    return {
+      publicIncidentId: existing.id,
+      created,
+      page,
+      title: existing.title,
+      status,
+      updateId: upd!.id,
+      confirmed: subs.filter((s) => s.confirmedAt),
+    };
   });
   if (!result) return null;
+
+  /*
+   * The fan-out happens AFTER the transaction, not inside it, and that is a
+   * correctness fix as much as a speed one.
+   *
+   * sendTenantEmail opens a transaction of its own to write the outbox row. Run
+   * from inside this one it takes a second connection from the pool while
+   * holding the first, and postgres.js gives a process ten. Ten concurrent
+   * publications therefore each hold one and wait for the eleventh: measured,
+   * ten nested transactions never returned — no error, no timeout, the process
+   * simply stopped. Two subscribers were enough to make the shape; a hundred
+   * and twenty-eight only made it slower, at 4–5 ms a message held open in the
+   * request.
+   *
+   * The count is written back in a statement of its own. It is a report of what
+   * was queued, not part of the publication: a page that is published and a
+   * count that is one short is a far better outcome than a publication rolled
+   * back because a mail server hiccuped.
+   */
+  const url = statusPageUrl(result.page);
+  let notified = 0;
+  for (const s of result.confirmed) {
+    const r = await sendTenantEmail({
+      tenantId,
+      to: s.email,
+      subject: `[${result.page.name}] ${result.title} — ${result.status}`,
+      text: `${input.body.trim()}\n\n${url}\n\nUnsubscribe: ${url}/unsubscribe/${s.unsubscribeToken}`,
+      kind: "other",
+      // The 128th subscriber can wait; the next invitation cannot wait for it.
+      class: "bulk",
+      ref: result.publicIncidentId,
+      headers: result.page.replyTo ? { "reply-to": result.page.replyTo } : undefined,
+    }).catch(() => null);
+    if (r && (r.queued || r.delivered)) notified++;
+  }
+  if (notified)
+    await withTenant(tenantId, (tx) =>
+      tx
+        .update(statusPageIncidentUpdates)
+        .set({ notifiedCount: notified })
+        .where(eq(statusPageIncidentUpdates.id, result.updateId)),
+    );
+
   await refreshStatusSnapshot(tenantId, result.page.id);
   await dispatchWebhookEvent(tenantId, "status_page.incident_published", {
     status_page: { id: result.page.id, name: result.page.name, url: statusPageUrl(result.page) },
     public_incident: { id: result.publicIncidentId, created: result.created },
   }).catch(() => {});
-  return {
-    publicIncidentId: result.publicIncidentId,
-    created: result.created,
-    notified: result.notified,
-  };
+  return { publicIncidentId: result.publicIncidentId, created: result.created, notified };
 }
 
 /**

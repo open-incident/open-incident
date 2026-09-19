@@ -13,34 +13,42 @@ export async function subscribeToPage(
 ): Promise<{ ok: boolean; alreadyConfirmed: boolean }> {
   const value = email.trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) return { ok: false, alreadyConfirmed: false };
-  return withTenant(tenantId, async (tx) => {
+  const row = await withTenant(tenantId, async (tx) => {
     const [page] = await tx
       .select()
       .from(statusPages)
       .where(and(eq(statusPages.tenantId, tenantId), eq(statusPages.id, pageId)));
-    if (!page) return { ok: false, alreadyConfirmed: false };
+    if (!page) return null;
     const [existing] = await tx
       .select()
       .from(statusPageSubscribers)
       .where(and(eq(statusPageSubscribers.pageId, pageId), eq(statusPageSubscribers.email, value)));
-    if (existing?.confirmedAt) return { ok: true, alreadyConfirmed: true };
+    if (existing?.confirmedAt) return { page, confirmToken: null };
     const confirmToken = existing?.confirmToken ?? randomBytes(20).toString("hex");
     const unsubscribeToken = existing?.unsubscribeToken ?? randomBytes(20).toString("hex");
     if (!existing)
       await tx
         .insert(statusPageSubscribers)
         .values({ tenantId, pageId, email: value, confirmToken, unsubscribeToken, source: "form" });
-    await sendTenantEmail({
-      tenantId,
-      to: value,
-      subject: `Confirm your subscription to ${page.name}`,
-      text: `Confirm to receive the updates of ${page.name}:\n\n${pageUrl}/confirm/${confirmToken}\n\nIf you did not ask for this, ignore this email.`,
-      kind: "other",
-      ref: pageId,
-      headers: page.replyTo ? { "reply-to": page.replyTo } : undefined,
-    });
-    return { ok: true, alreadyConfirmed: false };
+    return { page, confirmToken };
   });
+  if (!row) return { ok: false, alreadyConfirmed: false };
+  if (!row.confirmToken) return { ok: true, alreadyConfirmed: true };
+  // Sent once the row is committed, never from inside the transaction.
+  // sendTenantEmail opens one of its own, and a second connection asked for
+  // while the first is still held is how ten concurrent subscriptions exhaust a
+  // ten-connection pool and stop for good — see publishIncidentUpdate, where
+  // the same shape was measured deadlocking.
+  await sendTenantEmail({
+    tenantId,
+    to: value,
+    subject: `Confirm your subscription to ${row.page.name}`,
+    text: `Confirm to receive the updates of ${row.page.name}:\n\n${pageUrl}/confirm/${row.confirmToken}\n\nIf you did not ask for this, ignore this email.`,
+    kind: "other",
+    ref: pageId,
+    headers: row.page.replyTo ? { "reply-to": row.page.replyTo } : undefined,
+  });
+  return { ok: true, alreadyConfirmed: false };
 }
 
 export async function confirmSubscriber(

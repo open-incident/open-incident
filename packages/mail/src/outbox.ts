@@ -17,6 +17,28 @@ import { resolveMailConfig } from "./settings";
 import type { MailKind } from "./types";
 
 export const MAIL_SEND_QUEUE = "mail-send";
+export const MAIL_BULK_QUEUE = "mail-bulk";
+
+/**
+ * Two deadlines, so two queues.
+ *
+ * A reset link, an invitation and a verification are read by someone who is
+ * waiting in front of a screen; the 128th message of a status page fan-out is
+ * read tomorrow morning. Measured on a relay 50 ms away, four publications of
+ * 128 subscribers left an invitation queued for a median of twenty seconds and
+ * a worst case of thirty — and 98 % of that was spent waiting, not sending.
+ * One queue cannot tell the two apart, so there are two.
+ *
+ * `transactional` is the default on purpose: a caller who has not thought about
+ * it is far more often sending someone a link than fanning out to a mailing
+ * list, and the cost of getting it wrong that way round is only that a bulk
+ * send keeps its old urgency.
+ */
+export type MailClass = "transactional" | "bulk";
+
+export function mailQueueForClass(cls: MailClass): string {
+  return cls === "bulk" ? MAIL_BULK_QUEUE : MAIL_SEND_QUEUE;
+}
 
 export type SendTenantEmailInput = {
   tenantId: string;
@@ -29,6 +51,8 @@ export type SendTenantEmailInput = {
   headers?: Record<string, string>;
   /** Object the email is about — an incident, an escalation — for the log. */
   ref?: string;
+  /** Which deadline this send has. See MailClass — transactional by default. */
+  class?: MailClass;
   /** Bypasses the queue and sends right away (configuration test, invitation). */
   immediate?: boolean;
 };
@@ -54,24 +78,53 @@ export type MailSendJob = {
   headers?: Record<string, string>;
 };
 
-async function enqueue(job: MailSendJob): Promise<boolean> {
-  const url = process.env.REDIS_URL;
-  if (!url) return false;
-  try {
+/**
+ * One Redis connection for the process, opened on the first send and kept —
+ * the same thing the escalation engine and the notifier do.
+ *
+ * It used to be one connection per email, closed straight after. A fan-out of
+ * 128 subscribers therefore opened and closed 128 TCP connections from inside
+ * the publishing request, which on a local Redis cost 4–5 ms a message and on a
+ * managed Redis costs a full handshake each time. The promise, not the queue,
+ * is what is cached: two sends racing on the first message would otherwise
+ * open two connections and leak one.
+ */
+const queues = new Map<string, Promise<import("bullmq").Queue | null>>();
+
+function queueFor(name: string): Promise<import("bullmq").Queue | null> {
+  const existing = queues.get(name);
+  if (existing) return existing;
+  const opening = (async () => {
+    const url = process.env.REDIS_URL;
+    if (!url) return null;
+    // Lazy import: nothing that never sends an email pays for bullmq.
     const [{ Queue }, { default: IORedis }] = await Promise.all([
       import("bullmq"),
       import("ioredis"),
     ]);
-    const connection = new IORedis(url, { maxRetriesPerRequest: null, lazyConnect: false });
-    const queue = new Queue(MAIL_SEND_QUEUE, { connection });
-    await queue.add("send", job, {
-      attempts: 5,
-      backoff: { type: "exponential", delay: 15_000 },
-      removeOnComplete: 500,
-      removeOnFail: 1000,
+    return new Queue(name, {
+      connection: new IORedis(url, { maxRetriesPerRequest: null }),
+      defaultJobOptions: {
+        attempts: 5,
+        backoff: { type: "exponential", delay: 15_000 },
+        removeOnComplete: 500,
+        removeOnFail: 1000,
+      },
     });
-    await queue.close();
-    await connection.quit();
+  })().catch((err) => {
+    console.error("[mail] could not reach Redis:", err);
+    queues.delete(name);
+    return null;
+  });
+  queues.set(name, opening);
+  return opening;
+}
+
+async function enqueue(job: MailSendJob, cls: MailClass): Promise<boolean> {
+  try {
+    const queue = await queueFor(mailQueueForClass(cls));
+    if (!queue) return false;
+    await queue.add("send", job);
     return true;
   } catch (err) {
     console.error("[mail] could not enqueue, sending directly:", err);
@@ -109,7 +162,7 @@ export async function sendTenantEmail(input: SendTenantEmailInput): Promise<Send
     html: input.html,
     headers: input.headers,
   };
-  if (!input.immediate && (await enqueue(job))) {
+  if (!input.immediate && (await enqueue(job, input.class ?? "transactional"))) {
     return { deliveryId: delivery.id, queued: true, delivered: false };
   }
 

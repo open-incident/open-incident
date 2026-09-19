@@ -18,9 +18,12 @@ export {
   type ResolvedMailConfig,
 } from "./settings";
 export {
+  MAIL_BULK_QUEUE,
   MAIL_SEND_QUEUE,
   deliverEmail,
+  mailQueueForClass,
   sendTenantEmail,
+  type MailClass,
   type MailSendJob,
   type SendTenantEmailInput,
   type SendTenantEmailResult,

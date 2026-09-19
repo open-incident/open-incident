@@ -103,6 +103,9 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # One worker serves every queue, and that is the default: an installation
+  # must never need two containers to send an email. WORKER_QUEUES is what
+  # changes that — see the `worker-bulk` service below, and .env.example.
   worker:
     build:
       context: .
@@ -116,12 +119,46 @@ services:
       INTERNAL_WEB_ORIGIN: http://web:3000
       BASE_DOMAIN: ${BASE_DOMAIN:-localhost:3000}
       STATUS_BASE_DOMAIN: ${STATUS_BASE_DOMAIN:-status.localhost:3001}
+      WORKER_QUEUES: ${WORKER_QUEUES:-}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-}
     # The ping monitor sends ICMP from an unprivileged datagram socket. Docker
     # has set this range in every container since 2020, so this line changes
     # nothing today — it is written down so a future default cannot take the
     # feature away without anyone noticing.
     sysctls:
       net.ipv4.ping_group_range: "0 2147483647"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # A second worker for the heavy work — off by default, on purpose.
+  #
+  # An installation only needs it once the background work starts crowding
+  # itself out: the fan-out to a status page's subscribers, the purges, the
+  # nightly syncs. Starting it means giving the first worker the other half,
+  # otherwise both serve everything and nothing is separated:
+  #   WORKER_QUEUES=urgent docker compose --profile split up -d worker worker-bulk
+  # The image is the same one; only the variable differs. A single process
+  # remains the default, and it is the one `docker compose up` starts.
+  worker-bulk:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: worker
+    profiles: ["split"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
+      REDIS_URL: redis://redis:6379
+      INTERNAL_WEB_ORIGIN: http://web:3000
+      BASE_DOMAIN: ${BASE_DOMAIN:-localhost:3000}
+      STATUS_BASE_DOMAIN: ${STATUS_BASE_DOMAIN:-status.localhost:3001}
+      WORKER_QUEUES: bulk
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

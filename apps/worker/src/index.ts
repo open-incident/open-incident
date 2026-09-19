@@ -36,7 +36,14 @@ import { runInvestigation, type InvestigationJob } from "@openincident/investiga
 import { syncTrackerStatuses } from "@openincident/trackers";
 import { QA_QUEUE, type QaJob } from "@openincident/qa";
 import { runQaJob } from "@openincident/qa/runner";
-import { QUEUE_NAMES, type QueueName } from "./queues";
+import {
+  QA_QUEUE_NAME,
+  WORK_QUEUES,
+  concurrencyFor,
+  selectedQueues,
+  type QueueName,
+  type WorkQueue,
+} from "./queues";
 
 // A partial S3_* set is a mistake to stop on, not to discover at the first upload.
 assertStorageConfig();
@@ -129,6 +136,20 @@ async function sweepQueuedNotifications(): Promise<number> {
   return replayed;
 }
 
+/** Sending one logged delivery. The two mail queues differ only in urgency. */
+function sendMail(queue: string): Processor {
+  return async (job) => {
+    const data = job.data as MailSendJob;
+    const result = await deliverEmail(data);
+    // Throwing lets BullMQ retry with its exponential backoff; a delivery closed
+    // on purpose (suspended workspace) is final and must not be retried.
+    if (!result.delivered && !result.handled) throw new Error(result.error ?? "send failed");
+    console.log(
+      `[${queue}] delivery ${data.deliveryId} ${result.delivered ? "sent" : `handled (${result.error})`}`,
+    );
+  };
+}
+
 /** Processors, one per queue. */
 const processors: Record<QueueName, Processor> = {
   "escalation-tick": async (job) => {
@@ -197,16 +218,10 @@ const processors: Record<QueueName, Processor> = {
         `[oncall-sweep] ${ticked} tick(s), ${replayed} replayed delivery(ies), ${reminded} shift reminder(s)`,
       );
   },
-  "mail-send": async (job) => {
-    const data = job.data as MailSendJob;
-    const result = await deliverEmail(data);
-    // Throwing lets BullMQ retry with its exponential backoff; a delivery closed
-    // on purpose (suspended workspace) is final and must not be retried.
-    if (!result.delivered && !result.handled) throw new Error(result.error ?? "send failed");
-    console.log(
-      `[mail-send] delivery ${data.deliveryId} ${result.delivered ? "sent" : `handled (${result.error})`}`,
-    );
-  },
+  "mail-send": sendMail("mail-send"),
+  // Same work, its own queue and its own slots: see MailClass. The fan-out to a
+  // status page's subscribers must not be able to sit in front of a reset link.
+  "mail-bulk": sendMail("mail-bulk"),
   "webhook-dispatch": async (job) => {
     const data = job.data as WebhookJob;
     const { httpStatus, ok } = await deliverWebhookJob(data);
@@ -279,20 +294,23 @@ const processors: Record<QueueName, Processor> = {
   },
 };
 
-const workers = QUEUE_NAMES.map(
-  (name) => new Worker(name, processors[name], { connection, concurrency: 5 }),
-);
-// QA: one suite at a time — the smoke suite's mocks bind fixed ports, and two
-// Playwright runs against the same instance would trip over each other.
-workers.push(
-  new Worker(
-    QA_QUEUE,
-    async (job) => {
-      await runQaJob(job.data as QaJob);
-    },
-    { connection, concurrency: 1, lockDuration: 120_000 },
-  ),
-);
+const served = selectedQueues();
+const serves = (q: WorkQueue) => served.includes(q);
+
+const workers = served.map((name) => {
+  const concurrency = concurrencyFor(name);
+  if (name === QA_QUEUE_NAME)
+    // A suite is minutes of Playwright: the default lock would expire mid-run
+    // and BullMQ would hand the same suite to a second worker.
+    return new Worker(
+      QA_QUEUE,
+      async (job) => {
+        await runQaJob(job.data as QaJob);
+      },
+      { connection, concurrency, lockDuration: 120_000 },
+    );
+  return new Worker(name, processors[name as QueueName], { connection, concurrency });
+});
 
 for (const w of workers) {
   w.on("failed", (job, err) => {
@@ -300,7 +318,21 @@ for (const w of workers) {
   });
 }
 
-/** Periodic sweeps — repeatable BullMQ schedulers (idempotent). */
+/**
+ * Periodic sweeps — repeatable BullMQ schedulers (idempotent).
+ *
+ * Only for the queues this process serves. Two reasons, and the second is the
+ * important one: a scheduler registered for a queue nobody consumes ticks into
+ * a pile forever, and when the worker that owns it comes back it finds a
+ * backlog of sweeps that were all meant to run at once. Whoever serves the
+ * queue is the one who schedules it.
+ *
+ * The retention is on the template rather than on the worker, because it is a
+ * property of the job and BullMQ reads it when the job is created. Without it
+ * every completed tick stays in Redis for good: this instance had accumulated
+ * 63,000 keys, 18,500 of them a single sweep's fifteen days of ticks, on a
+ * database whose useful contents is a few hundred rows.
+ */
 async function registerSchedulers() {
   const schedules: Array<[QueueName, number]> = [
     ["update-reminders", 60_000],
@@ -314,15 +346,23 @@ async function registerSchedulers() {
     ["housekeeping", DAY_MS],
   ];
   for (const [name, every] of schedules) {
+    if (!serves(name)) continue;
     const queue = new Queue(name, { connection });
-    await queue.upsertJobScheduler(`${name}-tick`, { every });
+    await queue.upsertJobScheduler(
+      `${name}-tick`,
+      { every },
+      { opts: { removeOnComplete: 100, removeOnFail: 500 } },
+    );
     await queue.close();
     console.log(`[scheduler] ${name} every ${Math.round(every / 1000)} s`);
   }
 }
 
 await registerSchedulers();
-console.log(`Open Incident worker started — queues: ${QUEUE_NAMES.join(", ")}, ${QA_QUEUE}`);
+console.log(
+  `Open Incident worker started — ${served.length}/${WORK_QUEUES.length} queues: ` +
+    served.map((q) => `${q}×${concurrencyFor(q)}`).join(", "),
+);
 
 async function shutdown() {
   console.log("Stopping the worker…");
