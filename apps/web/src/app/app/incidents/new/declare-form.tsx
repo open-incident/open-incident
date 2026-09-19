@@ -53,7 +53,6 @@ export function DeclareForm({
   types,
   severities,
   services,
-  catalogServices,
   fields,
   timeZone,
   initial,
@@ -62,16 +61,14 @@ export function DeclareForm({
 }: {
   types: TypeOpt[];
   severities: Array<{ id: string; name: string; description: string | null }>;
-  /** The services the workspace has learned about — what an incident is about now. */
+  /** The services the workspace has learned about — what an incident is about. */
   services: Array<{ id: string; key: string }>;
-  /** The catalog's Service entries — still the target while a workspace has no service rows. */
-  catalogServices: Array<{ id: string; name: string }>;
   fields: FieldOpt[];
   timeZone: string;
   initial?: {
     alertId: string;
     name: string;
-    serviceEntryId: string | null;
+    serviceId: string | null;
     summary: string | null;
   };
   aiSuggest?: boolean;
@@ -104,7 +101,6 @@ export function DeclareForm({
       ),
     [fields, typeId, form],
   );
-  const useServices = services.length > 0;
 
   useEffect(() => {
     const q = name.trim();
@@ -318,38 +314,21 @@ export function DeclareForm({
             {shows("service") && (
               <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 <span style={label}>{t("inc2.decl.service")}</span>
-                {useServices ? (
-                  <select
-                    name="serviceId"
-                    required={req("service")}
-                    defaultValue=""
-                    className="oi-field"
-                    style={{ ...control, fontFamily: "var(--mono)", fontSize: 12.5 }}
-                  >
-                    <option value="">{t("inc2.decl.serviceNone")}</option>
-                    {services.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.key}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <select
-                    name="serviceEntryId"
-                    required={req("service")}
-                    defaultValue={initial?.serviceEntryId ?? ""}
-                    className="oi-field"
-                    style={{ ...control, fontFamily: "var(--mono)", fontSize: 12.5 }}
-                  >
-                    <option value="">{t("inc2.decl.serviceNone")}</option>
-                    {catalogServices.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {services.length === 0 && catalogServices.length === 0 && (
+                <select
+                  name="serviceId"
+                  required={req("service")}
+                  defaultValue=""
+                  className="oi-field"
+                  style={{ ...control, fontFamily: "var(--mono)", fontSize: 12.5 }}
+                >
+                  <option value="">{t("inc2.decl.serviceNone")}</option>
+                  {services.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.key}
+                    </option>
+                  ))}
+                </select>
+                {services.length === 0 && (
                   <span style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.45 }}>
                     {t("inc2.decl.serviceEmpty")}
                   </span>
@@ -396,7 +375,7 @@ export function DeclareForm({
                       const out = await suggestDeclarationAction({
                         name,
                         summary,
-                        serviceEntryId: (fd?.get("serviceEntryId") as string | null) || null,
+                        serviceId: (fd?.get("serviceId") as string | null) || null,
                       });
                       if ("error" in out) setSuggestError(out.error);
                       else {

@@ -16,7 +16,6 @@ import {
   alertEvents,
   alerts,
   catalogEntries,
-  catalogTypes,
   escalationEvents,
   escalationPathVersions,
   escalationPaths,
@@ -1013,26 +1012,6 @@ export async function sweepEscalations(tenantIds: string[], now = new Date()): P
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The escalation path a catalog entry names — by id (the `escalation_path` attribute) or, legacy, by name. */
-async function pathOfEntry(
-  tx: Tx,
-  tenantId: string,
-  entry: { attributes: Record<string, unknown> },
-): Promise<{ id: string; name: string } | null> {
-  const ref = entry.attributes?.escalation_path;
-  if (typeof ref !== "string" || !ref.trim()) return null;
-  const [path] = await tx
-    .select({ id: escalationPaths.id, name: escalationPaths.name })
-    .from(escalationPaths)
-    .where(
-      and(
-        eq(escalationPaths.tenantId, tenantId),
-        UUID.test(ref) ? eq(escalationPaths.id, ref) : eq(escalationPaths.name, ref),
-      ),
-    );
-  return path ?? null;
-}
-
 /**
  * The owner of an observed service, and the path that owner is paged through.
  *
@@ -1075,62 +1054,52 @@ export async function resolvePathFromService(
 }
 
 /**
- * Dynamic resolution from any catalog type: the entry named by the alert
- * attribute carries an escalation path, or its owner team does. Nothing is
- * required of the catalog for a route to page someone — this is the option a
- * workspace grows into.
+ * The path an attribute of the alert resolves to.
  *
- * For services, the observed service and its owner team are consulted first:
- * that is the model the screens write to. The catalog answers only when the
- * service has no owner team, or no policy on it.
+ * Two attributes name something the product owns: `service`, which resolves to
+ * the team that owns it and then to that team's policy, and `team`, which
+ * resolves to the team's policy directly. Anything else resolves to nothing,
+ * and the rule falls back to the path it names.
+ *
+ * There used to be a third road through the catalog, where any entry of any
+ * type could carry a path. It is gone with the catalog: a service is observed
+ * and a team is a team, and one answer to "who owns this" is worth more than a
+ * mechanism that could give two.
  */
-export async function resolvePathFromCatalog(
+export async function resolveAttributePath(
   tx: Tx,
   tenantId: string,
-  typeKey: string,
+  attribute: string,
   value: string | null | undefined,
 ): Promise<{ pathId: string; via: string } | null> {
   if (!value) return null;
-  if (typeKey === "service") {
-    const owned = await resolvePathFromService(tx, tenantId, value);
-    if (owned) return owned;
-  }
-  const [type] = await tx
-    .select({ id: catalogTypes.id })
-    .from(catalogTypes)
-    .where(and(eq(catalogTypes.tenantId, tenantId), eq(catalogTypes.key, typeKey)));
-  if (!type) return null;
-  const [entry] = await tx
-    .select()
-    .from(catalogEntries)
-    .where(
-      and(
-        eq(catalogEntries.typeId, type.id),
-        UUID.test(value)
-          ? eq(catalogEntries.id, value)
-          : sql`lower(${catalogEntries.name}) = lower(${value})`,
-      ),
-    );
-  if (!entry) return null;
-  const own = await pathOfEntry(tx, tenantId, entry);
-  if (own) return { pathId: own.id, via: `${entry.name} → ${own.name}` };
-  const ownerId = entry.attributes?.owner;
-  if (typeof ownerId !== "string") return null;
-  const [owner] = await tx.select().from(catalogEntries).where(eq(catalogEntries.id, ownerId));
-  if (!owner) return null;
-  const theirs = await pathOfEntry(tx, tenantId, owner);
-  return theirs
-    ? { pathId: theirs.id, via: `${entry.name} → ${owner.name} → ${theirs.name}` }
-    : null;
+  if (attribute === "service") return resolvePathFromService(tx, tenantId, value);
+  if (attribute === "team") return resolvePathFromTeam(tx, tenantId, value);
+  return null;
 }
 
-/** Legacy entry point: service → owner team → the team's escalation path. */
-export async function resolveDynamicPath(
+/** A team named by the alert, and the policy it is paged through. */
+export async function resolvePathFromTeam(
   tx: Tx,
   tenantId: string,
-  serviceName: string | null | undefined,
+  value: string,
 ): Promise<{ pathId: string; via: string } | null> {
-  return resolvePathFromCatalog(tx, tenantId, "service", serviceName);
+  const [row] = await tx
+    .select({ name: teams.name, pathId: teams.policyPathId })
+    .from(teams)
+    .where(
+      and(
+        eq(teams.tenantId, tenantId),
+        UUID.test(value) ? eq(teams.id, value) : sql`lower(${teams.name}) = lower(${value})`,
+      ),
+    );
+  if (!row?.pathId) return null;
+  const [path] = await tx
+    .select({ name: escalationPaths.name })
+    .from(escalationPaths)
+    .where(and(eq(escalationPaths.tenantId, tenantId), eq(escalationPaths.id, row.pathId)));
+  if (!path) return null;
+  return { pathId: row.pathId, via: `${row.name} → ${path.name}` };
 }
 
 /* ---------- Shift reminders ---------- */

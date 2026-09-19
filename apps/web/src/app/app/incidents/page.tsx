@@ -483,7 +483,6 @@ export default async function IncidentsPage({
               privateByDefault: ty.privateByDefault,
             }))}
           severities={declare.options.severities}
-          catalogServices={declare.options.services.map((s) => ({ id: s.id, name: s.name }))}
           services={declare.services.map((s) => ({ id: s.id, key: s.key }))}
           fields={declare.options.fields.map((f) => ({
             id: f.id,

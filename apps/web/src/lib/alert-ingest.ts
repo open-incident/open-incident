@@ -14,13 +14,13 @@ import {
   alertRoutes,
   alertSources,
   alerts,
-  catalogEntries,
-  catalogTypes,
   escalationPaths,
   incidentEvents,
   incidentTypes,
   incidents,
+  services,
   severities,
+  teams,
   withTenant,
   type EscalationRule,
   type GroupingRule,
@@ -37,7 +37,7 @@ import {
   mergeAttributes,
   parsePayload,
   priorityByLabel,
-  resolvePathFromCatalog,
+  resolveAttributePath,
   startEscalation,
   valueAt,
   type ConditionContext,
@@ -151,7 +151,16 @@ const LEGACY_GROUPING: GroupingRule = {
   graceMinutes: 0,
 };
 
-/** The registry's catalog-bound attributes canonicalised; the team derived from the service when absent. */
+/**
+ * The attributes that name something the product owns, canonicalised against
+ * it: a service against `app.services`, a team against `app.teams`. A signal
+ * that writes "Checkout API" and one that writes "checkout-api" then group and
+ * route as the same service.
+ *
+ * When the alert names a service and not a team, the service's owner team is
+ * filled in — that is what lets a rule page "the owner" without anyone writing
+ * the team on every payload.
+ */
 async function bindRegistry(
   tx: Tx,
   tenantId: string,
@@ -160,45 +169,41 @@ async function bindRegistry(
   attributes: Record<string, string>,
 ): Promise<Record<string, string>> {
   const out = { ...attributes };
-  const catalogAttrs = registry.filter((d) => d.type === "catalog" && d.catalogTypeKey);
-  // A workspace without a registry still gets the service bound, as before.
-  if (catalogAttrs.length === 0 && out.service)
-    catalogAttrs.push({ key: "service", catalogTypeKey: "service" } as AttributeDef);
-  for (const def of catalogAttrs) {
-    const value = out[def.key];
-    if (!value) continue;
-    const [type] = await tx
-      .select({ id: catalogTypes.id })
-      .from(catalogTypes)
-      .where(and(eq(catalogTypes.tenantId, tenantId), eq(catalogTypes.key, def.catalogTypeKey!)));
-    if (!type) continue;
-    const [entry] = await tx
-      .select()
-      .from(catalogEntries)
+
+  if (out.service) {
+    const [svc] = await tx
+      .select({ id: services.id, key: services.key, ownerTeamId: services.ownerTeamId })
+      .from(services)
       .where(
-        and(
-          eq(catalogEntries.typeId, type.id),
-          sql`lower(${catalogEntries.name}) = lower(${value})`,
-        ),
+        and(eq(services.tenantId, tenantId), sql`lower(${services.key}) = lower(${out.service})`),
       );
-    if (!entry) continue;
-    out[def.key] = entry.name;
-    out[`${def.key}_id`] = entry.id;
-    if (
-      def.catalogTypeKey === "service" &&
-      !out.team &&
-      typeof entry.attributes.owner === "string"
-    ) {
-      const [team] = await tx
-        .select({ id: catalogEntries.id, name: catalogEntries.name })
-        .from(catalogEntries)
-        .where(eq(catalogEntries.id, entry.attributes.owner));
-      if (team) {
-        out.team = team.name;
-        out.team_id = team.id;
+    if (svc) {
+      out.service = svc.key;
+      out.service_id = svc.id;
+      if (!out.team && svc.ownerTeamId) {
+        const [team] = await tx
+          .select({ id: teams.id, name: teams.name })
+          .from(teams)
+          .where(and(eq(teams.tenantId, tenantId), eq(teams.id, svc.ownerTeamId)));
+        if (team) {
+          out.team = team.name;
+          out.team_id = team.id;
+        }
       }
     }
   }
+
+  if (out.team && !out.team_id) {
+    const [team] = await tx
+      .select({ id: teams.id, name: teams.name })
+      .from(teams)
+      .where(and(eq(teams.tenantId, tenantId), sql`lower(${teams.name}) = lower(${out.team})`));
+    if (team) {
+      out.team = team.name;
+      out.team_id = team.id;
+    }
+  }
+
   for (const def of registry.filter((d) => d.type === "priority")) {
     const p = priorityByLabel(prios, out[def.key]);
     if (p) out[def.key] = p.name;
@@ -299,9 +304,12 @@ export async function planAlert(
       let via: string | null = null;
       if (rule.kind === "path") pathId = rule.pathId;
       else {
-        const def = registry.find((d) => d.key === rule.attribute);
-        const typeKey = def?.catalogTypeKey ?? rule.attribute;
-        const dyn = await resolvePathFromCatalog(tx, tenantId, typeKey, attributes[rule.attribute]);
+        const dyn = await resolveAttributePath(
+          tx,
+          tenantId,
+          rule.attribute,
+          attributes[rule.attribute],
+        );
         pathId = dyn?.pathId ?? rule.fallbackPathId;
         via = dyn?.via ?? (pathId ? "fallback" : null);
       }

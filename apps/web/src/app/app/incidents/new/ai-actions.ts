@@ -1,7 +1,7 @@
 "use server";
 
 import { eq } from "drizzle-orm";
-import { catalogEntries, withTenant } from "@openincident/db";
+import { services, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { requireResponder } from "@/lib/session";
 import { suggestDeclaration } from "@/lib/ai-capabilities";
@@ -10,16 +10,16 @@ import { suggestDeclaration } from "@/lib/ai-capabilities";
 export async function suggestDeclarationAction(input: {
   name: string;
   summary: string;
-  serviceEntryId: string | null;
+  serviceId: string | null;
 }): Promise<{ value: { title: string; summary: string } } | { error: string }> {
   const current = await requireResponder();
-  const serviceName = input.serviceEntryId
+  const serviceName = input.serviceId
     ? await withTenant(current.tenant.id, async (tx) => {
         const [s] = await tx
-          .select({ name: catalogEntries.name })
-          .from(catalogEntries)
-          .where(eq(catalogEntries.id, input.serviceEntryId!));
-        return s?.name ?? null;
+          .select({ key: services.key })
+          .from(services)
+          .where(eq(services.id, input.serviceId!));
+        return s?.key ?? null;
       })
     : null;
   const out = await suggestDeclaration(

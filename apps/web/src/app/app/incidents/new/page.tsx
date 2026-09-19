@@ -39,7 +39,9 @@ export default async function DeclarePage({
             ? {
                 alertId: a.id,
                 name: a.title,
-                serviceEntryId: a.attributes.service_id ?? null,
+                // The alert's own service, resolved at ingestion to the row
+                // the workspace keeps.
+                serviceId: a.attributes.service_id ?? null,
                 summary: a.description,
               }
             : undefined;
@@ -62,7 +64,6 @@ export default async function DeclarePage({
       aiSuggest={(await aiAllowance(tenant.id, "declare_suggest")).ok}
       severities={options.severities}
       services={services.map((s) => ({ id: s.id, key: s.key }))}
-      catalogServices={options.services.map((s) => ({ id: s.id, name: s.name }))}
       fields={options.fields.map((f) => ({
         id: f.id,
         key: f.key,
