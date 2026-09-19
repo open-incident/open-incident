@@ -9,7 +9,9 @@ export default async function SettingsIndex() {
       ["settings.workspace", "/app/settings/general"],
       ["settings.members", "/app/settings/members"],
       ["settings.response", "/app/settings/types"],
-      ["settings.alerting", "/app/settings/alert-sources"],
+      // Alert sources moved to the Alerts section; Rules is the first screen
+      // the alerting permission still opens inside the administration.
+      ["settings.alerting", "/app/settings/alert-routes"],
       ["settings.platform", "/app/settings/integrations"],
       ["audit.view", "/app/settings/audit"],
     ] as const

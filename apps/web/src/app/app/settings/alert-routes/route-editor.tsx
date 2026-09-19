@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type {
   alertRoutes,
   ConditionGroup,
@@ -10,8 +11,11 @@ import type {
   NotifyRule,
 } from "@openincident/db";
 import { useT } from "@/i18n/client";
+import type { Translate } from "@/i18n/server";
 import { ConditionsEditor } from "@/components/alerting/conditions-editor";
-import { previewRoute, quickPath, saveRoute, type RoutePreviewRow } from "../actions";
+import { describeCondition, describeRoute } from "@/lib/route-summary";
+import { PREVIEW_ALERTS, type RulePreview } from "@/lib/settings-rule-shape";
+import { previewRoute, quickPath, saveRoute } from "./actions";
 
 type RouteRow = typeof alertRoutes.$inferSelect;
 type Named = { id: string; name: string };
@@ -116,12 +120,68 @@ function initialConditions(r: RouteRow | null): ConditionGroup[] {
   return r.filters.length ? [{ all: r.filters.map((f) => ({ ...f })) }] : [];
 }
 
+/** A chip of the summary row: what it says, and the section it belongs to. */
+function Chip({
+  children,
+  tone,
+  onClick,
+  hint,
+}: {
+  children: React.ReactNode;
+  tone: "cond" | "act";
+  onClick: () => void;
+  hint: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={hint}
+      className="oi-hover-edge"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        border: `1px solid ${tone === "cond" ? "var(--brand-b)" : "var(--line)"}`,
+        background: tone === "cond" ? "var(--brand-t)" : "var(--sunk)",
+        borderRadius: 8,
+        padding: "2px 10px",
+        fontWeight: 600,
+        fontSize: 13,
+        color: tone === "cond" ? "var(--brand)" : "inherit",
+        cursor: "pointer",
+        lineHeight: 1.6,
+        whiteSpace: "nowrap",
+        fontFamily: "inherit",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+const dashed: React.CSSProperties = {
+  border: "1px dashed var(--line)",
+  borderRadius: 8,
+  padding: "2px 10px",
+  fontSize: 12.5,
+  color: "var(--ink-3)",
+  cursor: "pointer",
+  lineHeight: 1.6,
+  background: "transparent",
+  fontFamily: "inherit",
+};
+
 /**
- * One route, every decision on one page: which sources, which alerts (the
- * conditions), who to page (rules that stack — a path, a person or a schedule
- * in one click, or the path a catalog attribute leads to), the incident it
- * opens, how it groups, where it posts, and how it behaves. On the right, the
- * last alerts as this draft would treat them — before saving.
+ * One rule, in the card the design draws: the sentence it reads as, the last
+ * alerts as this draft would treat them, and — below the fold the design does
+ * not draw — every decision the route actually carries.
+ *
+ * The chip row is a summary, not a second editor. Each chip opens the section
+ * that owns the choice: an escalation rule over a catalog attribute or an
+ * incident template with its type, severity, visibility and custom fields does
+ * not fit in a dropdown, and a chip that pretended otherwise would either lose
+ * the choice or lie about it.
  */
 export function RouteEditor({
   route,
@@ -136,6 +196,8 @@ export function RouteEditor({
   schedules,
   slackInstalled,
   channels,
+  cancelHref,
+  index,
 }: {
   route: RouteRow | null;
   attributes: Array<{ key: string; label: string; type: string; catalogTypeKey: string | null }>;
@@ -149,6 +211,10 @@ export function RouteEditor({
   schedules: Named[];
   slackInstalled: boolean;
   channels: Named[];
+  /** Where ✕ and Cancel go back to. */
+  cancelHref: string;
+  /** The rule's place in the order, for the title — absent for a new one. */
+  index?: number;
 }) {
   const t = useT();
   const [allSources, setAllSources] = useState((route?.sourceIds.length ?? 0) === 0);
@@ -170,11 +236,34 @@ export function RouteEditor({
   const [notify, setNotify] = useState<NotifyRule>(
     route?.notify ?? { slackChannelId: null, slackChannelName: null },
   );
-  const [preview, setPreview] = useState<RoutePreviewRow[] | null>(null);
+  const [testMode, setTestMode] = useState(route?.testMode ?? false);
+  const [preview, setPreview] = useState<RulePreview | null>(null);
   const [pending, start] = useTransition();
   const [paths2, setPaths] = useState(paths);
   const catalogAttrs = attributes.filter((a) => a.type === "catalog");
-  const pathName = (id: string | null) => paths2.find((p) => p.id === id)?.name ?? "?";
+
+  // The sections the chips jump to.
+  const condRef = useRef<HTMLElement | null>(null);
+  const actRef = useRef<HTMLElement | null>(null);
+  const jump = (ref: React.RefObject<HTMLElement | null>) =>
+    ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+
+  // `describeRoute` speaks the server's Translate; the client's `t` carries the
+  // same dictionary and the same call signature, and the helper only ever calls
+  // it — the cast buys the shared vocabulary rather than a second copy of it.
+  const tr = t as unknown as Translate;
+  const draftRow = {
+    sourceIds: allSources ? [] : sourceIds,
+    conditions,
+    filters: [],
+    escalations: rules,
+    escalationMode: "none",
+    escalationPathId: null,
+    incident,
+    incidentMode: incident.mode,
+  } as unknown as RouteRow;
+  const summary = describeRoute(draftRow, tr, { paths: paths2, sources });
+  const sentence = `${t("set2.ed.if")} ${summary.when} ${t("set2.ed.then")} ${summary.then}`;
 
   const addQuick = (target: Parameters<typeof quickPath>[0]) =>
     start(async () => {
@@ -193,12 +282,24 @@ export function RouteEditor({
     start(async () => {
       setPreview(
         await previewRoute({
+          id: route?.id ?? null,
           sourceIds: allSources ? [] : sourceIds,
           conditions,
           escalations: rules,
+          incidentMode: incident.mode,
+          testMode,
+          active: route?.active ?? true,
         }),
       );
     });
+  // The design shows the preview open; it is read-only and sends nothing, so
+  // it runs as soon as the editor does. The button re-runs it after an edit.
+  const ran = useRef(false);
+  useEffect(() => {
+    if (ran.current) return;
+    ran.current = true;
+    runPreview();
+  }, [runPreview]);
 
   // The conditions editor keeps its own state and writes a hidden field; the
   // preview reads the same value through this listener.
@@ -218,11 +319,15 @@ export function RouteEditor({
     <form
       action={saveRoute}
       onChange={onConditionsChange}
+      className="oi-rise-fast"
       style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr) 320px",
-        gap: 14,
-        alignItems: "start",
+        background: "var(--panel)",
+        border: "1.5px solid var(--brand)",
+        borderRadius: "var(--radius-card)",
+        boxShadow: "var(--shadow-card-hover)",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
       }}
       data-testid="route-form"
     >
@@ -233,7 +338,215 @@ export function RouteEditor({
       <input type="hidden" name="grouping" value={JSON.stringify(grouping)} />
       <input type="hidden" name="notify" value={JSON.stringify(notify)} />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          padding: "12px 18px",
+          borderBottom: "1px solid var(--line)",
+        }}
+      >
+        <span style={{ fontSize: 13.5, fontWeight: 600 }}>
+          {route ? t("set2.ed.editTitle", { n: index ?? 1 }) : t("set2.ed.newTitle")}
+        </span>
+        <span style={{ flex: 1 }} />
+        <Link
+          href={cancelHref}
+          aria-label={t("common.close")}
+          className="oi-hover"
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 7,
+            display: "grid",
+            placeItems: "center",
+            color: "var(--ink-3)",
+            textDecoration: "none",
+          }}
+        >
+          ✕
+        </Link>
+      </div>
+
+      <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* The sentence, as chips. Each opens the section that owns the choice. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            flexWrap: "wrap",
+            fontSize: 14,
+            lineHeight: 2,
+          }}
+        >
+          <span style={{ color: "var(--ink-3)" }}>{t("set2.ed.if")}</span>
+          {!allSources && sourceIds.length > 0 && (
+            <Chip tone="cond" hint={t("set2.ed.chipHint")} onClick={() => jump(condRef)}>
+              {t("routes.fromSources", {
+                sources: sourceIds
+                  .map((id) => sources.find((s) => s.id === id)?.name ?? "?")
+                  .join(", "),
+              })}
+            </Chip>
+          )}
+          {conditions
+            .flatMap((g, gi) => g.all.map((c, ci) => ({ c, key: `${gi}-${ci}` })))
+            .map(({ c, key }, i) => (
+              <span key={key} style={{ display: "contents" }}>
+                {(i > 0 || (!allSources && sourceIds.length > 0)) && (
+                  <span style={{ color: "var(--ink-3)" }}>{t("set2.ed.and")}</span>
+                )}
+                <Chip tone="cond" hint={t("set2.ed.chipHint")} onClick={() => jump(condRef)}>
+                  {describeCondition(c, tr)}
+                </Chip>
+              </span>
+            ))}
+          {allSources && conditions.every((g) => g.all.length === 0) && (
+            <Chip tone="cond" hint={t("set2.ed.chipHint")} onClick={() => jump(condRef)}>
+              {t("set2.ed.everyAlert")}
+            </Chip>
+          )}
+          <button
+            type="button"
+            onClick={() => jump(condRef)}
+            title={t("set2.ed.chipHint")}
+            className="oi-hover-edge-ink"
+            style={dashed}
+          >
+            {t("set2.ed.addCond")}
+          </button>
+          <span style={{ color: "var(--ink-3)", marginLeft: 6 }}>{t("set2.ed.then")}</span>
+          <Chip tone="act" hint={t("set2.ed.chipHint")} onClick={() => jump(actRef)}>
+            {summary.then}
+          </Chip>
+          <button
+            type="button"
+            onClick={() => jump(actRef)}
+            title={t("set2.ed.chipHint")}
+            className="oi-hover-edge-ink"
+            style={dashed}
+          >
+            {t("set2.ed.addAct")}
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
+          {t("set2.ed.readsAs", { sentence })}
+        </div>
+
+        {/* The last alerts, as this draft would treat them. Nothing is sent. */}
+        <div
+          data-testid="route-preview"
+          style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 14px",
+              background: "var(--sunk)",
+              borderBottom: "1px solid var(--line)",
+              fontSize: 12.5,
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>
+              {t("set2.ed.previewTitle", { count: PREVIEW_ALERTS })}
+            </span>
+            {preview && (
+              <span style={{ color: "var(--ink-3)" }}>
+                {t("set2.ed.previewMatches")}{" "}
+                <strong style={{ color: "var(--ink)" }}>{preview.matches}</strong> ·{" "}
+                <strong style={{ color: "var(--wait)" }}>
+                  {t("set2.ed.previewChanges", { count: preview.changes })}
+                </strong>
+              </span>
+            )}
+            <span style={{ flex: 1 }} />
+            <span style={{ fontSize: 11, color: "var(--ink-3)" }}>{t("set2.ed.nothingSent")}</span>
+            <button
+              type="button"
+              onClick={runPreview}
+              disabled={pending}
+              className="oi-hover"
+              style={{ ...btn, height: 26, fontSize: 11.5 }}
+              data-testid="route-preview-run"
+            >
+              {pending ? t("set2.ed.previewRunning") : t("set2.ed.previewRun")}
+            </button>
+          </div>
+          {preview && preview.rows.length === 0 && (
+            <div style={{ padding: "12px 14px", fontSize: 12.5, color: "var(--ink-3)" }}>
+              {t("set2.ed.previewEmpty")}
+            </div>
+          )}
+          {preview?.rows.map((p) => (
+            <div
+              key={p.id}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "44px minmax(0,1fr) 250px",
+                gap: 12,
+                padding: "8px 14px",
+                borderBottom: "1px solid var(--line-2)",
+                fontSize: 12.5,
+                alignItems: "center",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  borderRadius: 5,
+                  padding: "1px 0",
+                  textAlign: "center",
+                  background: p.matched ? "var(--brand-t)" : "var(--sunk)",
+                  color: p.priorityColor ?? (p.matched ? "var(--brand)" : "var(--ink-3)"),
+                }}
+              >
+                {p.priority ?? "—"}
+              </span>
+              <span
+                style={{
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  color: p.matched ? "var(--ink)" : "var(--ink-2)",
+                }}
+                title={`${p.title} · ${p.source}`}
+              >
+                {p.title}
+              </span>
+              <span
+                style={{
+                  color: p.changed ? "var(--wait)" : "var(--ink-3)",
+                  fontWeight: p.changed ? 600 : 400,
+                }}
+              >
+                {p.changed
+                  ? t("set2.ed.changedTo", { before: p.before, after: p.after })
+                  : t("set2.ed.unchangedFrom", { before: p.before })}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Everything the chips summarise, and everything they cannot. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            borderTop: "1px solid var(--line-2)",
+            paddingTop: 12,
+          }}
+        >
+          <span className="oi-eyebrow">{t("set2.ed.detail")}</span>
+          <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{t("set2.ed.detailHint")}</span>
+        </div>
+
         <section style={card}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -303,7 +616,7 @@ export function RouteEditor({
           )}
         </section>
 
-        <section style={card} data-testid="route-conditions">
+        <section ref={condRef} style={card} data-testid="route-conditions">
           <h2 style={h2}>{t("settings.routes.conditions")}</h2>
           <p style={note}>{t("settings.routes.conditionsNote")}</p>
           <ConditionsEditor
@@ -314,7 +627,7 @@ export function RouteEditor({
           />
         </section>
 
-        <section style={card} data-testid="route-escalation">
+        <section ref={actRef} style={card} data-testid="route-escalation">
           <h2 style={h2}>{t("settings.routes.escalation")}</h2>
           <p style={note}>{t("settings.routes.escalationNote")}</p>
           {rules.length === 0 && (
@@ -881,10 +1194,6 @@ export function RouteEditor({
               {t("settings.routes.autoCancel")}
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-              <input type="checkbox" name="testMode" defaultChecked={route?.testMode ?? false} />
-              {t("settings.routes.testModeLabel")}
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
               <input type="hidden" name="active" value="off" />
               <input
                 type="checkbox"
@@ -896,85 +1205,78 @@ export function RouteEditor({
             </label>
           </div>
         </section>
-
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button
-            type="submit"
-            style={{
-              ...btn,
-              height: 34,
-              background: "var(--brand)",
-              borderColor: "var(--brand)",
-              color: "#fff",
-            }}
-            data-testid="route-save"
-          >
-            {t("common.save")}
-          </button>
-        </div>
       </div>
 
-      <aside style={{ ...card, position: "sticky", top: 0 }} data-testid="route-preview">
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <h2 style={h2}>{t("settings.routes.preview.title")}</h2>
-          <span style={{ flex: 1 }} />
-          <button
-            type="button"
-            onClick={runPreview}
-            disabled={pending}
-            style={btn}
-            data-testid="route-preview-run"
-          >
-            {t("settings.routes.preview.run")}
-          </button>
-        </div>
-        <p style={note}>{t("settings.routes.preview.note")}</p>
-        {preview?.length === 0 && <p style={note}>{t("settings.routes.preview.noAlerts")}</p>}
-        {preview?.map((p) => (
-          <div
-            key={p.id}
-            style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "flex-start",
-              fontSize: 12.5,
-              paddingTop: 6,
-              borderTop: "1px solid var(--line-2)",
-            }}
-          >
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                marginTop: 5,
-                flex: "none",
-                background: p.matched ? "var(--ok)" : "var(--line)",
-              }}
-            />
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span
-                style={{
-                  fontWeight: p.matched ? 600 : 400,
-                  color: p.matched ? "var(--ink)" : "var(--ink-3)",
-                  display: "block",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {p.title}
-              </span>
-              <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                {p.source} · {new Date(p.when).toLocaleString()}
-                {p.matched
-                  ? ` · ${p.paths.length ? t("settings.routes.preview.pages", { paths: p.paths.map(pathName).join(", ") }) : t("routes.pageNobody")}`
-                  : ` · ${t("settings.routes.preview.skips")}`}
-              </span>
-            </span>
-          </div>
-        ))}
-      </aside>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "12px 18px",
+          borderTop: "1px solid var(--line)",
+          background: "var(--sunk)",
+          flexWrap: "wrap",
+        }}
+      >
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            fontSize: 12.5,
+            color: "var(--ink-2)",
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            name="testMode"
+            checked={testMode}
+            onChange={(e) => setTestMode(e.target.checked)}
+            style={{ accentColor: "var(--brand)" }}
+          />
+          {t("set2.ed.startTest")}
+        </label>
+        <span style={{ flex: 1 }} />
+        <Link
+          href={cancelHref}
+          className="oi-hover"
+          style={{
+            height: 32,
+            padding: "0 12px",
+            border: "1px solid var(--line)",
+            borderRadius: 8,
+            background: "var(--panel)",
+            display: "flex",
+            alignItems: "center",
+            fontSize: 12.5,
+            color: "inherit",
+            textDecoration: "none",
+          }}
+        >
+          {t("common.cancel")}
+        </Link>
+        <button
+          type="submit"
+          className="oi-hover-brand-2"
+          style={{
+            height: 32,
+            padding: "0 14px",
+            borderRadius: 8,
+            background: "var(--brand)",
+            color: "var(--on-brand)",
+            border: 0,
+            display: "flex",
+            alignItems: "center",
+            fontSize: 12.5,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+          data-testid="route-save"
+        >
+          {t("set2.ed.save")}
+        </button>
+      </div>
     </form>
   );
 }

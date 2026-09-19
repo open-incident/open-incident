@@ -83,7 +83,7 @@ export default async function AiGovernancePage({
   const card: React.CSSProperties = {
     background: "var(--panel)",
     border: "1px solid var(--line)",
-    borderRadius: 14,
+    borderRadius: "var(--radius-card)",
     padding: "16px 18px",
     display: "flex",
     flexDirection: "column",
@@ -107,23 +107,34 @@ export default async function AiGovernancePage({
     <form
       action={saveAiSettings}
       className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 1060 }}
+      style={{ display: "flex", flexDirection: "column", gap: 14 }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <h1 className="oi-title" style={{ margin: 0 }}>
+        <h1
+          style={{
+            margin: 0,
+            fontFamily: "var(--title)",
+            fontSize: 21,
+            fontWeight: 600,
+            letterSpacing: "-.015em",
+          }}
+        >
           {t("settings.ai.title")}
         </h1>
         <span
           style={{
-            padding: "2px 9px",
-            borderRadius: 999,
+            padding: "2px 8px",
+            borderRadius: 6,
             background: configured ? "var(--viol-t)" : "var(--sunk)",
             color: configured ? "var(--viol)" : "var(--ink-3)",
-            fontSize: 11,
+            fontSize: 10.5,
             fontWeight: 700,
+            letterSpacing: ".06em",
           }}
         >
-          {configured ? t("settings.ai.badgeConfigured") : t("settings.ai.badgeUnconfigured")}
+          {configured
+            ? t("set2.ai.chipConfigured", { host: aiProviderLabel() })
+            : t("set2.ai.chipNone")}
         </span>
         <span style={{ flex: 1 }} />
         {q.saved === "1" && (
@@ -152,19 +163,18 @@ export default async function AiGovernancePage({
         )}
       </div>
       {!configured && <div className="oi-note">{t("settings.ai.unconfiguredNote")}</div>}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
-        <div
-          style={{
-            flex: "10 1 420px",
-            minWidth: 400,
-            display: "flex",
-            flexDirection: "column",
-            gap: 14,
-          }}
-        >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0,1fr) 320px",
+          gap: 14,
+          alignItems: "start",
+        }}
+      >
+        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
           <section style={card}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 14, fontWeight: 600 }}>{t("settings.ai.functions")}</span>
+              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t("set2.ai.mayDo")}</span>
               <span style={{ flex: 1 }} />
               <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
                 {data.settings.enabled ? t("settings.ai.masterOn") : t("settings.ai.masterOff")}
@@ -380,16 +390,7 @@ export default async function AiGovernancePage({
             </div>
           </section>
         </div>
-        <div
-          style={{
-            flex: "1 1 280px",
-            maxWidth: 330,
-            minWidth: 260,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
+        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
           <section style={{ ...card, padding: "15px 16px" }}>
             <div className="oi-eyebrow">{t("settings.ai.provider")}</div>
             <select
@@ -418,12 +419,18 @@ export default async function AiGovernancePage({
             <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
               {t("settings.ai.providerNote")}
             </div>
+            <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
+              {t("set2.ai.regionNote")}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
+              {t("set2.ai.retention")}
+            </div>
           </section>
           <div
             style={{
               background: "var(--sunk)",
-              borderRadius: 14,
-              padding: "13px 15px",
+              borderRadius: "var(--radius-card)",
+              padding: "12px 14px",
               fontSize: 12.5,
               color: "var(--ink-2)",
               lineHeight: 1.55,

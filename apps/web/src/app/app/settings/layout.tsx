@@ -1,23 +1,26 @@
-import Link from "next/link";
+import { Suspense } from "react";
 import { headers } from "next/headers";
 import { canOpenSettings, hasPermission, requireMember } from "@/lib/session";
 import { getEdition, type Permission } from "@openincident/config";
 import { getT } from "@/i18n/server";
+import { SettingsNav, type NavGroup, type NavItem } from "./settings-nav";
 
 /**
- * The administration frame of the design: a 236 px secondary navigation in
- * four groups, then the screen in an 18/22 padded column. Owner and admin only
- * — a viewer or responder who lands here by URL reads why, and no form is
- * rendered for them.
+ * The administration frame of the V2 design: a 210 px sticky secondary
+ * navigation in five groups, then the screen in the second column of a
+ * 1200-wide grid. Owner and admin only — a viewer or responder who lands here
+ * by URL reads why, and no form is rendered for them.
  *
- * Every section the design lists is present. Those whose screen lands with a
- * later milestone are drawn muted with the milestone's name, as the design
- * itself labels its future items — and are not links.
+ * Two kinds of item are not plain links. One leaves the area (Alert sources
+ * now lives in Alerts, and says so with ↗). The other is a capability this
+ * instance does not have: it stays on the screen, greyed, carrying the reason
+ * and the way to enable it, and the URL behind it refuses.
  */
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
   const { member } = await requireMember();
   const t = await getT();
   const pathname = (await headers()).get("x-pathname") ?? "";
+  const cloud = getEdition() === "cloud";
 
   if (!canOpenSettings(member)) {
     return (
@@ -33,7 +36,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
   }
 
   // Each screen names the permission it stands for; a member sees the screens they hold.
-  type Item = { href?: string; label: string; soon?: string; permission: Permission };
+  type Item = NavItem & { permission: Permission };
   const all: Array<{ title: string; items: Item[] }> = [
     {
       title: t("settings.group.workspace"),
@@ -53,17 +56,21 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           label: t("settings.nav.workingHours"),
           permission: "settings.workspace",
         },
-        // The subscription lives on the control plane of a cloud deployment;
-        // a self-hosted instance has no such screen (it answers 404).
-        ...(getEdition() === "cloud"
-          ? [
-              {
-                href: "/app/settings/billing",
-                label: t("settings.nav.billing"),
-                permission: "settings.workspace" as Permission,
-              },
-            ]
-          : []),
+        // The subscription is sold by the control plane of a cloud deployment.
+        // A self-hosted instance keeps the entry — greyed, with the reason and
+        // the way to enable it — and its URL answers 404.
+        cloud
+          ? {
+              href: "/app/settings/billing",
+              label: t("settings.nav.billing"),
+              permission: "settings.workspace" as Permission,
+            }
+          : {
+              label: t("settings.nav.billing"),
+              chip: t("set2.nav.billingOff"),
+              why: t("set2.nav.billingWhy"),
+              permission: "settings.workspace" as Permission,
+            },
       ],
     },
     {
@@ -72,12 +79,28 @@ export default async function SettingsLayout({ children }: { children: React.Rea
         {
           href: "/app/settings/types",
           label: t("settings.nav.types"),
+          bare: true,
+          permission: "settings.response",
+        },
+        // The incident severities are the second segment of the same screen.
+        {
+          href: "/app/settings/types?seg=severities",
+          label: t("set2.nav.incidentSeverities"),
+          seg: "severities",
           permission: "settings.response",
         },
         {
           href: "/app/settings/fields",
-          label: t("settings.nav.customFields"),
+          label: t("set2.nav.fields"),
           permission: "settings.response",
+        },
+        // The shared label keys the design folds into "Fields & labels": the
+        // vocabulary every source maps its payload onto. Its own screen, next
+        // to the fields, because that is where a reader looks for a label key.
+        {
+          href: "/app/settings/alert-attributes",
+          label: t("settings.nav.alertAttributes"),
+          permission: "settings.alerting",
         },
         {
           href: "/app/settings/announcements",
@@ -86,7 +109,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
         },
         {
           href: "/app/settings/post-incident",
-          label: t("settings.nav.postIncidentFlow"),
+          label: t("set2.nav.postIncident"),
           permission: "settings.response",
         },
       ],
@@ -95,33 +118,39 @@ export default async function SettingsLayout({ children }: { children: React.Rea
       title: t("settings.group.alerting"),
       items: [
         {
-          href: "/app/settings/alerting",
-          label: t("settings.nav.alerting"),
-          permission: "settings.alerting",
-        },
-        {
-          href: "/app/settings/alert-sources",
+          href: "/app/alerts/sources",
           label: t("settings.nav.alertSources"),
-          permission: "settings.alerting",
-        },
-        {
-          href: "/app/settings/alert-attributes",
-          label: t("settings.nav.alertAttributes"),
+          external: true,
+          hint: t("set2.nav.externalHint"),
           permission: "settings.alerting",
         },
         {
           href: "/app/settings/alert-routes",
-          label: t("settings.nav.routes"),
+          label: t("set2.nav.rules"),
           permission: "settings.alerting",
         },
         {
           href: "/app/settings/alert-priorities",
-          label: t("settings.nav.priorities"),
+          label: t("set2.nav.alertSeverities"),
           permission: "settings.alerting",
         },
         {
+          href: "/app/settings/probes",
+          label: t("set2.nav.probes"),
+          permission: "settings.alerting",
+        },
+        // A heartbeat is the other thing that watches by waiting: its silence
+        // is the signal. It belongs beside the probes, not in a group of its own.
+        {
           href: "/app/settings/heartbeats",
           label: t("settings.nav.heartbeats"),
+          permission: "settings.alerting",
+        },
+        // The guided four-step hub. Superseded by the four items above for
+        // anyone who knows what they want; kept last for anyone who does not.
+        {
+          href: "/app/settings/alerting",
+          label: t("settings.nav.alerting"),
           permission: "settings.alerting",
         },
       ],
@@ -145,6 +174,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           permission: "settings.platform",
         },
         { href: "/app/settings/audit", label: t("settings.nav.audit"), permission: "audit.view" },
+        // The instance's own test suites — diagnostics, owner-only in the screen.
         { href: "/app/settings/qa", label: t("settings.nav.qa"), permission: "settings.platform" },
       ],
     },
@@ -165,11 +195,18 @@ export default async function SettingsLayout({ children }: { children: React.Rea
       ],
     },
   ];
-  const groups = all
-    .map((g) => ({ ...g, items: g.items.filter((i) => hasPermission(member, i.permission)) }))
+  const groups: NavGroup[] = all
+    .map((g) => ({
+      title: g.title,
+      items: g.items
+        .filter((i) => hasPermission(member, i.permission))
+        .map(({ permission: _permission, ...i }) => i),
+    }))
     .filter((g) => g.items.length > 0);
   // A screen the member does not hold: the same notice as a member without settings at all.
-  const current = all.flatMap((g) => g.items).find((i) => i.href && pathname.startsWith(i.href));
+  const current = all
+    .flatMap((g) => g.items)
+    .find((i) => i.href && !i.external && pathname.startsWith(i.href.split("?")[0]!));
   if (current && !hasPermission(member, current.permission)) {
     return (
       <section style={{ flex: 1, display: "grid", placeItems: "center", padding: 32 }}>
@@ -184,90 +221,23 @@ export default async function SettingsLayout({ children }: { children: React.Rea
   }
 
   return (
-    <>
-      <nav
-        aria-label={t("nav.settings")}
-        style={{
-          width: 236,
-          flex: "none",
-          background: "var(--panel)",
-          borderRight: "1px solid var(--line)",
-          padding: "16px 10px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 1,
-          overflow: "auto",
-        }}
-      >
-        {groups.map((g, gi) => (
-          <div key={g.title} style={{ display: "contents" }}>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: ".12em",
-                textTransform: "uppercase",
-                color: "var(--ink)",
-                padding: gi === 0 ? "0 10px 6px" : "14px 10px 6px",
-              }}
-            >
-              {g.title}
-            </div>
-            {g.items.map((item) => {
-              const active = item.href ? pathname.startsWith(item.href) : false;
-              const style: React.CSSProperties = {
-                padding: "7px 10px",
-                borderRadius: 8,
-                fontSize: 13,
-                fontWeight: active ? 600 : 400,
-                color: active ? "var(--brand)" : "var(--ink-2)",
-                background: active ? "var(--brand-t)" : "transparent",
-                textDecoration: "none",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              };
-              if (!item.href) {
-                return (
-                  <span
-                    key={item.label}
-                    aria-disabled
-                    title={item.soon}
-                    style={{ ...style, color: "var(--ink-3)", cursor: "default" }}
-                  >
-                    <span style={{ flex: 1 }}>{item.label}</span>
-                    <span
-                      style={{
-                        padding: "1px 7px",
-                        borderRadius: 6,
-                        border: "1px solid var(--line)",
-                        fontSize: 10.5,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {item.soon}
-                    </span>
-                  </span>
-                );
-              }
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={active ? undefined : "oi-hover"}
-                  style={style}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
-      </nav>
-      <div style={{ flex: 1, minWidth: 0, overflow: "auto", padding: "18px 22px 28px" }}>
+    <div
+      style={{
+        maxWidth: 1200,
+        margin: "0 auto",
+        padding: "22px 28px 60px",
+        display: "grid",
+        gridTemplateColumns: "210px minmax(0,1fr)",
+        gap: 22,
+        alignItems: "start",
+      }}
+    >
+      <Suspense fallback={<div style={{ width: 210 }} />}>
+        <SettingsNav groups={groups} label={t("nav.settings")} />
+      </Suspense>
+      <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
         {children}
       </div>
-    </>
+    </div>
   );
 }

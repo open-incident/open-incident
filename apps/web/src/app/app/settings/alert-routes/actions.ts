@@ -2,12 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   alertRoutes,
-  alertSources,
-  alerts,
   members,
   schedules,
   withTenant,
@@ -18,12 +16,16 @@ import {
   type NotifyRule,
   type RouteFilter,
 } from "@openincident/db";
-import { conditionsHold, resolvePathFromCatalog } from "@openincident/oncall";
-import { alertAttributes } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { recordAudit } from "@/lib/audit";
 import { ensureQuickPath } from "@/lib/alerting-setup";
 import { requireManager } from "@/lib/session";
+import {
+  PREVIEW_ALERTS,
+  insertionIndex,
+  previewRuleAgainstAlerts,
+  type RulePreview,
+} from "@/lib/settings-rule-preview";
 
 const PAGE = "/app/settings/alert-routes";
 const uuid = z.string().uuid();
@@ -193,7 +195,11 @@ export async function saveRoute(formData: FormData) {
       await recordAudit(tx, current, "config", "alert_route.updated", { name: input.name });
       return input.id;
     }
-    // New routes go before the one that catches everything, never after it.
+    // A rule is the exception to what a source already decided, so a new one
+    // goes above every route that is only a default — the catch-all, and the
+    // per-source routes the sources screen creates for its own three choices.
+    // Landing after them would leave the rule powerless until someone
+    // reordered it, which the screen's own note promises is unnecessary.
     const rows = await tx
       .select({
         id: alertRoutes.id,
@@ -204,14 +210,18 @@ export async function saveRoute(formData: FormData) {
       })
       .from(alertRoutes)
       .where(eq(alertRoutes.tenantId, current.tenant.id))
-      .orderBy(alertRoutes.position);
-    const specific = rows.filter(
-      (r) =>
-        r.sourceIds.length > 0 ||
-        r.conditions.some((g) => g.all.length > 0) ||
-        r.filters.length > 0,
-    );
-    const position = (specific.length ? Math.max(...specific.map((r) => r.position)) : -1) + 1;
+      .orderBy(alertRoutes.position, alertRoutes.createdAt);
+    const position = insertionIndex(rows);
+    // Positions are renumbered around the hole rather than shifted by one, so
+    // the order stays 0…n whatever the sources screen left behind.
+    for (const [i, r] of rows.entries())
+      if (i >= position)
+        await tx
+          .update(alertRoutes)
+          .set({ position: i + 1 })
+          .where(eq(alertRoutes.id, r.id));
+      else if (r.position !== i)
+        await tx.update(alertRoutes).set({ position: i }).where(eq(alertRoutes.id, r.id));
     const [row] = await tx
       .insert(alertRoutes)
       .values({ tenantId: current.tenant.id, ...values, position })
@@ -386,73 +396,35 @@ export async function quickPath(
   });
 }
 
-export type RoutePreviewRow = {
-  id: string;
-  title: string;
-  source: string;
-  when: string;
-  matched: boolean;
-  paths: string[];
-};
-
-/** The last alerts against the editor's draft: which ones this route would catch, and who it would page. */
+/**
+ * The last alerts against the editor's draft: which ones this rule would
+ * catch, and what would change if it were saved. Nothing is sent — the
+ * evaluation replays the ingest matcher, it does not run the pipeline.
+ */
 export async function previewRoute(draft: {
+  id?: string | null;
   sourceIds: string[];
   conditions: ConditionGroup[];
   escalations: EscalationRule[];
-}): Promise<RoutePreviewRow[]> {
+  incidentMode?: "never" | "always" | "conditional";
+  testMode?: boolean;
+  active?: boolean;
+}): Promise<RulePreview> {
   const current = await requireManager();
-  const sourceIds = z.array(uuid).parse(draft.sourceIds);
-  const conditions = conditionsSchema.parse(draft.conditions);
-  const escalations = escalationsSchema.parse(draft.escalations);
-  return withTenant(current.tenant.id, async (tx) => {
-    const rows = await tx
-      .select({ a: alerts, sourceName: alertSources.name, sourceKind: alertSources.kind })
-      .from(alerts)
-      .innerJoin(alertSources, eq(alertSources.id, alerts.sourceId))
-      .where(eq(alerts.tenantId, current.tenant.id))
-      .orderBy(desc(alerts.lastAt))
-      .limit(12);
-    const registry = await tx
-      .select({ key: alertAttributes.key, catalogTypeKey: alertAttributes.catalogTypeKey })
-      .from(alertAttributes)
-      .where(eq(alertAttributes.tenantId, current.tenant.id));
-    const out: RoutePreviewRow[] = [];
-    for (const { a, sourceName, sourceKind } of rows) {
-      const matched =
-        (sourceIds.length === 0 || sourceIds.includes(a.sourceId)) &&
-        conditionsHold(conditions, {
-          attributes: a.attributes,
-          source: { kind: sourceKind, name: sourceName, id: a.sourceId },
-          priority: a.attributes.priority ?? null,
-          title: a.title,
-        });
-      const paths: string[] = [];
-      if (matched)
-        for (const rule of escalations) {
-          if (rule.kind === "path") paths.push(rule.pathId);
-          else {
-            const typeKey =
-              registry.find((r) => r.key === rule.attribute)?.catalogTypeKey ?? rule.attribute;
-            const dyn = await resolvePathFromCatalog(
-              tx,
-              current.tenant.id,
-              typeKey,
-              a.attributes[rule.attribute],
-            );
-            const id = dyn?.pathId ?? rule.fallbackPathId;
-            if (id) paths.push(id);
-          }
-        }
-      out.push({
-        id: a.id,
-        title: a.title,
-        source: sourceName,
-        when: a.lastAt.toISOString(),
-        matched,
-        paths,
-      });
-    }
-    return out;
-  });
+  const t = await getT();
+  const parsed = {
+    id: draft.id ? uuid.parse(draft.id) : null,
+    sourceIds: z.array(uuid).parse(draft.sourceIds),
+    conditions: conditionsSchema.parse(draft.conditions),
+    escalations: escalationsSchema.parse(draft.escalations),
+    incidentMode: z
+      .enum(["never", "always", "conditional"])
+      .catch("conditional")
+      .parse(draft.incidentMode),
+    testMode: Boolean(draft.testMode),
+    active: draft.active !== false,
+  };
+  return withTenant(current.tenant.id, (tx) =>
+    previewRuleAgainstAlerts(tx, current.tenant.id, parsed, t, PREVIEW_ALERTS),
+  );
 }

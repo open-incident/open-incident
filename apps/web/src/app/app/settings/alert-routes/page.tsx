@@ -4,43 +4,51 @@ import { alertRoutes, alertSources, escalationPaths, withTenant } from "@openinc
 import { getT } from "@/i18n/server";
 import { isManager, requireMember } from "@/lib/session";
 import { describeRoute } from "@/lib/route-summary";
+import { isDefaultsRoute } from "@/lib/settings-rule-preview";
 import { deleteRoute, duplicateRoute, moveRoute, toggleRoute } from "./actions";
+import { loadEditorData } from "./editor-data";
+import { RouteEditor } from "./route-editor";
 
-const btn: React.CSSProperties = {
-  height: 30,
-  padding: "0 11px",
+const PAGE = "/app/settings/alert-routes";
+
+const ghost: React.CSSProperties = {
+  height: 26,
+  padding: "0 10px",
   border: "1px solid var(--line)",
-  borderRadius: 8,
+  borderRadius: 7,
   background: "var(--panel)",
-  fontSize: 12,
+  display: "inline-flex",
+  alignItems: "center",
+  fontSize: 11.5,
   fontWeight: 600,
   cursor: "pointer",
   color: "inherit",
   textDecoration: "none",
-  display: "inline-flex",
-  alignItems: "center",
 };
-const icon: React.CSSProperties = {
-  ...btn,
-  width: 28,
+const iconBtn: React.CSSProperties = {
+  ...ghost,
+  width: 26,
   padding: 0,
   justifyContent: "center",
   color: "var(--ink-3)",
 };
 
 /**
- * Alert routes, in the order they are tried: the first whose conditions hold
- * decides. Each card says what it catches and what it does, in words; the
- * arrows change the order; the editor is a page of its own.
+ * Rules — the exceptions to what the sources already decide, in the order they
+ * are tried. Each row reads as a sentence; the first one whose conditions hold
+ * wins, and a source with no rule above it keeps its own three choices.
+ *
+ * The editor opens inline, below the list, as the design draws it. Its own URL
+ * (`/app/settings/alert-routes/<id>`) still works and renders the same card.
  */
-export default async function AlertRoutesPage({
+export default async function RulesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; error?: string }>;
+  searchParams: Promise<{ saved?: string; error?: string; edit?: string }>;
 }) {
   const { tenant, member } = await requireMember();
   const t = await getT();
-  const { saved, error } = await searchParams;
+  const { saved, error, edit } = await searchParams;
   const manages = isManager(member);
   const data = await withTenant(tenant.id, async (tx) => ({
     routes: await tx
@@ -61,6 +69,16 @@ export default async function AlertRoutesPage({
       .from(alertSources)
       .where(eq(alertSources.tenantId, tenant.id)),
   }));
+
+  // A manager only: the editor writes, and `saveRoute` refuses anyone else.
+  const editing = manages && edit ? (edit === "new" ? "new" : edit) : null;
+  const editor = editing
+    ? await loadEditorData(tenant.id, editing === "new" ? null : editing)
+    : null;
+  const editorIndex = editor?.route
+    ? data.routes.findIndex((r) => r.id === editor.route!.id) + 1
+    : undefined;
+
   const unpublished = (r: (typeof data.routes)[number]) =>
     r.escalations.some((e) => {
       const id = e.kind === "path" ? e.pathId : e.fallbackPathId;
@@ -69,17 +87,20 @@ export default async function AlertRoutesPage({
     });
 
   return (
-    <div
-      className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}
-    >
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <h1 className="oi-title" style={{ margin: 0 }}>
-          {t("settings.routes.title")}
+        <h1
+          style={{
+            margin: 0,
+            fontFamily: "var(--title)",
+            fontSize: 21,
+            fontWeight: 600,
+            letterSpacing: "-.015em",
+          }}
+        >
+          {t("set2.rules.title")}
         </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-          {t("settings.routes.subtitle")}
-        </span>
+        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("set2.rules.subtitle")}</span>
         <span style={{ flex: 1 }} />
         {saved && (
           <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
@@ -93,214 +114,314 @@ export default async function AlertRoutesPage({
         )}
         {manages && (
           <Link
-            href="/app/settings/alert-routes/new"
-            style={{
-              ...btn,
-              height: 32,
-              background: "var(--brand)",
-              borderColor: "var(--brand)",
-              color: "#fff",
-            }}
+            href={`${PAGE}?edit=new`}
             data-testid="route-new"
+            className="oi-hover-brand-2"
+            style={{
+              height: 32,
+              padding: "0 13px",
+              borderRadius: 9,
+              background: "var(--brand)",
+              color: "var(--on-brand)",
+              display: "flex",
+              alignItems: "center",
+              fontSize: 12.5,
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
           >
-            {t("settings.routes.new")}
+            {t("set2.rules.new")}
           </Link>
         )}
       </div>
-      <p style={{ margin: 0, fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
-        {t("settings.routes.orderNote")}
-      </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {data.routes.length === 0 && (
-          <div
-            className="oi-panel"
-            style={{ padding: "22px 18px", color: "var(--ink-3)", fontSize: 13 }}
-          >
-            {t("settings.routes.empty")}
-          </div>
-        )}
-        {data.routes.map((r, i) => {
-          const d = describeRoute(r, t, { paths: data.paths, sources: data.sources });
-          const warn = unpublished(r);
-          return (
-            <div
-              key={r.id}
-              data-testid="route-row"
-              className="oi-panel"
-              style={{
-                display: "flex",
-                gap: 12,
-                padding: "12px 14px",
-                alignItems: "flex-start",
-                opacity: r.active ? 1 : 0.6,
-              }}
-            >
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          background: "var(--sunk)",
+          borderRadius: 12,
+          padding: "10px 14px",
+          fontSize: 12.5,
+          color: "var(--ink-2)",
+        }}
+      >
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            background: "var(--brand)",
+            flex: "none",
+          }}
+        />
+        {t("set2.rules.firstWins")}
+      </div>
+
+      {data.routes.length === 0 ? (
+        <div
+          style={{
+            border: "1px dashed var(--line)",
+            borderRadius: "var(--radius-card)",
+            padding: 26,
+            textAlign: "center",
+            fontSize: 13,
+            color: "var(--ink-2)",
+          }}
+        >
+          {t("set2.rules.empty")}
+        </div>
+      ) : (
+        <div
+          style={{
+            background: "var(--panel)",
+            border: "1px solid var(--line)",
+            borderRadius: "var(--radius-card)",
+            boxShadow: "var(--shadow-card)",
+            overflow: "hidden",
+          }}
+        >
+          {data.routes.map((r, i) => {
+            const d = describeRoute(r, t, { paths: data.paths, sources: data.sources });
+            const defaults = isDefaultsRoute(r);
+            return (
               <div
+                key={r.id}
+                data-testid="route-row"
                 style={{
                   display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
                   alignItems: "center",
-                  flex: "none",
+                  gap: 12,
+                  padding: "12px 16px",
+                  borderBottom: i < data.routes.length - 1 ? "1px solid var(--line-2)" : undefined,
+                  opacity: r.active ? 1 : 0.6,
+                  background: editor?.route?.id === r.id ? "var(--brand-t)" : undefined,
                 }}
               >
+                {/* The design draws a drag handle; reordering is served by the
+                    two arrows, which is what the back end actually offers. */}
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 1,
+                    flex: "none",
+                    width: 14,
+                  }}
+                >
+                  {manages ? (
+                    <>
+                      <form action={moveRoute} style={{ display: "contents" }}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <input type="hidden" name="dir" value="up" />
+                        <button
+                          type="submit"
+                          disabled={i === 0}
+                          aria-label={t("common.previous")}
+                          style={{
+                            border: 0,
+                            background: "transparent",
+                            color: i === 0 ? "var(--line-2)" : "var(--ink-3)",
+                            cursor: i === 0 ? "default" : "pointer",
+                            fontSize: 9,
+                            lineHeight: 1,
+                            padding: 0,
+                          }}
+                        >
+                          ▲
+                        </button>
+                      </form>
+                      <form action={moveRoute} style={{ display: "contents" }}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <input type="hidden" name="dir" value="down" />
+                        <button
+                          type="submit"
+                          disabled={i === data.routes.length - 1}
+                          aria-label={t("common.next")}
+                          style={{
+                            border: 0,
+                            background: "transparent",
+                            color: i === data.routes.length - 1 ? "var(--line-2)" : "var(--ink-3)",
+                            cursor: i === data.routes.length - 1 ? "default" : "pointer",
+                            fontSize: 9,
+                            lineHeight: 1,
+                            padding: 0,
+                          }}
+                        >
+                          ▼
+                        </button>
+                      </form>
+                    </>
+                  ) : (
+                    <span aria-hidden style={{ color: "var(--line)", fontSize: 11 }}>
+                      ⠿
+                    </span>
+                  )}
+                </div>
                 <span
-                  style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--ink-3)" }}
+                  style={{
+                    fontFamily: "var(--mono)",
+                    fontSize: 11,
+                    color: "var(--ink-3)",
+                    width: 14,
+                    flex: "none",
+                  }}
                 >
                   {i + 1}
                 </span>
-                {manages && (
-                  <>
-                    <form action={moveRoute}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <input type="hidden" name="dir" value="up" />
-                      <button
-                        type="submit"
-                        disabled={i === 0}
-                        style={{ ...icon, height: 24, width: 24 }}
-                        aria-label={t("postMortem.moveUp")}
-                      >
-                        ↑
-                      </button>
-                    </form>
-                    <form action={moveRoute}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <input type="hidden" name="dir" value="down" />
-                      <button
-                        type="submit"
-                        disabled={i === data.routes.length - 1}
-                        style={{ ...icon, height: 24, width: 24 }}
-                        aria-label={t("postMortem.moveDown")}
-                      >
-                        ↓
-                      </button>
-                    </form>
-                  </>
-                )}
-              </div>
-              <div
-                style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <Link
-                    href={`/app/settings/alert-routes/${r.id}`}
-                    style={{
-                      fontWeight: 600,
-                      fontSize: 14,
-                      color: "inherit",
-                      textDecoration: "none",
-                    }}
-                  >
-                    {r.name}
-                  </Link>
-                  {!r.active && (
-                    <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)" }}>
-                      {t("settings.routes.inactive")}
-                    </span>
-                  )}
-                  {r.testMode && (
-                    <span
-                      style={{
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        color: "var(--wait)",
-                        background: "var(--wait-t)",
-                        padding: "1px 7px",
-                        borderRadius: 999,
-                      }}
-                    >
-                      {t("settings.routes.testMode")}
-                    </span>
-                  )}
-                  {warn && (
-                    <span
-                      style={{
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        color: "var(--dang)",
-                        background: "var(--dang-t)",
-                        padding: "1px 7px",
-                        borderRadius: 999,
-                      }}
-                    >
-                      {t("settings.routes.unpublishedPath")}
-                    </span>
-                  )}
-                  <span style={{ flex: 1 }} />
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11.5,
-                      color: "var(--ink-3)",
-                    }}
-                  >
-                    {t("settings.routes.alertCount", { count: r.alertCount })}
-                  </span>
-                </div>
-                {r.description && (
-                  <div style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{r.description}</div>
-                )}
-                <div
+                <span
                   style={{
-                    fontSize: 12.5,
-                    color: "var(--ink-2)",
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: 13.5,
+                    lineHeight: 1.5,
                     display: "flex",
-                    gap: 8,
-                    flexWrap: "wrap",
+                    flexDirection: "column",
+                    gap: 2,
                   }}
                 >
                   <span>
-                    <span style={{ color: "var(--ink-3)", fontWeight: 600 }}>
-                      {t("settings.routes.when")}
-                    </span>{" "}
-                    {d.when}
+                    <strong style={{ fontWeight: 600 }}>{r.name}</strong>
+                    <span style={{ color: "var(--ink-2)" }}>
+                      {" — "}
+                      {t("set2.ed.if")} {d.when} {t("set2.ed.then")} {d.then}
+                    </span>
                   </span>
-                  <span>
-                    <span style={{ color: "var(--ink-3)", fontWeight: 600 }}>
-                      {t("settings.routes.then")}
-                    </span>{" "}
-                    {d.then}
+                </span>
+                {/* Shape, not provenance: the row carries no condition, which
+                    is all this screen can honestly tell from the record. */}
+                {defaults && (
+                  <span
+                    title={t("set2.rules.defaultsHint")}
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "var(--ink-3)",
+                      background: "var(--sunk)",
+                      borderRadius: 5,
+                      padding: "1px 6px",
+                      flex: "none",
+                      cursor: "help",
+                    }}
+                  >
+                    {t("set2.rules.defaultsChip")}
                   </span>
-                </div>
+                )}
+                {!r.active && (
+                  <span
+                    style={{ fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", flex: "none" }}
+                  >
+                    {t("settings.routes.inactive")}
+                  </span>
+                )}
+                {r.testMode && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "var(--viol)",
+                      background: "var(--viol-t)",
+                      borderRadius: 5,
+                      padding: "1px 6px",
+                      flex: "none",
+                    }}
+                  >
+                    {t("settings.routes.testMode")}
+                  </span>
+                )}
+                {unpublished(r) && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "var(--dang)",
+                      background: "var(--dang-t)",
+                      borderRadius: 5,
+                      padding: "1px 6px",
+                      flex: "none",
+                    }}
+                  >
+                    {t("settings.routes.unpublishedPath")}
+                  </span>
+                )}
+                <span style={{ fontSize: 11.5, color: "var(--ink-3)", flex: "none" }}>
+                  {t("set2.rules.matched", { count: r.alertCount })}
+                </span>
+                {manages && (
+                  <div style={{ display: "flex", gap: 6, flex: "none" }}>
+                    <Link href={`${PAGE}?edit=${r.id}`} className="oi-hover" style={ghost}>
+                      {t("common.edit")}
+                    </Link>
+                    <form action={duplicateRoute}>
+                      <input type="hidden" name="id" value={r.id} />
+                      <button type="submit" className="oi-hover" style={ghost}>
+                        {t("settings.routes.duplicate")}
+                      </button>
+                    </form>
+                    <form action={toggleRoute}>
+                      <input type="hidden" name="id" value={r.id} />
+                      <button type="submit" className="oi-hover" style={ghost}>
+                        {r.testMode || !r.active
+                          ? t("settings.routes.activate")
+                          : t("settings.routes.deactivate")}
+                      </button>
+                    </form>
+                    <form action={deleteRoute}>
+                      <input type="hidden" name="id" value={r.id} />
+                      <button
+                        type="submit"
+                        className="oi-hover-dang"
+                        style={iconBtn}
+                        aria-label={t("common.delete")}
+                      >
+                        ✕
+                      </button>
+                    </form>
+                  </div>
+                )}
               </div>
-              {manages && (
-                <div style={{ display: "flex", gap: 6, flex: "none" }}>
-                  <Link href={`/app/settings/alert-routes/${r.id}`} style={btn}>
-                    {t("common.edit")}
-                  </Link>
-                  <form action={duplicateRoute}>
-                    <input type="hidden" name="id" value={r.id} />
-                    <button type="submit" style={btn}>
-                      {t("settings.routes.duplicate")}
-                    </button>
-                  </form>
-                  <form action={toggleRoute}>
-                    <input type="hidden" name="id" value={r.id} />
-                    <button type="submit" style={btn}>
-                      {r.testMode
-                        ? t("settings.routes.activate")
-                        : r.active
-                          ? t("settings.routes.deactivate")
-                          : t("settings.routes.activate")}
-                    </button>
-                  </form>
-                  <form action={deleteRoute}>
-                    <input type="hidden" name="id" value={r.id} />
-                    <button
-                      type="submit"
-                      className="oi-hover-dang"
-                      style={icon}
-                      aria-label={t("common.delete")}
-                    >
-                      ✕
-                    </button>
-                  </form>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!manages && (
+        <p style={{ margin: 0, fontSize: 12.5, color: "var(--ink-3)" }}>
+          {t("set2.rules.readOnly")}
+        </p>
+      )}
+
+      {editor && (
+        <RouteEditor
+          // The editor holds the draft in state: moving from one rule to
+          // another — or to a new one — must remount it, not reconcile it.
+          key={editing ?? "new"}
+          route={editor.route}
+          index={editorIndex}
+          cancelHref={PAGE}
+          attributes={editor.attributes.map((a) => ({
+            key: a.key,
+            label: a.label,
+            type: a.type,
+            catalogTypeKey: a.catalogTypeKey,
+          }))}
+          sources={editor.sources}
+          paths={editor.paths.map((p) => ({
+            id: p.id,
+            name: p.name,
+            published: Boolean(p.current),
+          }))}
+          types={editor.types}
+          severities={editor.sevs}
+          priorities={editor.prios}
+          fields={editor.fields}
+          people={editor.targets.people.filter((p) => p.id !== member.id)}
+          schedules={editor.targets.schedules}
+          slackInstalled={editor.slack}
+          channels={editor.channels}
+        />
+      )}
     </div>
   );
 }

@@ -1,27 +1,63 @@
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
-import { alertPriorities, withTenant } from "@openincident/db";
+import { alertPriorities, severities, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
-import { requireMember } from "@/lib/session";
+import { isManager, requireMember } from "@/lib/session";
 import { deletePriority, movePriority, savePriority } from "./actions";
 
-/** Settings → Priorities: they qualify the alert at ingestion — from the payload or static per route. */
-export default async function AlertPrioritiesPage({
+/** The tint that goes with each ink the editor offers. Tokens only, in pairs. */
+const TINT: Record<string, string> = {
+  "var(--dang)": "var(--dang-t)",
+  "var(--wait)": "var(--wait-t)",
+  "var(--open)": "var(--open-t)",
+  "var(--viol)": "var(--viol-t)",
+  "var(--ok)": "var(--ok-t)",
+  "var(--ink-3)": "var(--sunk)",
+};
+
+/**
+ * Alert severities — P1 to P4, the qualification an alert carries from the
+ * moment it is ingested.
+ *
+ * Two of the four columns are read, not set. Whether a level wakes people up
+ * is its urgency, which the row's editor owns. Which incident severity it
+ * opens as is not a column anywhere: the pipeline pairs the two lists by rank,
+ * so the mapping is shown as what it is — derived — rather than as a dropdown
+ * that would have nowhere to write.
+ */
+export default async function AlertSeveritiesPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const { tenant } = await requireMember();
+  const { tenant, member } = await requireMember();
   const t = await getT();
   const q = await searchParams;
-  const rows = await withTenant(tenant.id, (tx) =>
-    tx
+  const manages = isManager(member);
+  const data = await withTenant(tenant.id, async (tx) => ({
+    rows: await tx
       .select()
       .from(alertPriorities)
       .where(eq(alertPriorities.tenantId, tenant.id))
       .orderBy(asc(alertPriorities.rank)),
-  );
-  const editing = q.edit === "new" ? "new" : (rows.find((r) => r.id === q.edit) ?? null);
+    sevs: await tx
+      .select({ id: severities.id, name: severities.name, rank: severities.rank })
+      .from(severities)
+      .where(eq(severities.tenantId, tenant.id))
+      .orderBy(asc(severities.rank)),
+  }));
+  const rows = data.rows;
+  // The pipeline's own rule: same rank in both lists, the last one catching the rest.
+  const opensAs = (rank: number) =>
+    data.sevs.find((s) => s.rank === rank) ?? data.sevs[data.sevs.length - 1] ?? null;
+  // "opens as SEV2" — the level's name set in bold inside the sentence.
+  const [opensAsHead, opensAsTail] = t.parts("set2.sev.opensAs", "severity");
+
+  const editing = manages
+    ? q.edit === "new"
+      ? "new"
+      : (rows.find((r) => r.id === q.edit) ?? null)
+    : null;
   const r = editing === "new" ? null : editing;
   const label: React.CSSProperties = {
     fontSize: 11,
@@ -48,195 +84,242 @@ export default async function AlertPrioritiesPage({
     ["var(--ok)", t("settings.priorities.color.green")],
     ["var(--ink-3)", t("settings.priorities.color.grey")],
   ] as const;
+
   return (
-    <div
-      className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 860 }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <h1 className="oi-title" style={{ margin: 0 }}>
-          {t("settings.priorities.title")}
-        </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-          {t("settings.priorities.subtitle")}
-        </span>
-        <span style={{ flex: 1 }} />
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 320 }}>
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: "var(--title)",
+              fontSize: 21,
+              fontWeight: 600,
+              letterSpacing: "-.015em",
+            }}
+          >
+            {t("set2.sev.title")}
+          </h1>
+          <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 4, lineHeight: 1.5 }}>
+            {t("set2.sev.subtitle")}
+          </div>
+        </div>
         {q.saved === "1" && (
           <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
             {t("common.saved")}
           </span>
         )}
-        <Link
-          href="/app/settings/alert-priorities?edit=new"
-          data-testid="priority-new"
-          style={{
-            height: 32,
-            padding: "0 14px",
-            borderRadius: 9,
-            background: "var(--brand)",
-            color: "#fff",
-            display: "flex",
-            alignItems: "center",
-            fontSize: 12.5,
-            fontWeight: 600,
-            textDecoration: "none",
-          }}
-        >
-          {t("settings.priorities.new")}
-        </Link>
-      </div>
-      <div className="oi-panel" style={{ overflow: "hidden" }}>
-        {rows.map((p, i) => (
-          <div
-            key={p.id}
-            data-testid="priority-row"
+        {manages && (
+          <Link
+            href="/app/settings/alert-priorities?edit=new"
+            data-testid="priority-new"
+            className="oi-hover-brand-2"
             style={{
+              height: 32,
+              padding: "0 14px",
+              borderRadius: 9,
+              background: "var(--brand)",
+              color: "var(--on-brand)",
               display: "flex",
               alignItems: "center",
-              gap: 12,
-              padding: "11px 16px",
-              borderBottom: i < rows.length - 1 ? "1px solid var(--line-2)" : undefined,
+              fontSize: 12.5,
+              fontWeight: 600,
+              textDecoration: "none",
             }}
           >
-            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-              <form action={movePriority} style={{ display: "contents" }}>
-                <input type="hidden" name="id" value={p.id} />
-                <input type="hidden" name="dir" value="up" />
-                <button
-                  type="submit"
-                  disabled={i === 0}
-                  aria-label={t("common.previous")}
-                  style={{
-                    border: 0,
-                    background: "transparent",
-                    color: i === 0 ? "var(--line-2)" : "var(--ink-3)",
-                    cursor: i === 0 ? "default" : "pointer",
-                    fontSize: 9,
-                    lineHeight: 1,
-                    padding: 0,
-                  }}
-                >
-                  ▲
-                </button>
-              </form>
-              <form action={movePriority} style={{ display: "contents" }}>
-                <input type="hidden" name="id" value={p.id} />
-                <input type="hidden" name="dir" value="down" />
-                <button
-                  type="submit"
-                  disabled={i === rows.length - 1}
-                  aria-label={t("common.next")}
-                  style={{
-                    border: 0,
-                    background: "transparent",
-                    color: i === rows.length - 1 ? "var(--line-2)" : "var(--ink-3)",
-                    cursor: i === rows.length - 1 ? "default" : "pointer",
-                    fontSize: 9,
-                    lineHeight: 1,
-                    padding: 0,
-                  }}
-                >
-                  ▼
-                </button>
-              </form>
-            </div>
-            <span
+            {t("set2.sev.new")}
+          </Link>
+        )}
+      </div>
+
+      <div
+        style={{
+          background: "var(--panel)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--radius-card)",
+          boxShadow: "var(--shadow-card)",
+          overflow: "hidden",
+        }}
+      >
+        {rows.length === 0 && (
+          <div style={{ padding: 22, fontSize: 13, color: "var(--ink-3)" }}>
+            {t("set2.sev.empty")}
+          </div>
+        )}
+        {rows.map((p, i) => {
+          const sev = opensAs(p.rank);
+          const wakes = p.urgency === "high";
+          return (
+            <div
+              key={p.id}
+              data-testid="priority-row"
               style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: p.color,
-                flex: "none",
+                display: "grid",
+                gridTemplateColumns: manages
+                  ? "14px 56px minmax(0,1fr) 150px 170px auto"
+                  : "56px minmax(0,1fr) 150px 170px",
+                gap: 14,
+                alignItems: "center",
+                padding: "12px 16px",
+                borderBottom: i < rows.length - 1 ? "1px solid var(--line-2)" : undefined,
               }}
-            />
-            <span
-              style={{ width: 40, fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500 }}
             >
-              {p.name}
-            </span>
-            <span style={{ flex: 1, fontSize: 12.5, color: "var(--ink-2)", minWidth: 0 }}>
-              {p.description}
-              {(p.aliases.length > 0 || p.isDefault) && (
-                <span
-                  style={{
-                    display: "block",
-                    fontSize: 11.5,
-                    color: "var(--ink-3)",
-                    fontFamily: "var(--font-mono)",
-                  }}
-                >
-                  {p.isDefault && (
-                    <span
+              {manages && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  <form action={movePriority} style={{ display: "contents" }}>
+                    <input type="hidden" name="id" value={p.id} />
+                    <input type="hidden" name="dir" value="up" />
+                    <button
+                      type="submit"
+                      disabled={i === 0}
+                      aria-label={t("common.previous")}
                       style={{
-                        fontFamily: "inherit",
-                        fontWeight: 700,
-                        color: "var(--brand)",
-                        marginRight: 8,
+                        border: 0,
+                        background: "transparent",
+                        color: i === 0 ? "var(--line-2)" : "var(--ink-3)",
+                        cursor: i === 0 ? "default" : "pointer",
+                        fontSize: 9,
+                        lineHeight: 1,
+                        padding: 0,
                       }}
                     >
-                      {t("settings.priorities.default")}
-                    </span>
-                  )}
-                  {p.aliases.join(" · ")}
-                </span>
+                      ▲
+                    </button>
+                  </form>
+                  <form action={movePriority} style={{ display: "contents" }}>
+                    <input type="hidden" name="id" value={p.id} />
+                    <input type="hidden" name="dir" value="down" />
+                    <button
+                      type="submit"
+                      disabled={i === rows.length - 1}
+                      aria-label={t("common.next")}
+                      style={{
+                        border: 0,
+                        background: "transparent",
+                        color: i === rows.length - 1 ? "var(--line-2)" : "var(--ink-3)",
+                        cursor: i === rows.length - 1 ? "default" : "pointer",
+                        fontSize: 9,
+                        lineHeight: 1,
+                        padding: 0,
+                      }}
+                    >
+                      ▼
+                    </button>
+                  </form>
+                </div>
               )}
-            </span>
-            <span
-              style={{
-                padding: "2px 9px",
-                borderRadius: 999,
-                background: p.urgency === "high" ? "var(--dang-t)" : "var(--sunk)",
-                color: p.urgency === "high" ? "var(--dang)" : "var(--ink-2)",
-                fontSize: 10.5,
-                fontWeight: 700,
-              }}
-            >
-              {t("settings.priorities.urgencyChip", { urgency: p.urgency })}
-            </span>
-            <Link
-              href={`/app/settings/alert-priorities?edit=${p.id}`}
-              className="oi-hover"
-              style={{
-                height: 26,
-                padding: "0 10px",
-                border: "1px solid var(--line)",
-                borderRadius: 7,
-                display: "flex",
-                alignItems: "center",
-                fontSize: 11,
-                fontWeight: 600,
-                color: "inherit",
-                textDecoration: "none",
-              }}
-            >
-              {t("common.edit")}
-            </Link>
-            <form action={deletePriority}>
-              <input type="hidden" name="id" value={p.id} />
-              <button
-                type="submit"
-                aria-label={t("common.delete")}
-                className="oi-hover-dang"
+              <span
                 style={{
-                  width: 26,
-                  height: 26,
-                  border: "1px solid var(--line)",
-                  borderRadius: 7,
-                  background: "var(--panel)",
-                  color: "var(--dang)",
-                  cursor: "pointer",
                   fontSize: 11,
+                  fontWeight: 700,
+                  borderRadius: 6,
+                  padding: "3px 0",
+                  textAlign: "center",
+                  background: TINT[p.color] ?? "var(--sunk)",
+                  color: p.color,
                 }}
               >
-                ✕
-              </button>
-            </form>
-          </div>
-        ))}
+                {p.name}
+              </span>
+              <span style={{ fontSize: 13, color: "var(--ink-2)", minWidth: 0 }}>
+                {p.description}
+                {(p.aliases.length > 0 || p.isDefault) && (
+                  <span
+                    style={{
+                      display: "block",
+                      fontSize: 11.5,
+                      color: "var(--ink-3)",
+                      fontFamily: "var(--mono)",
+                    }}
+                  >
+                    {p.isDefault && (
+                      <span
+                        style={{
+                          fontFamily: "inherit",
+                          fontWeight: 700,
+                          color: "var(--brand)",
+                          marginRight: 8,
+                        }}
+                      >
+                        {t("settings.priorities.default")}
+                      </span>
+                    )}
+                    {p.aliases.join(" · ")}
+                  </span>
+                )}
+              </span>
+              <span
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: wakes ? "var(--dang)" : "var(--ink-3)",
+                }}
+              >
+                {wakes ? t("set2.sev.wakes") : t("set2.sev.waits")}
+              </span>
+              <span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>
+                {sev ? (
+                  <>
+                    {opensAsHead}
+                    <strong>{sev.name}</strong>
+                    {opensAsTail}
+                  </>
+                ) : (
+                  <span style={{ color: "var(--ink-3)" }}>{t("set2.sev.opensAsNone")}</span>
+                )}
+              </span>
+              {manages && (
+                <span style={{ display: "flex", gap: 6 }}>
+                  <Link
+                    href={`/app/settings/alert-priorities?edit=${p.id}`}
+                    className="oi-hover"
+                    style={{
+                      height: 26,
+                      padding: "0 10px",
+                      border: "1px solid var(--line)",
+                      borderRadius: 7,
+                      display: "flex",
+                      alignItems: "center",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "inherit",
+                      textDecoration: "none",
+                    }}
+                  >
+                    {t("common.edit")}
+                  </Link>
+                  <form action={deletePriority}>
+                    <input type="hidden" name="id" value={p.id} />
+                    <button
+                      type="submit"
+                      aria-label={t("common.delete")}
+                      className="oi-hover-dang"
+                      style={{
+                        width: 26,
+                        height: 26,
+                        border: "1px solid var(--line)",
+                        borderRadius: 7,
+                        background: "var(--panel)",
+                        color: "var(--dang)",
+                        cursor: "pointer",
+                        fontSize: 11,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </form>
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
+
+      <div className="oi-note">{t("set2.sev.mappingNote")}</div>
       <div className="oi-note">
-        <strong>{t("settings.priorities.noteTitle")}</strong> {t("settings.priorities.note")}
+        <strong>{t("settings.priorities.noteTitle")}</strong> {t("set2.sev.alsoCalled")}
       </div>
+
       {editing && (
         <div
           style={{
@@ -253,12 +336,12 @@ export default async function AlertPrioritiesPage({
             action={savePriority}
             data-testid="priority-form"
             role="dialog"
-            className="oi-rise"
+            className="oi-rise-modal"
             style={{
               width: 500,
               maxWidth: "100%",
               background: "var(--panel)",
-              borderRadius: 18,
+              borderRadius: "var(--radius-modal)",
               boxShadow: "var(--shadow-modal)",
             }}
           >
@@ -272,7 +355,7 @@ export default async function AlertPrioritiesPage({
                 borderBottom: "1px solid var(--line)",
               }}
             >
-              <div style={{ fontFamily: "var(--font-title)", fontSize: 16.5, fontWeight: 600 }}>
+              <div style={{ fontFamily: "var(--title)", fontSize: 16.5, fontWeight: 600 }}>
                 {r
                   ? t("settings.priorities.editTitle", { name: r.name })
                   : t("settings.priorities.newTitle")}
@@ -308,7 +391,7 @@ export default async function AlertPrioritiesPage({
                     defaultValue={r?.name ?? ""}
                     placeholder="P5"
                     className="oi-field"
-                    style={{ ...control, fontFamily: "var(--font-mono)" }}
+                    style={{ ...control, fontFamily: "var(--mono)" }}
                   />
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -359,7 +442,7 @@ export default async function AlertPrioritiesPage({
                   defaultValue={r?.aliases.join(", ") ?? ""}
                   placeholder="critical, sev1, high"
                   className="oi-field"
-                  style={{ ...control, fontFamily: "var(--font-mono)" }}
+                  style={{ ...control, fontFamily: "var(--mono)" }}
                 />
                 <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
                   {t("settings.priorities.aliasesHint")}
@@ -400,12 +483,13 @@ export default async function AlertPrioritiesPage({
               </Link>
               <button
                 type="submit"
+                className="oi-hover-brand-2"
                 style={{
                   height: 34,
                   padding: "0 16px",
                   borderRadius: 9,
                   background: "var(--brand)",
-                  color: "#fff",
+                  color: "var(--on-brand)",
                   border: 0,
                   fontSize: 12.5,
                   fontWeight: 600,
