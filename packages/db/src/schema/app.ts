@@ -1123,6 +1123,22 @@ export const alertSources = app.table(
     priorityRule: jsonb("priority_rule").$type<PriorityRule | null>(),
     /** Only alerts matching these conditions are ingested; resolutions always pass. */
     filter: jsonb("filter").$type<ConditionGroup[]>().notNull().default([]),
+    /*
+     * The three choices a source carries — who to page, whether an incident
+     * opens, whether a resolution closes the escalation.
+     *
+     * They used to live in a route scoped to the source alone, which put them
+     * in the list of rules where nobody had written them, and made a rule
+     * created afterwards lose to them. They are the source's own answer now,
+     * and a rule is what it says it is: the exception.
+     *
+     * Null on all three means the source has never been touched and follows
+     * the catch-all, which is not the same answer as "page nobody" (an empty
+     * list) or "never open an incident".
+     */
+    escalations: jsonb("escalations").$type<EscalationRule[] | null>(),
+    incidentOpens: text("incident_opens").$type<"never" | "always" | "conditional">(),
+    autoResolve: boolean("auto_resolve"),
     active: boolean("active").notNull().default(true),
     lastAlertAt: timestamp("last_alert_at", { withTimezone: true }),
     createdByMemberId: uuid("created_by_member_id").references(() => members.id, {

@@ -15,7 +15,6 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
-  alertRoutes,
   alertSources,
   forgetApiKeyLookup,
   registerApiKeyLookup,
@@ -26,7 +25,6 @@ import {
   type AttributeMapping,
   type ConditionGroup,
   type EscalationRule,
-  type IncidentTemplate,
   type PriorityRule,
   type Tx,
 } from "@openincident/db";
@@ -38,7 +36,7 @@ import { SOURCE_KINDS } from "@/lib/alert-sources";
 import { ensureQuickPath } from "@/lib/alerting-setup";
 import { requireManager } from "@/lib/session";
 import { requestOrigin } from "@/lib/tenant";
-import { governingRoute, type IncidentChoice } from "@/app/app/alerts/sources/choices";
+import { type IncidentChoice } from "@/app/app/alerts/sources/choices";
 import { headers } from "next/headers";
 
 const KINDS = SOURCE_KINDS.map((k) => k.kind) as [AlertSourceKind, ...AlertSourceKind[]];
@@ -79,16 +77,6 @@ const pageChoice = z.object({
   scheduleId: uuid.optional(),
 });
 type PageInput = z.infer<typeof pageChoice>;
-
-const DEFAULT_TEMPLATE: IncidentTemplate = {
-  mode: "conditional",
-  typeId: null,
-  startPhase: "triage",
-  severity: { mode: "priority" },
-  visibility: "public",
-  customFields: {},
-  declineOnResolve: true,
-};
 
 /** The escalation rules that express one answer to "who to page". */
 async function rulesFor(
@@ -141,11 +129,17 @@ async function rulesFor(
 }
 
 /**
- * Writes one of the three choices onto the route that governs the source.
+ * Writes one of the three choices onto the source itself.
  *
- * A source still governed by the shared catch-all gets a route of its own on
- * the first change — cloned from the shared one, scoped to this source, and
- * placed just before it so every rule keeps winning.
+ * They used to be written into a route scoped to this source alone, created on
+ * the first change and slipped in just before the catch-all. That put them in
+ * the list of rules where nobody had written them, and gave them a position a
+ * rule written afterwards could not beat — the opposite of what the screen
+ * promises. They are columns on the source now, and the pipeline lays them
+ * over the shared rule after every real rule has had its turn.
+ *
+ * Touching one choice writes one column: a source that has only ever answered
+ * "who to page" keeps following the shared rule on the other two, and says so.
  */
 async function applyChoices(
   tx: Tx,
@@ -154,58 +148,21 @@ async function applyChoices(
   source: { id: string; name: string },
   patch: { page?: PageInput; incident?: IncidentChoice; autoResolve?: boolean },
 ): Promise<void> {
-  const t = await getT();
-  const { route, own, catchAll } = await governingRoute(tx, tenantId, source.id);
-  let target = own ? route : null;
-  if (!target) {
-    const name = t("alt2.sources.routeName", { name: source.name }).slice(0, 80);
-    const [created] = await tx
-      .insert(alertRoutes)
-      .values({
-        tenantId,
-        name,
-        description: t("alt2.sources.routeDesc", { name: source.name }).slice(0, 300),
-        active: true,
-        sourceIds: [source.id],
-        conditions: [],
-        escalations: route?.escalations ?? [],
-        incident: route?.incident ?? DEFAULT_TEMPLATE,
-        grouping: route?.grouping ?? null,
-        escalationMode: route?.escalationMode ?? "none",
-        escalationPathId: route?.escalationPathId ?? null,
-        incidentMode: route?.incidentMode ?? "conditional",
-        resolveClosesEscalation: route?.resolveClosesEscalation ?? true,
-        position: catchAll ? catchAll.position - 1 : 900,
-      })
-      .returning();
-    target = created!;
-  }
-  const next: Partial<typeof alertRoutes.$inferInsert> = { updatedAt: new Date() };
-  const template: IncidentTemplate = target.incident ?? {
-    ...DEFAULT_TEMPLATE,
-    mode: target.incidentMode,
-  };
+  const next: Partial<typeof alertSources.$inferInsert> = {};
   if (patch.page) {
-    const { rules, pathId } = await rulesFor(tx, tenantId, actor, patch.page);
+    const { rules } = await rulesFor(tx, tenantId, actor, patch.page);
     next.escalations = rules;
-    next.escalationMode =
-      rules.length === 0 ? "none" : patch.page.kind === "owner" ? "dynamic" : "static";
-    next.escalationPathId = pathId;
   }
   if (patch.incident) {
-    const mode =
+    next.incidentOpens =
       patch.incident === "never" ? "never" : patch.incident === "triage" ? "always" : "conditional";
-    next.incident = { ...template, mode, startPhase: "triage" };
-    next.incidentMode = mode;
   }
-  if (patch.autoResolve !== undefined) {
-    next.incident = {
-      ...(next.incident ?? template),
-      declineOnResolve: patch.autoResolve,
-    };
-    next.resolveClosesEscalation = patch.autoResolve;
-  }
-  await tx.update(alertRoutes).set(next).where(eq(alertRoutes.id, target.id));
+  if (patch.autoResolve !== undefined) next.autoResolve = patch.autoResolve;
+  if (Object.keys(next).length === 0) return;
+  await tx
+    .update(alertSources)
+    .set(next)
+    .where(and(eq(alertSources.tenantId, tenantId), eq(alertSources.id, source.id)));
 }
 
 /** One chip on the source page: the choice is written and the next alert follows it. */

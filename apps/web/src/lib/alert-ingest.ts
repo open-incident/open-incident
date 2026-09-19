@@ -92,7 +92,7 @@ export type AlertPlan = {
   filtered: boolean;
   priority: PriorityRow | null;
   urgency: "high" | "low";
-  route: RouteRow | null;
+  route: Effective | null;
   routeConditions: ReturnType<typeof legacyFiltersAsConditions>;
   testMode: boolean;
   escalations: EscalationDecision[];
@@ -119,6 +119,104 @@ export type AlertPlan = {
   /** Required attributes this alert does not carry. */
   missingRequired: string[];
 };
+
+/**
+ * A route is a rule when somebody wrote it to apply to something in
+ * particular: a condition, or a chosen set of sources. Everything else is the
+ * shared fallback every alert lands on, and it is the one the source's own
+ * three choices are laid over.
+ *
+ * The order the pipeline reads is therefore: the rules, in their own order,
+ * then what the source decided, then the shared fallback. That is what the
+ * source screen has always claimed — "rules are the exceptions to what the
+ * sources decide" — and until the choices moved onto the source it was the
+ * opposite, because a rule written afterwards got a later position than the
+ * route the source's choices had quietly taken.
+ */
+function isRule(route: RouteRow): boolean {
+  return (
+    route.sourceIds.length > 0 ||
+    route.conditions.some((g) => g.all.length > 0) ||
+    route.filters.length > 0
+  );
+}
+
+/** A route as the pipeline reads it: `stored` false means nothing to point at. */
+export type Effective = RouteRow & { stored: boolean };
+
+/** The neutral fallback for a workspace whose catch-all somebody deleted. */
+const NEUTRAL: Omit<RouteRow, "id" | "tenantId" | "name" | "createdAt" | "updatedAt"> = {
+  description: null,
+  active: true,
+  sourceIds: [],
+  conditions: [],
+  filters: [],
+  escalations: [],
+  incident: null,
+  grouping: null,
+  notify: null,
+  escalationMode: "none",
+  escalationPathId: null,
+  urgencyOverride: null,
+  priorityId: null,
+  incidentMode: "conditional",
+  incidentTypeId: null,
+  deferMinutes: 0,
+  resolveClosesEscalation: true,
+  position: 0,
+  alertCount: 0,
+  testMode: false,
+};
+
+/**
+ * The shared fallback with the source's own answers laid over it.
+ *
+ * Only the three the source carries: who to page, whether an incident opens,
+ * whether a resolution closes the escalation. Grouping, priority, urgency and
+ * test mode stay the fallback's — a source has no opinion on them and never
+ * had one, even when its choices lived in a route that happened to carry a
+ * copy.
+ */
+function withSourceChoices(fallback: RouteRow | null, source: SourceRow): Effective | null {
+  const says =
+    source.escalations !== null || source.incidentOpens !== null || source.autoResolve !== null;
+  if (!says) return fallback ? { ...fallback, stored: true } : null;
+  const base: Effective = fallback
+    ? { ...fallback, stored: true }
+    : {
+        ...NEUTRAL,
+        id: "",
+        tenantId: source.tenantId,
+        name: source.name,
+        createdAt: source.createdAt,
+        updatedAt: source.createdAt,
+        stored: false,
+      };
+  const out: Effective = { ...base };
+  if (source.escalations !== null) {
+    out.escalations = source.escalations;
+    // The legacy mirrors have to follow, or a source that pages nobody would
+    // fall back to whatever the shared rule's old columns still said.
+    out.escalationMode =
+      source.escalations.length === 0
+        ? "none"
+        : source.escalations[0]?.kind === "attribute"
+          ? "dynamic"
+          : "static";
+    out.escalationPathId =
+      source.escalations[0]?.kind === "path" ? source.escalations[0].pathId : null;
+  }
+  const template = base.incident ?? legacyIncident(base);
+  if (source.incidentOpens !== null) {
+    out.incident = { ...template, mode: source.incidentOpens, startPhase: "triage" };
+    out.incidentMode = source.incidentOpens;
+  }
+  if (source.autoResolve !== null) {
+    out.incident = { ...(out.incident ?? template), declineOnResolve: source.autoResolve };
+    out.resolveClosesEscalation = source.autoResolve;
+  }
+  return out;
+}
 
 /** What a legacy route meant, expressed in today's rules. */
 function legacyEscalations(route: RouteRow): EscalationRule[] {
@@ -274,12 +372,15 @@ export async function planAlert(
     .orderBy(alertRoutes.position, alertRoutes.createdAt);
   const conditionsOf = (r: RouteRow) =>
     r.conditions.length > 0 ? r.conditions : legacyFiltersAsConditions(r.filters);
-  const route =
-    routes.find(
-      (r) =>
-        (r.sourceIds.length === 0 || r.sourceIds.includes(source.id)) &&
-        conditionsHold(conditionsOf(r), ctx),
-    ) ?? null;
+  const applies = (r: RouteRow) =>
+    (r.sourceIds.length === 0 || r.sourceIds.includes(source.id)) &&
+    conditionsHold(conditionsOf(r), ctx);
+  // The rules first, in their order; then the source's own answers over the
+  // shared fallback. A rule is the exception, which is what the screens say.
+  const rule = routes.find((r) => isRule(r) && applies(r)) ?? null;
+  const route: Effective | null = rule
+    ? { ...rule, stored: true }
+    : withSourceChoices(routes.find((r) => !isRule(r)) ?? null, source);
 
   priority =
     priority ??
@@ -378,7 +479,9 @@ export async function planAlert(
   let leader: AlertPlan["grouping"]["leader"] = null;
   if (route && parsed.status === "firing") {
     groupingRule = route.grouping ?? (attributes.service ? LEGACY_GROUPING : null);
-    if (groupingRule?.enabled && !testMode) {
+    // Nothing to join against when no route decided: the group is the set of
+    // alerts a stored route already leads.
+    if (groupingRule?.enabled && !testMode && route.stored) {
       key = groupingKey(groupingRule, attributes);
       const since = new Date(now.getTime() - groupingRule.windowMinutes * 60_000);
       const [row] = await tx
@@ -554,9 +657,17 @@ async function ingestOne(
         { by: "source", title: parsed.title },
         now,
       );
-      const [existingRoute] = existing.routeId
+      // The route the alert was decided by — amended by the source the same
+      // way it was at the time, unless a rule decided and the source had no
+      // say. Without this, turning auto-resolve off on a source would be
+      // ignored by the very event it exists for.
+      const [stored] = existing.routeId
         ? await tx.select().from(alertRoutes).where(eq(alertRoutes.id, existing.routeId))
         : [];
+      const existingRoute =
+        stored && isRule(stored)
+          ? { ...stored, stored: true }
+          : withSourceChoices(stored ?? null, source);
       let declined = false;
       if (existing.incidentId) {
         await tx.insert(incidentEvents).values({
@@ -634,7 +745,7 @@ async function ingestOne(
       .values({
         tenantId,
         sourceId: source.id,
-        routeId: route?.id ?? null,
+        routeId: route?.stored ? route.id : null,
         dedupKey: parsed.dedupKey,
         status: "firing",
         title: parsed.title,
@@ -744,7 +855,7 @@ async function ingestOne(
       "routed",
       {
         route: route.name,
-        routeId: route.id,
+        routeId: route.stored ? route.id : null,
         escalation: plan.escalations.map((e) => ({
           path: e.pathName,
           via: e.via,

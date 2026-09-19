@@ -133,9 +133,6 @@ const en = {
   "alt2.sources.emptyText": "Connect a tool and the alerts it sends land in this list.",
   "alt2.sources.testSent": "Test alert sent — routed, paging nobody.",
   "alt2.sources.openTestAlert": "Open it",
-  "alt2.sources.routeName": "{name} — the source's own choices",
-  "alt2.sources.routeDesc":
-    "Written from the source page of {name}. Rules above it win; this is what applies when none does.",
 
   /* ---------- Connecting a tool ---------- */
   "alt2.connect.titleStep1": "Connect a tool",
@@ -330,9 +327,6 @@ const fr = {
     "Connectez un outil : les alertes qu'il envoie arriveront dans cette liste.",
   "alt2.sources.testSent": "Alerte de test envoyée — routée, personne appelé.",
   "alt2.sources.openTestAlert": "L'ouvrir",
-  "alt2.sources.routeName": "{name} — les choix propres à la source",
-  "alt2.sources.routeDesc":
-    "Écrite depuis la page de la source {name}. Les règles au-dessus l'emportent ; ceci s'applique quand aucune ne correspond.",
 
   "alt2.connect.titleStep1": "Connecter un outil",
   "alt2.connect.titleStep2": "Nouvelle source — {tool}",
@@ -526,9 +520,6 @@ const de = {
     "Verbinden Sie ein Werkzeug — die Alarme, die es sendet, landen in dieser Liste.",
   "alt2.sources.testSent": "Testalarm gesendet — geroutet, niemand gerufen.",
   "alt2.sources.openTestAlert": "Öffnen",
-  "alt2.sources.routeName": "{name} — die eigenen Entscheidungen der Quelle",
-  "alt2.sources.routeDesc":
-    "Von der Quellseite von {name} geschrieben. Regeln darüber gewinnen; dies gilt, wenn keine passt.",
 
   "alt2.connect.titleStep1": "Ein Werkzeug verbinden",
   "alt2.connect.titleStep2": "Neue Quelle — {tool}",

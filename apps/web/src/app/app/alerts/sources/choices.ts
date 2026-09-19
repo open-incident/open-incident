@@ -17,6 +17,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import {
   alertPriorities,
   alertRoutes,
+  alertSources,
   escalationPathVersions,
   escalationPaths,
   members,
@@ -44,9 +45,9 @@ export type PageChoice =
 export type IncidentChoice = "triage" | "urgent" | "never";
 
 export type SourceChoices = {
-  /** The route the pipeline would pick for this source with no other condition. */
+  /** The shared rule everything the source has no opinion about comes from. */
   route: RouteRow | null;
-  /** The route belongs to this source alone — otherwise it is shared with every other source. */
+  /** The source carries its own answers — otherwise it follows the shared rule. */
   own: boolean;
   page: PageChoice;
   incident: IncidentChoice;
@@ -63,26 +64,28 @@ const EMPTY_TEMPLATE: IncidentTemplate = {
   declineOnResolve: true,
 };
 
-function hasCondition(r: RouteRow): boolean {
-  return r.conditions.some((g) => g.all.length > 0) || r.filters.length > 0;
-}
-
-/** The route the source's own choices live in, and the shared one it falls back to. */
-export async function governingRoute(
-  tx: Tx,
-  tenantId: string,
-  sourceId: string,
-): Promise<{ route: RouteRow | null; own: boolean; catchAll: RouteRow | null }> {
+/**
+ * The shared rule a source falls through to: the first route nobody wrote for
+ * anything in particular — no source of its own, no condition.
+ *
+ * It decides everything the source has no opinion about: grouping, priority,
+ * urgency, test mode. A workspace whose catch-all was deleted has none, and
+ * then the source's three answers are the whole decision.
+ */
+export async function sharedRoute(tx: Tx, tenantId: string): Promise<RouteRow | null> {
   const rows = await tx
     .select()
     .from(alertRoutes)
     .where(eq(alertRoutes.tenantId, tenantId))
     .orderBy(asc(alertRoutes.position), asc(alertRoutes.createdAt));
-  const own =
-    rows.find((r) => r.sourceIds.length === 1 && r.sourceIds[0] === sourceId && !hasCondition(r)) ??
-    null;
-  const catchAll = rows.find((r) => r.sourceIds.length === 0 && !hasCondition(r)) ?? null;
-  return { route: own ?? catchAll, own: Boolean(own), catchAll };
+  return (
+    rows.find(
+      (r) =>
+        r.sourceIds.length === 0 &&
+        r.filters.length === 0 &&
+        !r.conditions.some((g) => g.all.length > 0),
+    ) ?? null
+  );
 }
 
 /** The first level of a published path, which is who the path pages first. */
@@ -107,15 +110,8 @@ async function firstLevel(tx: Tx, tenantId: string, pathId: string) {
   return { name: path.name, level: node?.kind === "level" ? node : null };
 }
 
-/** Reads back which of the five "who to page" answers a route's rules express. */
-async function readPage(tx: Tx, tenantId: string, route: RouteRow | null): Promise<PageChoice> {
-  if (!route) return { kind: "nobody" };
-  const rules: EscalationRule[] =
-    route.escalations.length > 0
-      ? route.escalations
-      : route.escalationMode === "static" && route.escalationPathId
-        ? [{ kind: "path", pathId: route.escalationPathId }]
-        : [];
+/** Reads back which of the five "who to page" answers a list of rules express. */
+async function readPage(tx: Tx, tenantId: string, rules: EscalationRule[]): Promise<PageChoice> {
   if (rules.length === 0) return { kind: "nobody" };
   const first = rules[0]!;
   if (first.kind === "attribute") return { kind: "owner" };
@@ -146,32 +142,53 @@ async function readPage(tx: Tx, tenantId: string, route: RouteRow | null): Promi
   return { kind: "path", pathId: first.pathId, name: found.name };
 }
 
-function readIncident(route: RouteRow | null): IncidentChoice {
-  if (!route) return "never";
-  const template = route.incident ?? { ...EMPTY_TEMPLATE, mode: route.incidentMode };
-  if (template.mode === "never") return "never";
-  return template.mode === "always" ? "triage" : "urgent";
+function modeToChoice(mode: "never" | "always" | "conditional"): IncidentChoice {
+  return mode === "never" ? "never" : mode === "always" ? "triage" : "urgent";
 }
 
-function readAutoResolve(route: RouteRow | null): boolean {
-  if (!route) return true;
-  const template = route.incident;
-  return route.resolveClosesEscalation && (template?.declineOnResolve ?? true);
-}
-
-/** Everything the source page and the source cards show about one source. */
+/**
+ * Everything the source page and the source cards show about one source.
+ *
+ * Each of the three is the source's own answer when it has one, and the shared
+ * rule's otherwise — which is exactly what the next alert will do, because the
+ * pipeline lays the same three over the same fallback.
+ */
 export async function sourceChoices(
   tx: Tx,
   tenantId: string,
   sourceId: string,
 ): Promise<SourceChoices> {
-  const { route, own } = await governingRoute(tx, tenantId, sourceId);
+  const [source] = await tx
+    .select({
+      escalations: alertSources.escalations,
+      incidentOpens: alertSources.incidentOpens,
+      autoResolve: alertSources.autoResolve,
+    })
+    .from(alertSources)
+    .where(and(eq(alertSources.tenantId, tenantId), eq(alertSources.id, sourceId)));
+  const route = await sharedRoute(tx, tenantId);
+
+  const fallbackRules: EscalationRule[] = route
+    ? route.escalations.length > 0
+      ? route.escalations
+      : route.escalationMode === "static" && route.escalationPathId
+        ? [{ kind: "path", pathId: route.escalationPathId }]
+        : route.escalationMode === "dynamic"
+          ? [{ kind: "attribute", attribute: "service", fallbackPathId: route.escalationPathId }]
+          : []
+    : [];
+  const template =
+    route?.incident ?? (route ? { ...EMPTY_TEMPLATE, mode: route.incidentMode } : null);
+
   return {
     route,
-    own,
-    page: await readPage(tx, tenantId, route),
-    incident: readIncident(route),
-    autoResolve: readAutoResolve(route),
+    own:
+      source?.escalations != null || source?.incidentOpens != null || source?.autoResolve != null,
+    page: await readPage(tx, tenantId, source?.escalations ?? fallbackRules),
+    incident: modeToChoice(source?.incidentOpens ?? (template ? template.mode : "never")),
+    autoResolve:
+      source?.autoResolve ??
+      (route ? route.resolveClosesEscalation && (template?.declineOnResolve ?? true) : true),
   };
 }
 

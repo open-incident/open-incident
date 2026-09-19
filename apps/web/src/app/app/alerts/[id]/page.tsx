@@ -8,7 +8,7 @@ import { canRespond, requireMember } from "@/lib/session";
 import { getAlert, type AlertDetail } from "@/lib/alerts";
 import { relatedIncidents } from "@/lib/ai-capabilities";
 import { phaseTone } from "@/lib/tones";
-import { governingRoute } from "../sources/choices";
+import { sharedRoute, sourceChoices } from "../sources/choices";
 import { priorityChip } from "../tone";
 import { Fold } from "../fold";
 import { Countdown } from "./countdown";
@@ -154,7 +154,10 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
             ),
           )
       : [];
-    const governing = await governingRoute(tx, tenant.id, a.sourceId);
+    const governing = {
+      shared: await sharedRoute(tx, tenant.id),
+      choices: await sourceChoices(tx, tenant.id, a.sourceId),
+    };
     return { notes, serviceId: service?.id ?? null, governing };
   });
   const acts = canRespond(member);
@@ -206,8 +209,10 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
     : [];
   const taken = decided.find((d) => d.path && !d.skipped) ?? null;
   const blocked = decided.find((d) => d.skipped) ?? null;
-  const ownRoute =
-    alert.route && extra.governing.own && extra.governing.route?.id === alert.route.id;
+  // Who decided: a rule if the alert points at anything but the shared one,
+  // the source's own three choices otherwise.
+  const byRule = Boolean(alert.route && alert.route.id !== extra.governing.shared?.id);
+  const ownRoute = !byRule && extra.governing.choices.own;
 
   // Atlas: only when the instance has a provider — otherwise the card says so.
   const atlas = aiConfigured()
@@ -700,14 +705,14 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
           >
             <div style={eyebrow}>{t("alt2.detail.why")}</div>
             <div style={{ fontSize: 13, lineHeight: 1.55 }}>
-              {alert.route
-                ? ownRoute
-                  ? t("alt2.detail.whySource", { source: alert.source.name })
-                  : t("alt2.detail.whyRule", {
+              {ownRoute
+                ? t("alt2.detail.whySource", { source: alert.source.name })
+                : alert.route
+                  ? t("alt2.detail.whyRule", {
                       rule: alert.route.name,
                       source: alert.source.name,
                     })
-                : t("alt2.detail.whyNoRoute")}
+                  : t("alt2.detail.whyNoRoute")}
             </div>
             <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--ink-2)" }}>
               {taken

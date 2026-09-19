@@ -225,6 +225,13 @@
       "when": 1789832595006,
       "tag": "0031_scrub_catalog_from_seen_in",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1789838284011,
+      "tag": "0032_source_choices",
+      "breakpoints": true
     }
   ]
 }
