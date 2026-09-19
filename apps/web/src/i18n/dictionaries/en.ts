@@ -2373,6 +2373,8 @@ export const en = {
   "settings.integrations.slackNotConfigured":
     "Slack is not configured on this instance (SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_SIGNING_SECRET).",
   "settings.integrations.configure": "Configure",
+  "settings.integrations.ssoNotConfigured":
+    "This provider is not configured on this instance — an administrator sets its client id and secret in the environment.",
   "settings.integrations.notConnected": "Not connected",
   "settings.integrations.step1": "Connection",
   "settings.integrations.step2": "Configuration",

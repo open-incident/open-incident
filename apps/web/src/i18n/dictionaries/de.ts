@@ -2423,6 +2423,8 @@ export const de: Dictionary = {
   "settings.integrations.slackNotConfigured":
     "Slack ist auf dieser Instanz nicht konfiguriert (SLACK_CLIENT_ID, SLACK_CLIENT_SECRET, SLACK_SIGNING_SECRET).",
   "settings.integrations.configure": "Konfigurieren",
+  "settings.integrations.ssoNotConfigured":
+    "Dieser Anbieter ist auf dieser Instanz nicht konfiguriert — ein Administrator hinterlegt Client-ID und Secret in der Umgebung.",
   "settings.integrations.notConnected": "Nicht verbunden",
   "settings.integrations.step1": "Verbindung",
   "settings.integrations.step2": "Konfiguration",

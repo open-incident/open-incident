@@ -263,7 +263,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "google",
-      icon: "saml",
       name: "Google",
       category: "sso",
       desc: t("settings.integrations.desc.oauth"),
@@ -272,7 +271,6 @@ export default async function IntegrationsPage({
     },
     {
       id: "microsoft",
-      icon: "saml",
       name: "Microsoft",
       category: "sso",
       desc: t("settings.integrations.desc.oauth"),
@@ -743,10 +741,15 @@ export default async function IntegrationsPage({
                 )}
               </div>
               <div style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.5, minHeight: 36 }}>
+                {/* The reason belongs to the card. Every unavailable tile used
+                    to say Slack was not configured, Google and Microsoft
+                    included. */}
                 {st.unavailable
-                  ? c.connect === "teams"
-                    ? t("settings.integrations.teamsNotConfigured")
-                    : t("settings.integrations.slackNotConfigured")
+                  ? c.category === "sso"
+                    ? t("settings.integrations.ssoNotConfigured")
+                    : c.connect === "teams"
+                      ? t("settings.integrations.teamsNotConfigured")
+                      : t("settings.integrations.slackNotConfigured")
                   : c.desc}
               </div>
               {st.meta && (
