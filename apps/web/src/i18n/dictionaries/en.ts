@@ -81,6 +81,27 @@ export const en = {
   "services.tabConfirmed": "Confirmed",
   "services.tabSeen": "Seen in traffic",
   "services.howTheyAppear": "Services appear when an alert, a monitor or a trace names them.",
+  "services.new": "+ Declare a service",
+  "services.newTitle": "Declare a service",
+  "services.newKey": "Key your signals carry",
+  "services.newKeyHint":
+    "The value of service: in your alerts, your monitors and your traces. It cannot be changed afterwards.",
+  "services.newKeyNormalised": "Stored as",
+  "services.newName": "Display name",
+  "services.newOwner": "Owner team",
+  "services.newNoOwner": "No owner for now",
+  "services.newSubmit": "Declare",
+  "services.newNote":
+    "Almost every service arrives on its own, the first time a signal names it. Declare one when its first alert must page somebody — the alert routes on arrival instead of after the fact, and this row is the one the signal will update.",
+  "services.exists": "This service already existed — here it is.",
+  "services.errorKey": "Give the service a key, the one your signals carry.",
+  "services.errorTeam": "That owner team no longer exists — pick another one.",
+  "services.noOwnerChip": "no owner",
+  "services.delete": "Remove",
+  "services.deleteHint": "Declared here and never seen by a signal — it can still be removed.",
+  "services.deleteSeen":
+    "A signal has named this service; removing it would achieve nothing, the next one recreates it.",
+  "services.deleteRunbook": "Remove its runbook first — deleting the service would hide it.",
   "services.bannerCount": {
     one: "{count} service seen in your alerts has no owner.",
     other: "{count} services seen in your alerts have no owner.",

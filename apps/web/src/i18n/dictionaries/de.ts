@@ -75,6 +75,28 @@ export const de: Dictionary = {
   "services.tabSeen": "Im Verkehr gesehen",
   "services.howTheyAppear":
     "Services erscheinen, sobald ein Alarm, ein Monitor oder ein Trace sie nennt.",
+  "services.new": "+ Service anlegen",
+  "services.newTitle": "Service anlegen",
+  "services.newKey": "Schlüssel, den Ihre Signale tragen",
+  "services.newKeyHint":
+    "Der Wert von service: in Ihren Alarmen, Monitoren und Traces. Er lässt sich später nicht ändern.",
+  "services.newKeyNormalised": "Gespeichert als",
+  "services.newName": "Anzeigename",
+  "services.newOwner": "Verantwortliches Team",
+  "services.newNoOwner": "Vorerst niemand",
+  "services.newSubmit": "Anlegen",
+  "services.newNote":
+    "Fast jeder Service erscheint von selbst, sobald ihn ein Signal zum ersten Mal nennt. Legen Sie einen an, wenn sein erster Alarm jemanden erreichen muss — der Alarm wird beim Eintreffen geroutet statt hinterher, und dieser Eintrag ist der, den das Signal aktualisiert.",
+  "services.exists": "Diesen Service gab es bereits — hier ist er.",
+  "services.errorKey": "Geben Sie dem Service einen Schlüssel, den Ihre Signale tragen.",
+  "services.errorTeam": "Dieses Team gibt es nicht mehr — wählen Sie ein anderes.",
+  "services.noOwnerChip": "ohne Verantwortlichen",
+  "services.delete": "Entfernen",
+  "services.deleteHint": "Hier angelegt und nie von einem Signal gesehen — noch entfernbar.",
+  "services.deleteSeen":
+    "Ein Signal hat diesen Service genannt; ihn zu entfernen brächte nichts, das nächste legt ihn wieder an.",
+  "services.deleteRunbook":
+    "Entfernen Sie zuerst sein Runbook — sonst verschwände es beim Löschen des Service.",
   "services.bannerCount": {
     one: "{count} im Verkehr gesehener Service hat keinen Verantwortlichen.",
     other: "{count} im Verkehr gesehene Services haben keinen Verantwortlichen.",

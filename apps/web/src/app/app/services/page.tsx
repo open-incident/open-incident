@@ -4,23 +4,28 @@ import { getT } from "@/i18n/server";
 import { requireMember, canRespond } from "@/lib/session";
 import { listServices, listTeams, ownerSuggestions } from "@/lib/services";
 import { assignOwner } from "./actions";
+import { NewService } from "./new-service";
 
 /**
- * Services — two lists, and nothing to declare.
+ * Services — two lists, and almost nothing to declare.
  *
  * "Confirmed" is what the workspace has adopted. "Seen in traffic" is what the
  * signals named and nobody has claimed: each row is one click from an owner,
  * and the suggestion beside it is read from who actually acknowledged that
  * service's alerts — never invented.
+ *
+ * The one thing to declare is a service whose first alert has not happened
+ * yet and must page someone when it does; that is what the button is for, and
+ * it is deliberately the smallest control on the screen.
  */
 export default async function ServicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; error?: string }>;
 }) {
   const { tenant, member } = await requireMember();
   const t = await getT();
-  const { tab } = await searchParams;
+  const { tab, error } = await searchParams;
 
   const data = await withTenant(tenant.id, async (tx) => {
     const all = await listServices(tx, tenant.id);
@@ -36,8 +41,12 @@ export default async function ServicesPage({
     return { all, teams, suggestions };
   });
 
-  const seen = data.all.filter((s) => !s.ownerTeamId);
-  const confirmed = data.all.filter((s) => s.ownerTeamId);
+  // The split is what the workspace has adopted, not what happens to have an
+  // owner: a service can be declared before any team exists, and one the
+  // traffic named is "seen" until somebody claims it. `assignOwner` confirms,
+  // so for every service that arrived the old way nothing moves.
+  const seen = data.all.filter((s) => !s.confirmed);
+  const confirmed = data.all.filter((s) => s.confirmed);
   const onSeen = tab === "seen";
   const mayAssign = canRespond(member);
 
@@ -111,7 +120,24 @@ export default async function ServicesPage({
         </div>
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{t("services.howTheyAppear")}</span>
+        {mayAssign && <NewService teams={data.teams.map((x) => ({ id: x.id, name: x.name }))} />}
       </div>
+
+      {(error === "key" || error === "team") && (
+        <div
+          role="alert"
+          style={{
+            background: "var(--dang-t)",
+            border: "1px solid rgba(192,52,43,.25)",
+            borderRadius: 12,
+            padding: "11px 15px",
+            fontSize: 13,
+            color: "var(--dang)",
+          }}
+        >
+          {error === "key" ? t("services.errorKey") : t("services.errorTeam")}
+        </div>
+      )}
 
       {!onSeen && seen.length > 0 && (
         <Link
@@ -222,6 +248,19 @@ export default async function ServicesPage({
                   >
                     {s.key}
                   </span>
+                  {s.name && s.name !== s.key && (
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "var(--ink-3)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {s.name}
+                    </span>
+                  )}
                 </span>
                 <span
                   style={{
@@ -230,13 +269,14 @@ export default async function ServicesPage({
                     gap: 6,
                     fontSize: 12,
                     fontWeight: 600,
-                    background: "var(--sunk)",
+                    background: s.ownerTeamName ? "var(--sunk)" : "var(--wait-t)",
+                    color: s.ownerTeamName ? "inherit" : "var(--wait)",
                     borderRadius: 999,
                     padding: "2px 9px",
                     width: "fit-content",
                   }}
                 >
-                  {s.ownerTeamName}
+                  {s.ownerTeamName ?? t("services.noOwnerChip")}
                 </span>
                 <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                   {Object.entries(s.labels)
@@ -315,8 +355,13 @@ export default async function ServicesPage({
                     gap: 3,
                   }}
                 >
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 14, fontWeight: 600 }}>
-                    {s.key}
+                  <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                    <span style={{ fontFamily: "var(--mono)", fontSize: 14, fontWeight: 600 }}>
+                      {s.key}
+                    </span>
+                    {s.name && s.name !== s.key && (
+                      <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{s.name}</span>
+                    )}
                   </span>
                   <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
                     {t("services.seenAs")}{" "}

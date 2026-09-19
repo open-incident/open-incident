@@ -11,6 +11,7 @@ import {
   assignOwner,
   createRunbook,
   deleteRunbook,
+  deleteService,
   refreshRunbookAction,
   setTeamPolicy,
 } from "../actions";
@@ -64,12 +65,12 @@ export default async function ServiceDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; exists?: string }>;
 }) {
   const { tenant, member } = await requireMember();
   const t = await getT();
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, exists } = await searchParams;
 
   const data = await withTenant(tenant.id, async (tx) => {
     const svc = await getService(tx, tenant.id, id);
@@ -125,6 +126,21 @@ export default async function ServiceDetailPage({
         ‹ {t("nav.services")}
       </Link>
 
+      {exists === "1" && (
+        <div
+          data-testid="service-exists"
+          style={{
+            background: "var(--sunk)",
+            borderRadius: 12,
+            padding: "11px 15px",
+            fontSize: 13,
+            color: "var(--ink-2)",
+          }}
+        >
+          {t("services.exists")}
+        </div>
+      )}
+
       <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 260, display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -152,6 +168,10 @@ export default async function ServiceDetailPage({
           >
             {svc.key}
           </h1>
+          {/* A name that only repeats the key is not a name. */}
+          {svc.name && svc.name !== svc.key && (
+            <div style={{ fontSize: 13.5, color: "var(--ink-2)", marginTop: -2 }}>{svc.name}</div>
+          )}
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
             {Object.entries(svc.labels).map(([k, v]) => (
               <span
@@ -169,7 +189,49 @@ export default async function ServiceDetailPage({
             ))}
           </div>
         </div>
+        {/* Only a service that was declared and never observed can be removed:
+            anything traffic names comes back the moment it is named again. */}
+        {mayManage && !svc.lastSeenAt && (
+          <form action={deleteService}>
+            <input type="hidden" name="serviceId" value={svc.id} />
+            <button
+              type="submit"
+              data-testid="service-delete"
+              className="oi-hover-dang"
+              title={t("services.deleteHint")}
+              style={{
+                height: 30,
+                padding: "0 12px",
+                border: "1px solid var(--line)",
+                borderRadius: 9,
+                background: "var(--panel)",
+                color: "var(--dang)",
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {t("services.delete")}
+            </button>
+          </form>
+        )}
       </div>
+
+      {(error === "seen" || error === "has_runbook") && (
+        <div
+          role="alert"
+          style={{
+            background: "var(--dang-t)",
+            border: "1px solid rgba(192,52,43,.25)",
+            borderRadius: 12,
+            padding: "11px 15px",
+            fontSize: 13,
+            color: "var(--dang)",
+          }}
+        >
+          {error === "seen" ? t("services.deleteSeen") : t("services.deleteRunbook")}
+        </div>
+      )}
 
       <div
         style={{

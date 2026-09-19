@@ -75,6 +75,28 @@ export const fr: Dictionary = {
   "services.tabSeen": "Vus dans le trafic",
   "services.howTheyAppear":
     "Les services apparaissent quand une alerte, un moniteur ou une trace les nomme.",
+  "services.new": "+ Déclarer un service",
+  "services.newTitle": "Déclarer un service",
+  "services.newKey": "Clé portée par vos signaux",
+  "services.newKeyHint":
+    "La valeur de service: dans vos alertes, vos moniteurs et vos traces. Elle ne se change pas ensuite.",
+  "services.newKeyNormalised": "Enregistré comme",
+  "services.newName": "Nom affiché",
+  "services.newOwner": "Équipe propriétaire",
+  "services.newNoOwner": "Pas de propriétaire pour l'instant",
+  "services.newSubmit": "Déclarer",
+  "services.newNote":
+    "Presque tous les services arrivent seuls, la première fois qu'un signal les nomme. Déclarez-en un quand sa première alerte doit réveiller quelqu'un — l'alerte est routée dès son arrivée au lieu de l'être après coup, et c'est cette ligne que le signal mettra à jour.",
+  "services.exists": "Ce service existait déjà — le voici.",
+  "services.errorKey": "Donnez une clé au service, celle que portent vos signaux.",
+  "services.errorTeam": "Cette équipe propriétaire n'existe plus — choisissez-en une autre.",
+  "services.noOwnerChip": "sans propriétaire",
+  "services.delete": "Supprimer",
+  "services.deleteHint": "Déclaré ici et jamais vu par un signal — il peut encore être supprimé.",
+  "services.deleteSeen":
+    "Un signal a nommé ce service ; le supprimer ne servirait à rien, le prochain le recrée.",
+  "services.deleteRunbook":
+    "Retirez d'abord son runbook — supprimer le service le rendrait invisible.",
   "services.bannerCount": {
     one: "{count} service vu dans vos alertes n'a pas de propriétaire.",
     other: "{count} services vus dans vos alertes n'ont pas de propriétaire.",
