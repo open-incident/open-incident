@@ -221,10 +221,17 @@ const processors: Record<QueueName, Processor> = {
   },
   housekeeping: async () => {
     // 90-day retention, per workspace: the mail log, and the bell. Neither is
-    // an archive — the audit log is what keeps a record. Failure screenshots go
-    // at 30 days, because they cost storage rather than a row.
+    // an archive — the audit log is what keeps a record.
+    //
+    // A monitor's raw checks and the screenshots of its failures go at 30 days,
+    // together. The day rollup is what the ninety-day bars and the uptime
+    // figure are made of; the raw rows exist for the recent list and the last
+    // day's latency chart, and a monitor checked every minute writes half a
+    // million of them a year that nobody reads. They leave with their pictures
+    // rather than after them, so no row is ever left pointing at an object that
+    // is gone.
     const cutoff = new Date(Date.now() - 90 * DAY_MS);
-    const shotCutoff = new Date(Date.now() - 30 * DAY_MS);
+    const checkCutoff = new Date(Date.now() - 30 * DAY_MS);
     for (const tenant of await listLiveTenants()) {
       await withTenant(tenant.id, async (tx) => {
         await tx
@@ -244,32 +251,28 @@ const processors: Record<QueueName, Processor> = {
               lt(memberNotifications.createdAt, cutoff),
             ),
           );
-        // A failed journey leaves a screenshot in the bucket. The check row
-        // itself is kept — the 90-day bars are drawn from the day rollup, but
-        // the recent list still reads these — while the picture is not worth
-        // paying for past a month: nobody debugs last quarter's click from a
-        // PNG. The key is cleared with the object, so no screen ever links a
-        // picture that is gone.
-        if (!storageConfigured()) return;
-        const shots = await tx
-          .select({ id: monitorChecks.id, result: monitorChecks.result })
-          .from(monitorChecks)
-          .where(
-            and(
-              eq(monitorChecks.tenantId, tenant.id),
-              lt(monitorChecks.at, shotCutoff),
-              isNotNull(monitorChecks.result),
-            ),
-          )
-          .limit(500);
-        for (const shot of shots) {
-          const key = isSyntheticResult(shot.result) ? shot.result.screenshotKey : undefined;
-          if (!key) continue;
-          await deleteObject(key).catch(() => {});
-          const rest: Record<string, unknown> = { ...shot.result };
-          delete rest.screenshotKey;
-          await tx.update(monitorChecks).set({ result: rest }).where(eq(monitorChecks.id, shot.id));
+        // The pictures first: an object outlives its row otherwise, and
+        // nothing would ever name it again.
+        if (storageConfigured()) {
+          const shots = await tx
+            .select({ id: monitorChecks.id, result: monitorChecks.result })
+            .from(monitorChecks)
+            .where(
+              and(
+                eq(monitorChecks.tenantId, tenant.id),
+                lt(monitorChecks.at, checkCutoff),
+                isNotNull(monitorChecks.result),
+              ),
+            )
+            .limit(1000);
+          for (const shot of shots) {
+            const key = isSyntheticResult(shot.result) ? shot.result.screenshotKey : undefined;
+            if (key) await deleteObject(key).catch(() => {});
+          }
         }
+        await tx
+          .delete(monitorChecks)
+          .where(and(eq(monitorChecks.tenantId, tenant.id), lt(monitorChecks.at, checkCutoff)));
       });
     }
     console.log("[housekeeping] purges done");
