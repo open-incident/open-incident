@@ -133,7 +133,12 @@ services:
   # `docker compose --profile storage up -d` and set S3_* in .env accordingly,
   # or point S3_* at any S3-compatible bucket you already run.
   minio:
-    image: minio/minio:latest
+    # quay.io, not Docker Hub: minio/minio there stopped being pullable in
+    # September 2026 ("repository does not exist"), and the nightly smoke ran
+    # into it four nights running before anyone noticed. Pinned to a release
+    # rather than latest for the same reason — a tag that moves under a
+    # scheduled job is a job that fails on someone else's schedule.
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     profiles: ["storage"]
     command: server /data --console-address ":9001"
     environment:
@@ -149,7 +154,8 @@ services:
     restart: unless-stopped
 
   minio-init:
-    image: minio/mc:latest
+    # The client publishes no release tags on quay, so it is pinned by digest.
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     profiles: ["storage"]
     depends_on:
       minio:

@@ -50,7 +50,12 @@ services:
   # Object storage for workspace files (logos): an S3-compatible bucket. The
   # product works without it — the logo upload then says so on screen.
   minio:
-    image: minio/minio:latest
+    # quay.io, not Docker Hub: minio/minio there stopped being pullable in
+    # September 2026 ("repository does not exist"), and the nightly smoke ran
+    # into it four nights running before anyone noticed. Pinned to a release
+    # rather than latest for the same reason — a tag that moves under a
+    # scheduled job is a job that fails on someone else's schedule.
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
     ports:
       - "${OI_MINIO_PORT:-9100}:9000"
@@ -68,7 +73,8 @@ services:
 
   # Creates the bucket once MinIO answers, then exits.
   minio-init:
-    image: minio/mc:latest
+    # The client publishes no release tags on quay, so it is pinned by digest.
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     depends_on:
       minio:
         condition: service_healthy
