@@ -24,7 +24,11 @@ describe("invitation token", () => {
   it("rejects a tampered signature or member", () => {
     const token = inviteToken(TENANT, MEMBER);
     const [id, exp, sig] = token.split(".");
-    expect(verifyInviteToken(TENANT, `${id}.${exp}.${sig!.slice(0, -1)}0`)).toBeNull();
+    // Flip the last hex digit rather than force it to "0": one signature in
+    // sixteen already ends in a zero, and the "tampered" token was then the
+    // real one. The test failed on that sixteenth run and nowhere else.
+    const flipped = sig!.slice(0, -1) + (sig!.endsWith("0") ? "1" : "0");
+    expect(verifyInviteToken(TENANT, `${id}.${exp}.${flipped}`)).toBeNull();
     expect(verifyInviteToken(TENANT, `${id!.replace("2", "9")}.${exp}.${sig}`)).toBeNull();
     expect(verifyInviteToken(TENANT, "garbage")).toBeNull();
   });
