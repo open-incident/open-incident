@@ -147,6 +147,21 @@ export async function createMember(
     .where(and(eq(members.tenantId, tenantId), eq(members.email, input.email)));
   if (dup)
     throw new ScimError(409, `A user with userName ${input.email} already exists`, "uniqueness");
+  // The directory's own id is unique per workspace too, and only the email was
+  // checked: an identity provider replaying a create — which they do — got a
+  // 500 from the constraint instead of the conflict SCIM asks for.
+  if (input.externalId) {
+    const [byExternal] = await tx
+      .select({ id: members.id })
+      .from(members)
+      .where(and(eq(members.tenantId, tenantId), eq(members.externalId, input.externalId)));
+    if (byExternal)
+      throw new ScimError(
+        409,
+        `A user with externalId ${input.externalId} already exists`,
+        "uniqueness",
+      );
+  }
   const role = input.role && input.role !== "owner" ? input.role : defaults.role;
   const [row] = await tx
     .insert(members)
@@ -180,6 +195,18 @@ async function applyMember(tx: Tx, tenantId: string, current: MemberRow, input: 
     if (dup && dup.id !== current.id)
       throw new ScimError(409, `A user with userName ${input.email} already exists`, "uniqueness");
     patch.email = input.email;
+  }
+  if (input.externalId && input.externalId !== current.externalId) {
+    const [byExternal] = await tx
+      .select({ id: members.id })
+      .from(members)
+      .where(and(eq(members.tenantId, tenantId), eq(members.externalId, input.externalId)));
+    if (byExternal && byExternal.id !== current.id)
+      throw new ScimError(
+        409,
+        `A user with externalId ${input.externalId} already exists`,
+        "uniqueness",
+      );
   }
   if (
     input.givenName !== undefined ||

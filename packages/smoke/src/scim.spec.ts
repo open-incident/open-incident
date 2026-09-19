@@ -50,12 +50,16 @@ test.describe("SCIM provisioning", () => {
     expect(owner.Resources[0]!.active).toBe(true);
 
     // Create: 201 with the resource; the member exists, invited (no SSO here), role viewer by request.
-    const email = `okta-${Date.now().toString(36)}@smoke.example`;
+    const run = Date.now().toString(36);
+    const email = `okta-${run}@smoke.example`;
     const created = await scim.post("/scim/v2/Users", {
       data: {
         schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
         userName: email,
-        externalId: "00u-smoke-1",
+        // Stamped like the address beside it. A DELETE deactivates the member
+        // and keeps the row, as SCIM asks — so a fixed id here collided with
+        // the run before, and the workspace answered 500 rather than 409.
+        externalId: `00u-smoke-${run}`,
         name: { givenName: "Otto", familyName: "Provisioned" },
         emails: [{ value: email, primary: true, type: "work" }],
         roles: [{ value: "viewer", primary: true }],
@@ -100,8 +104,8 @@ test.describe("SCIM provisioning", () => {
     const group = await scim.post("/scim/v2/Groups", {
       data: {
         schemas: ["urn:ietf:params:scim:schemas:core:2.0:Group"],
-        displayName: "Okta squad",
-        externalId: "00g-smoke",
+        displayName: `Okta squad ${run}`,
+        externalId: `00g-smoke-${run}`,
         members: [{ value: user.id }],
       },
     });
@@ -121,9 +125,8 @@ test.describe("SCIM provisioning", () => {
     expect(
       ((await removed.json()) as { members: Array<{ value: string }> }).members.map((m) => m.value),
     ).toEqual([owner.Resources[0]!.id]);
-    // No screen lists teams, so the provider's own read is what proves the
-    // team is there — the group filter every identity provider re-syncs with.
-    const byName = await scim.get('/scim/v2/Groups?filter=displayName eq "Okta squad"');
+    // The group filter every identity provider re-syncs with.
+    const byName = await scim.get(`/scim/v2/Groups?filter=displayName eq "Okta squad ${run}"`);
     expect(((await byName.json()) as { totalResults: number }).totalResults).toBe(1);
     expect((await scim.delete(`/scim/v2/Groups/${g.id}`)).status()).toBe(204);
     expect((await scim.get(`/scim/v2/Groups/${g.id}`)).status()).toBe(404);
