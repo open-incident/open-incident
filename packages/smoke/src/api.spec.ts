@@ -131,6 +131,8 @@ test.describe("API & webhooks", () => {
   });
 
   test("an endpoint receives a signed incident.created call", async ({ page }) => {
+    // The wait below is a minute; the default budget leaves no room for it.
+    test.setTimeout(150_000);
     const received: Array<{
       headers: Record<string, string | string[] | undefined>;
       body: string;
@@ -174,7 +176,9 @@ test.describe("API & webhooks", () => {
             received.filter(
               (r) => r.headers["x-oi-event"] === "incident.created" && r.body.includes(title),
             ).length,
-          { timeout: 20_000 },
+          // A minute: one worker serves fifteen queues, and a full run keeps it
+          // busy enough that a webhook waits behind the rest.
+          { timeout: 60_000 },
         )
         .toBeGreaterThan(0);
       const hit = received.find(

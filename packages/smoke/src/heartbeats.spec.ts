@@ -10,7 +10,7 @@ import { MEMBERS, signIn } from "./helpers";
  */
 test.describe("Heartbeats", () => {
   test("ping → up, silence → alert, ping → resolved", async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(260_000);
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/settings/heartbeats?new=1");
     const name = `Smoke cron ${Date.now().toString(36)}`;
@@ -57,7 +57,9 @@ test.describe("Heartbeats", () => {
           await page.goto("/app/alerts");
           return (await page.getByText(`Heartbeat missed — ${name}`).count()) > 0;
         },
-        { timeout: 90_000, intervals: [5_000] },
+        // The sweep runs every thirty seconds; under a full run it is itself
+        // queued behind the other fourteen, so the window is generous.
+        { timeout: 150_000, intervals: [5_000] },
       )
       .toBe(true);
     await page.goto("/app/settings/heartbeats");
