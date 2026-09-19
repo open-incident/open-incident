@@ -13,8 +13,25 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { monitorChecks, monitors, withTenant, type MonitorType } from "@openincident/db";
-import { performCheck, stateFromSample } from "@openincident/oncall";
+import {
+  monitorChecks,
+  monitorSecrets,
+  monitors,
+  withTenant,
+  type MonitorType,
+} from "@openincident/db";
+import {
+  SYNTHETIC_MIN_INTERVAL_SECONDS,
+  SYNTHETIC_SECRET_NAME,
+  enqueueSyntheticRun,
+  parseSyntheticConfig,
+  performCheck,
+  stateFromSample,
+  syntheticConfigOf,
+  syntheticRunnerLive,
+} from "@openincident/oncall";
+import { encryptSecret } from "@openincident/crypto";
+import { deletePrefix, storageConfigured } from "@openincident/storage";
 import { recordAudit } from "@/lib/audit";
 import { requireResponder } from "@/lib/session";
 import { DEFAULT_ACTION, defaultCriteria } from "@/lib/monitors";
@@ -34,6 +51,7 @@ const TYPES = [
   "ssl",
   "domain",
   "ping",
+  "synthetic",
   "incoming",
   "manual",
 ] as const;
@@ -49,22 +67,80 @@ const createSchema = z.object({
   // Offering P1 and P2 separately promised a distinction nothing could make.
   incident: z.enum(["triage", "urgent", "never"]).default("urgent"),
   autoResolve: z.enum(["on", "off"]).default("on"),
+  /** Synthetic only: the journey, as the step editor serialised it. */
+  steps: z.string().max(20_000).optional(),
+  /** Synthetic only: the credentials the journey signs in with. */
+  secrets: z.string().max(20_000).optional(),
 });
+
+/** JSON from a form field, or null — a malformed field is a refused monitor. */
+function readJson(raw: string | undefined): unknown {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** `[{ name, value }]` from the creation form, or nothing. */
+function readSecretPairs(raw: string | undefined): { name: string; value: string }[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: { name: string; value: string }[] = [];
+  for (const item of parsed) {
+    const name = String((item as { name?: unknown })?.name ?? "").trim();
+    const value = String((item as { value?: unknown })?.value ?? "");
+    if (!SYNTHETIC_SECRET_NAME.test(name) || value === "") continue;
+    out.push({ name, value });
+  }
+  return out;
+}
 
 export async function createMonitor(formData: FormData) {
   const current = await requireResponder();
   const parsed = createSchema.safeParse({
     type: formData.get("type"),
     name: formData.get("name"),
-    target: formData.get("target"),
+    // Empty, not absent: a manual, incoming or synthetic monitor's form has no
+    // target field at all, and `z.string()` on a null refused every one of
+    // them with a bare "invalid".
+    target: formData.get("target") ?? "",
     intervalSeconds: formData.get("intervalSeconds") ?? 60,
     service: formData.get("service") ?? undefined,
     page: formData.get("page") ?? "owner",
-    incident: formData.get("incident") ?? "p2",
+    // The fallback has to be one of the three the enum knows; "p2" was not one
+    // and would have failed the whole parse rather than defaulting.
+    incident: formData.get("incident") ?? "urgent",
     autoResolve: formData.get("autoResolve") ?? "on",
+    steps: formData.get("steps") ?? undefined,
+    secrets: formData.get("secrets") ?? undefined,
   });
   if (!parsed.success) redirect("/app/monitors?error=invalid");
   const v = parsed.data;
+
+  // A synthetic monitor is its journey: without a readable list of steps there
+  // is nothing to run, and a monitor that cannot run is not created.
+  let journey = null;
+  if (v.type === "synthetic") {
+    journey = parseSyntheticConfig(readJson(v.steps));
+    if (!journey) redirect("/app/monitors?error=steps");
+  }
+  // A browser run costs a few hundred megabytes and several seconds of CPU. The
+  // floor is five minutes, stated in @openincident/oncall and enforced here —
+  // the form only offers intervals above it, and a hand-made POST does not get
+  // to go under it either.
+  const intervalSeconds =
+    v.type === "synthetic"
+      ? Math.max(SYNTHETIC_MIN_INTERVAL_SECONDS, v.intervalSeconds)
+      : v.intervalSeconds;
+  const secrets = v.type === "synthetic" ? readSecretPairs(v.secrets) : [];
 
   const id = await withTenant(current.tenant.id, async (tx) => {
     const serviceId = v.service
@@ -76,8 +152,10 @@ export async function createMonitor(formData: FormData) {
         tenantId: current.tenant.id,
         name: v.name,
         type: v.type as MonitorType,
-        target: v.target,
-        intervalSeconds: v.intervalSeconds,
+        // The journey's first address, so the list reads like every other row.
+        target: journey?.steps.find((step) => step.kind === "goto")?.value ?? v.target,
+        intervalSeconds,
+        config: journey ? { ...journey } : {},
         criteria: defaultCriteria(v.type as MonitorType),
         action: {
           ...DEFAULT_ACTION,
@@ -99,6 +177,23 @@ export async function createMonitor(formData: FormData) {
       name: v.name,
       type: v.type,
     });
+    // Written once, encrypted, never read back by a screen. The audit line
+    // records the NAMES so a reader can see a credential was added, and
+    // nothing else.
+    if (secrets.length > 0) {
+      await tx.insert(monitorSecrets).values(
+        secrets.map((secret) => ({
+          tenantId: current.tenant.id,
+          monitorId: row!.id,
+          name: secret.name,
+          encryptedValue: encryptSecret(secret.value),
+        })),
+      );
+      await recordAudit(tx, current, "config", "monitor.secret.set", {
+        name: v.name,
+        secrets: secrets.map((secret) => secret.name).join(", "),
+      });
+    }
     // The choices become a rule of this monitor's own, so the next alert
     // really follows them. Nothing is written when they match what the
     // pipeline already does: an extra rule nobody asked for is noise in the
@@ -155,7 +250,15 @@ export async function togglePause(formData: FormData) {
   revalidatePath("/app/monitors");
 }
 
-/** Runs the check now, in this request, and records it like any other. */
+/**
+ * Runs the check now and records it like any other.
+ *
+ * Every type but one runs in this request. A synthetic journey does not: it
+ * needs a browser, which lives in another service, so the click puts a job on
+ * the queue and the runner writes the result the same way the sweep's runs are
+ * written. Without a runner the click reports that, rather than queueing work
+ * nobody will do.
+ */
 export async function checkNow(formData: FormData) {
   const current = await requireResponder();
   const id = z.string().uuid().parse(formData.get("id"));
@@ -163,6 +266,7 @@ export async function checkNow(formData: FormData) {
     const [row] = await tx
       .select({
         id: monitors.id,
+        name: monitors.name,
         type: monitors.type,
         target: monitors.target,
         config: monitors.config,
@@ -173,6 +277,22 @@ export async function checkNow(formData: FormData) {
     return row ?? null;
   });
   if (!monitor) redirect("/app/monitors");
+
+  if (monitor.type === "synthetic") {
+    const journey = syntheticConfigOf(monitor);
+    if (!journey) redirect(`/app/monitors/${id}?error=steps`);
+    if (!(await syntheticRunnerLive())) redirect(`/app/monitors/${id}?error=no-runner`);
+    const queued = await enqueueSyntheticRun({
+      tenantId: current.tenant.id,
+      monitorId: monitor.id,
+      monitorName: monitor.name,
+      steps: journey.steps,
+      budgetMs: journey.budgetMs,
+      viewport: journey.viewport,
+      trigger: "manual",
+    });
+    redirect(`/app/monitors/${id}?${queued ? "queued=1" : "error=no-runner"}`);
+  }
 
   const sample = await performCheck({
     type: monitor.type,
@@ -207,6 +327,11 @@ export async function checkNow(formData: FormData) {
 export async function deleteMonitor(formData: FormData) {
   const current = await requireResponder();
   const id = z.string().uuid().parse(formData.get("id"));
+  // The failure screenshots go with it. The check rows cascade away with the
+  // monitor; the objects they point at would have stayed in the bucket forever,
+  // costing money for a monitor nobody can reach any more.
+  if (storageConfigured())
+    await deletePrefix(`tenants/${current.tenant.id}/monitors/${id}/`).catch(() => 0);
   await withTenant(current.tenant.id, async (tx) => {
     const [row] = await tx
       .delete(monitors)
@@ -219,4 +344,93 @@ export async function deleteMonitor(formData: FormData) {
   });
   revalidatePath("/app/monitors");
   redirect("/app/monitors");
+}
+
+/* ---------- Synthetic journeys ---------- */
+
+/** Replaces the journey of a synthetic monitor with the edited list of steps. */
+export async function saveSyntheticJourney(formData: FormData) {
+  const current = await requireResponder();
+  const id = z.string().uuid().parse(formData.get("id"));
+  const journey = parseSyntheticConfig(readJson(String(formData.get("steps") ?? "")));
+  if (!journey) redirect(`/app/monitors/${id}?error=steps`);
+  await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .select({ name: monitors.name, type: monitors.type })
+      .from(monitors)
+      .where(and(eq(monitors.tenantId, current.tenant.id), eq(monitors.id, id)));
+    if (!row || row.type !== "synthetic") return;
+    await tx
+      .update(monitors)
+      .set({
+        config: { ...journey },
+        target: journey.steps.find((step) => step.kind === "goto")?.value ?? "",
+        updatedAt: new Date(),
+      })
+      .where(eq(monitors.id, id));
+    await recordAudit(tx, current, "config", "monitor.journey.saved", {
+      name: row.name,
+      steps: String(journey.steps.length),
+    });
+  });
+  revalidatePath(`/app/monitors/${id}`);
+}
+
+/**
+ * Stores one credential, encrypted.
+ *
+ * Replacing an existing one overwrites it: there is no read-back, so "change
+ * the password" can only mean writing a new one over the old.
+ */
+export async function saveMonitorSecret(formData: FormData) {
+  const current = await requireResponder();
+  const id = z.string().uuid().parse(formData.get("id"));
+  const name = String(formData.get("name") ?? "").trim();
+  const value = String(formData.get("value") ?? "");
+  if (!SYNTHETIC_SECRET_NAME.test(name) || value === "")
+    redirect(`/app/monitors/${id}?error=secret`);
+  await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .select({ name: monitors.name })
+      .from(monitors)
+      .where(and(eq(monitors.tenantId, current.tenant.id), eq(monitors.id, id)));
+    if (!row) return;
+    await tx
+      .insert(monitorSecrets)
+      .values({
+        tenantId: current.tenant.id,
+        monitorId: id,
+        name,
+        encryptedValue: encryptSecret(value),
+      })
+      .onConflictDoUpdate({
+        target: [monitorSecrets.monitorId, monitorSecrets.name],
+        set: { encryptedValue: encryptSecret(value), updatedAt: new Date() },
+      });
+    // The name, never the value — not even its length.
+    await recordAudit(tx, current, "config", "monitor.secret.set", {
+      name: row.name,
+      secrets: name,
+    });
+  });
+  revalidatePath(`/app/monitors/${id}`);
+}
+
+export async function deleteMonitorSecret(formData: FormData) {
+  const current = await requireResponder();
+  const id = z.string().uuid().parse(formData.get("id"));
+  const name = String(formData.get("name") ?? "").trim();
+  await withTenant(current.tenant.id, async (tx) => {
+    await tx
+      .delete(monitorSecrets)
+      .where(
+        and(
+          eq(monitorSecrets.tenantId, current.tenant.id),
+          eq(monitorSecrets.monitorId, id),
+          eq(monitorSecrets.name, name),
+        ),
+      );
+    await recordAudit(tx, current, "config", "monitor.secret.removed", { secrets: name });
+  });
+  revalidatePath(`/app/monitors/${id}`);
 }

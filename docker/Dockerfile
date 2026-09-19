@@ -4,6 +4,8 @@
 #   worker  : BullMQ jobs (tsx over the sources, as in development)
 #   migrate : one-shot — Drizzle migrations + application role + RLS
 #             (+ demo workspace if SEED_DEMO=true)
+# and one target that shares nothing with them:
+#   synthetic : the browser runner, on Microsoft's Playwright image
 # Build context: the repository root (see compose.yaml).
 
 FROM node:22-alpine AS build
@@ -46,6 +48,27 @@ ENV NODE_ENV=production
 # datagram socket that Docker already allows through net.ipv4.ping_group_range.
 RUN apk add --no-cache iputils
 CMD ["pnpm", "--filter", "@openincident/worker", "start"]
+
+# ---------- synthetic: the browser runner, in an image of its own ----------
+# Chromium is about 400 MB of image and several hundred megabytes of memory per
+# run, for a feature not every installation uses. Putting it in the worker would
+# make everyone download it; it is a target of its own, started only by the
+# `synthetic` compose profile.
+#
+# The install is redone here instead of being copied from `build`: that stage is
+# Alpine (musl) and this one is Debian (glibc), and a node_modules tree resolved
+# for one does not run on the other.
+FROM mcr.microsoft.com/playwright:v1.62.1-jammy AS synthetic
+ENV NODE_ENV=production
+# The base image already carries the browsers Playwright 1.62 expects, here.
+# Without this variable playwright-core looks under ~/.cache instead and
+# downloads a second copy on the first journey — at the worst possible moment.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npm install -g pnpm@11.21.0
+WORKDIR /repo
+COPY . .
+RUN pnpm install --frozen-lockfile
+CMD ["pnpm", "--filter", "@openincident/synthetic", "start"]
 
 # ---------- migrate: migrations + RLS (+ demo seed) ----------
 FROM build AS migrate

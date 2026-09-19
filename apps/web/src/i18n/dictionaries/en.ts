@@ -315,7 +315,7 @@ export const en = {
   "monitors.why.ping-permission":
     "Unavailable on this instance — ICMP is refused. Set net.ipv4.ping_group_range on the worker container.",
   "monitors.why.synthetic-service":
-    "Unavailable on this instance — the browser runner is not started. Enable the synthetic compose profile.",
+    "Unavailable on this instance — no browser runner. Start it with: docker compose --profile synthetic up -d synthetic",
   "monitors.on.packet_loss_pct": "packet loss (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

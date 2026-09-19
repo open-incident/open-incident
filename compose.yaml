@@ -129,6 +129,42 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # The browser runner for synthetic monitors — off by default, on purpose.
+  # Its image carries Chromium (~400 MB) and a run costs several hundred
+  # megabytes of memory, so an ordinary `docker compose up` never pulls it:
+  #   docker compose --profile synthetic up -d synthetic
+  # While it runs it keeps a key alive in Redis, and that is what makes the
+  # synthetic type selectable in the product. Stop it and the type goes back to
+  # greyed, with this command as its reason.
+  synthetic:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: synthetic
+    profiles: ["synthetic"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
+      REDIS_URL: redis://redis:6379
+      INTERNAL_WEB_ORIGIN: http://web:3000
+      BASE_DOMAIN: ${BASE_DOMAIN:-localhost:3000}
+      STATUS_BASE_DOMAIN: ${STATUS_BASE_DOMAIN:-status.localhost:3001}
+      # How many journeys play at once. Each is a Chromium context: raising it
+      # on a one-CPU host makes every monitor report the queue's latency
+      # instead of the site's.
+      SYNTHETIC_CONCURRENCY: ${SYNTHETIC_CONCURRENCY:-2}
+    # Chromium writes its shared memory to /dev/shm, and Docker's default 64 MB
+    # is not enough for a real page: the browser dies mid-journey and the
+    # monitor reports an outage that is ours, not the site's.
+    shm_size: "1gb"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Optional object storage for workspace files (logos). Start it with
   # `docker compose --profile storage up -d` and set S3_* in .env accordingly,
   # or point S3_* at any S3-compatible bucket you already run.

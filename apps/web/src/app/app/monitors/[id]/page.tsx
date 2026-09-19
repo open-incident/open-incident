@@ -4,8 +4,17 @@ import { withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { canRespond, requireMember } from "@/lib/session";
 import { readMonitorChoices } from "@/lib/monitor-choices";
-import { getMonitor } from "@/lib/monitors";
-import { checkNow, deleteMonitor, togglePause } from "../actions";
+import { getMonitor, monitorCapabilities } from "@/lib/monitors";
+import {
+  checkNow,
+  deleteMonitor,
+  deleteMonitorSecret,
+  saveMonitorSecret,
+  saveSyntheticJourney,
+  togglePause,
+} from "../actions";
+import { JourneyEditor } from "../journey-editor";
+import { JourneyCard } from "./journey-card";
 import type { MessageKey } from "@/i18n/dictionaries/en";
 
 const CARD: React.CSSProperties = {
@@ -47,10 +56,17 @@ const OP_LABEL: Record<string, string> = {
 };
 
 /** One monitor: how it is, how it got there, and what it does when it breaks. */
-export default async function MonitorDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function MonitorDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string; queued?: string }>;
+}) {
   const { tenant, member } = await requireMember();
   const t = await getT();
   const { id } = await params;
+  const { error, queued } = await searchParams;
 
   const m = await withTenant(tenant.id, (tx) => getMonitor(tx, tenant.id, id));
   if (!m) notFound();
@@ -59,6 +75,9 @@ export default async function MonitorDetailPage({ params }: { params: Promise<{ 
   const choices = await withTenant(tenant.id, (tx) => readMonitorChoices(tx, tenant.id, id));
   const mayEdit = canRespond(member);
   const tone = STATE_TONE[m.state] ?? STATE_TONE.waiting!;
+  // A journey that is not being played is worth saying out loud, on the
+  // monitor's own page: the reader is looking at it because it has not moved.
+  const runnerLive = m.journey ? (await monitorCapabilities()).synthetic?.ok : true;
 
   const latencies = m.checks
     .filter((c) => c.latencyMs !== null)
@@ -238,6 +257,92 @@ export default async function MonitorDetailPage({ params }: { params: Promise<{ 
             ))}
           </div>
 
+          {m.journey && !runnerLive && (
+            <div
+              style={{
+                border: "1px solid var(--wait)",
+                background: "var(--wait-t)",
+                borderRadius: 12,
+                padding: "11px 14px",
+                fontSize: 12.5,
+                lineHeight: 1.5,
+              }}
+            >
+              {t("synthetic.runnerOffline")}
+            </div>
+          )}
+          {queued && (
+            <div
+              style={{
+                border: "1px solid var(--line)",
+                background: "var(--sunk)",
+                borderRadius: 12,
+                padding: "11px 14px",
+                fontSize: 12.5,
+              }}
+            >
+              {t("synthetic.runQueued")}
+            </div>
+          )}
+          {error && (
+            <div
+              style={{
+                border: "1px solid var(--dang)",
+                background: "var(--dang-t)",
+                borderRadius: 12,
+                padding: "11px 14px",
+                fontSize: 12.5,
+                lineHeight: 1.5,
+              }}
+            >
+              {t(
+                (error === "no-runner"
+                  ? "synthetic.errorNoRunner"
+                  : error === "secret"
+                    ? "synthetic.errorSecret"
+                    : "synthetic.errorSteps") as MessageKey,
+              )}
+            </div>
+          )}
+
+          {m.journey && (
+            <JourneyCard
+              monitorId={m.id}
+              journey={m.journey}
+              lastCheck={m.checks[0] ? { id: m.checks[0].id, result: m.checks[0].result } : null}
+            />
+          )}
+
+          {m.journey && mayEdit && (
+            <details style={{ ...CARD, gap: 10 }}>
+              <summary style={{ fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                {t("synthetic.editJourney")}
+              </summary>
+              <form action={saveSyntheticJourney} style={{ display: "grid", gap: 12 }}>
+                <input type="hidden" name="id" value={m.id} />
+                <JourneyEditor initial={m.journey} />
+                <button
+                  type="submit"
+                  data-testid="journey-save"
+                  style={{
+                    height: 32,
+                    padding: "0 14px",
+                    borderRadius: 9,
+                    background: "var(--brand)",
+                    color: "var(--on-brand)",
+                    border: 0,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    width: "fit-content",
+                  }}
+                >
+                  {t("synthetic.saveJourney")}
+                </button>
+              </form>
+            </details>
+          )}
+
           {latencies.length > 0 && (
             <div style={{ ...CARD, gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center" }}>
@@ -405,6 +510,87 @@ export default async function MonitorDetailPage({ params }: { params: Promise<{ 
             </div>
           </div>
 
+          {m.journey && mayEdit && (
+            <div style={CARD}>
+              <div style={EYEBROW}>{t("synthetic.credentials")}</div>
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.45 }}>
+                {t("synthetic.credentialsHint")}
+              </div>
+              {m.secretNames.length === 0 ? (
+                <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+                  {t("synthetic.secretsNone")}
+                </div>
+              ) : (
+                m.secretNames.map((name) => (
+                  <div
+                    key={name}
+                    style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}
+                  >
+                    <span style={{ fontFamily: "var(--mono)", fontWeight: 600 }}>{name}</span>
+                    <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                      {t("synthetic.secretStored")}
+                    </span>
+                    <span style={{ flex: 1 }} />
+                    <form action={deleteMonitorSecret}>
+                      <input type="hidden" name="id" value={m.id} />
+                      <input type="hidden" name="name" value={name} />
+                      <button
+                        type="submit"
+                        style={{
+                          border: 0,
+                          background: "none",
+                          color: "var(--dang)",
+                          fontSize: 11.5,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {t("synthetic.remove")}
+                      </button>
+                    </form>
+                  </div>
+                ))
+              )}
+              {/* Written, never read back: the field is empty every time,
+                  because there is nothing to prefill it with. */}
+              <form action={saveMonitorSecret} style={{ display: "grid", gap: 6 }}>
+                <input type="hidden" name="id" value={m.id} />
+                <input
+                  name="name"
+                  required
+                  pattern="[A-Za-z0-9_]{1,64}"
+                  placeholder="PASSWORD"
+                  className="oi-field"
+                  style={{ ...SECRET_FIELD, fontFamily: "var(--mono)" }}
+                />
+                <input
+                  name="value"
+                  type="password"
+                  required
+                  autoComplete="new-password"
+                  placeholder={t("synthetic.secretValue")}
+                  className="oi-field"
+                  style={SECRET_FIELD}
+                />
+                <button
+                  type="submit"
+                  data-testid="monitor-secret-save"
+                  style={{
+                    height: 30,
+                    borderRadius: 8,
+                    border: "1px solid var(--line)",
+                    background: "var(--panel)",
+                    color: "inherit",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("synthetic.secretSave")}
+                </button>
+              </form>
+            </div>
+          )}
+
           {m.serviceKey && (
             <div style={CARD}>
               <div style={EYEBROW}>{t("monitors.service")}</div>
@@ -427,6 +613,18 @@ export default async function MonitorDetailPage({ params }: { params: Promise<{ 
     </div>
   );
 }
+
+const SECRET_FIELD: React.CSSProperties = {
+  height: 30,
+  border: "1px solid var(--line)",
+  borderRadius: 8,
+  padding: "0 9px",
+  fontSize: 12.5,
+  outline: "none",
+  background: "var(--panel)",
+  color: "inherit",
+  width: "100%",
+};
 
 const GHOST: React.CSSProperties = {
   height: 34,

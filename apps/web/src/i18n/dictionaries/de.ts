@@ -315,7 +315,7 @@ export const de: Dictionary = {
   "monitors.why.ping-permission":
     "Auf dieser Instanz nicht verfügbar — ICMP wird abgelehnt. Setzen Sie net.ipv4.ping_group_range auf dem Worker-Container.",
   "monitors.why.synthetic-service":
-    "Auf dieser Instanz nicht verfügbar — der Browser-Runner läuft nicht. Aktivieren Sie das compose-Profil synthetic.",
+    "Auf dieser Instanz nicht verfügbar — kein Browser-Runner. Starten Sie ihn: docker compose --profile synthetic up -d synthetic",
   "monitors.on.packet_loss_pct": "Paketverlust (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

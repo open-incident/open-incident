@@ -1,6 +1,6 @@
 import { Queue, Worker, type Processor } from "bullmq";
 import IORedis from "ioredis";
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt } from "drizzle-orm";
 import {
   incidentEvents,
   incidents,
@@ -8,6 +8,7 @@ import {
   mailDeliveries,
   memberNotifications,
   members,
+  monitorChecks,
   roleAssignments,
   incidentRoles,
   withTenant,
@@ -23,12 +24,13 @@ import {
   sweepHeartbeats,
   sweepMonitors,
   sweepShiftReminders,
+  isSyntheticResult,
   type NotifyJob,
   type TickJob,
 } from "@openincident/oncall";
 import { notificationDeliveries } from "@openincident/db";
 import { sweepMaintenances } from "@openincident/statuspages";
-import { assertStorageConfig } from "@openincident/storage";
+import { assertStorageConfig, deleteObject, storageConfigured } from "@openincident/storage";
 import { sweepRunbooks } from "@openincident/ai";
 import { runInvestigation, type InvestigationJob } from "@openincident/investigations";
 import { syncTrackerStatuses } from "@openincident/trackers";
@@ -219,8 +221,10 @@ const processors: Record<QueueName, Processor> = {
   },
   housekeeping: async () => {
     // 90-day retention, per workspace: the mail log, and the bell. Neither is
-    // an archive — the audit log is what keeps a record.
+    // an archive — the audit log is what keeps a record. Failure screenshots go
+    // at 30 days, because they cost storage rather than a row.
     const cutoff = new Date(Date.now() - 90 * DAY_MS);
+    const shotCutoff = new Date(Date.now() - 30 * DAY_MS);
     for (const tenant of await listLiveTenants()) {
       await withTenant(tenant.id, async (tx) => {
         await tx
@@ -240,6 +244,32 @@ const processors: Record<QueueName, Processor> = {
               lt(memberNotifications.createdAt, cutoff),
             ),
           );
+        // A failed journey leaves a screenshot in the bucket. The check row
+        // itself is kept — the 90-day bars are drawn from the day rollup, but
+        // the recent list still reads these — while the picture is not worth
+        // paying for past a month: nobody debugs last quarter's click from a
+        // PNG. The key is cleared with the object, so no screen ever links a
+        // picture that is gone.
+        if (!storageConfigured()) return;
+        const shots = await tx
+          .select({ id: monitorChecks.id, result: monitorChecks.result })
+          .from(monitorChecks)
+          .where(
+            and(
+              eq(monitorChecks.tenantId, tenant.id),
+              lt(monitorChecks.at, shotCutoff),
+              isNotNull(monitorChecks.result),
+            ),
+          )
+          .limit(500);
+        for (const shot of shots) {
+          const key = isSyntheticResult(shot.result) ? shot.result.screenshotKey : undefined;
+          if (!key) continue;
+          await deleteObject(key).catch(() => {});
+          const rest: Record<string, unknown> = { ...shot.result };
+          delete rest.screenshotKey;
+          await tx.update(monitorChecks).set({ result: rest }).where(eq(monitorChecks.id, shot.id));
+        }
       });
     }
     console.log("[housekeeping] purges done");

@@ -1,6 +1,6 @@
 {
-  "id": "3063d072-3637-4635-bca3-ad983f986701",
-  "prevId": "b3b1d5e0-6d1f-41ae-ae3e-9bc2717027a0",
+  "id": "4077fda5-f630-4b55-9b9d-caa7d5b954ea",
+  "prevId": "3063d072-3637-4635-bca3-ad983f986701",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7796,6 +7796,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "result": {
+          "name": "result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "probe_id": {
           "name": "probe_id",
           "type": "uuid",
@@ -8000,6 +8006,110 @@
           "columns": [
             "monitor_id",
             "day"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "app.monitor_secrets": {
+      "name": "monitor_secrets",
+      "schema": "app",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "monitor_id": {
+          "name": "monitor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "encrypted_value": {
+          "name": "encrypted_value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "monitor_secrets_tenant": {
+          "name": "monitor_secrets_tenant",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "monitor_secrets_tenant_id_tenants_id_fk": {
+          "name": "monitor_secrets_tenant_id_tenants_id_fk",
+          "tableFrom": "monitor_secrets",
+          "tableTo": "tenants",
+          "schemaTo": "directory",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "monitor_secrets_monitor_id_monitors_id_fk": {
+          "name": "monitor_secrets_monitor_id_monitors_id_fk",
+          "tableFrom": "monitor_secrets",
+          "tableTo": "monitors",
+          "schemaTo": "app",
+          "columnsFrom": [
+            "monitor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "monitor_secrets_monitor_id_name_pk": {
+          "name": "monitor_secrets_monitor_id_name_pk",
+          "columns": [
+            "monitor_id",
+            "name"
           ]
         }
       },

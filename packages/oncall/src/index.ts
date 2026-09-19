@@ -9,6 +9,7 @@ export * from "./queues";
 export * from "./ical";
 export * from "./heartbeats";
 export * from "./monitors";
+export * from "./synthetic";
 export * from "./coverage";
 export * from "./coverage-sweep";
 export * from "./pay";

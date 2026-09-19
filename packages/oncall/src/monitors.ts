@@ -7,9 +7,11 @@
  * applies from there — grouping, the three choices, the owner's policy, the
  * incident. One road, whatever the signal came from.
  *
- * Only the kinds this process can genuinely perform are here. A ping needs a
- * raw socket the worker does not have, so ICMP is not offered: a monitor type
- * that silently never checks is worse than one that does not exist.
+ * Only the kinds this process can genuinely perform are here. The one that is
+ * not is `synthetic`: a browser does not belong in an image every installation
+ * downloads, so the sweep hands that job to the `synthetic-run` queue and the
+ * runner writes its result back through the same road — `applyCheckResult`
+ * below, which every type goes through.
  */
 
 import { execFile } from "node:child_process";
@@ -33,6 +35,12 @@ import {
 import { decryptSecret, encryptSecret } from "@openincident/crypto";
 import { getTenantById, registerApiKeyLookup } from "@openincident/db";
 import { tenantOrigin } from "./notify";
+import {
+  enqueueSyntheticRun,
+  syntheticConfigOf,
+  syntheticRunnerLive,
+  type MonitorCheckResult,
+} from "./synthetic";
 
 function hashSecret(secret: string): string {
   return createHash("sha256").update(secret).digest("hex");
@@ -48,7 +56,12 @@ function ingestTarget(origin: string, sourceId: string): { url: string; host: st
 
 const SOURCE_NAME = "Monitors";
 
-/** The kinds a worker can actually perform today. */
+/**
+ * The kinds this process performs itself.
+ *
+ * `synthetic` is deliberately absent: the sweep dispatches it to the browser
+ * runner instead of checking it in process.
+ */
 export const RUNNABLE_TYPES = [
   "http",
   "api",
@@ -585,6 +598,135 @@ async function rollUp(
     });
 }
 
+/** What the caller of a check gets back, once it has been written down. */
+export type CheckOutcome = {
+  state: MonitorState;
+  why: string;
+  changed: boolean;
+  /** True when a state change reached the ingest endpoint. */
+  published: boolean;
+};
+
+/**
+ * The single road every check takes, whoever produced it.
+ *
+ * A sample becomes a state, a row in `monitor_checks`, seconds in the day
+ * rollup, the monitor's own last-known state — and, when that state changed, an
+ * alert posted to the workspace's own ingest endpoint, exactly as a third-party
+ * tool would post one. The in-process sweep goes through here, and so does the
+ * browser runner over in `apps/synthetic`: one road, whatever the signal.
+ */
+export async function applyCheckResult(
+  tenantId: string,
+  monitorId: string,
+  sample: CheckSample,
+  opts: { result?: MonitorCheckResult | null; now?: Date } = {},
+): Promise<CheckOutcome | null> {
+  const now = opts.now ?? new Date();
+  const written = await withTenant(tenantId, async (tx) => {
+    const [m] = await tx
+      .select({
+        id: monitors.id,
+        name: monitors.name,
+        type: monitors.type,
+        criteria: monitors.criteria,
+        intervalSeconds: monitors.intervalSeconds,
+        state: monitors.state,
+        serviceKey: services.key,
+      })
+      .from(monitors)
+      .leftJoin(services, eq(services.id, monitors.serviceId))
+      .where(and(eq(monitors.tenantId, tenantId), eq(monitors.id, monitorId)));
+    if (!m) return null;
+
+    const { state, why } = stateFromSample(m.criteria, sample);
+    await tx.insert(monitorChecks).values({
+      tenantId,
+      monitorId,
+      at: now,
+      state,
+      latencyMs: sample.latencyMs ?? null,
+      detail: why.slice(0, 500),
+      result: opts.result ?? null,
+    });
+    await rollUp(tx, tenantId, monitorId, state, m.intervalSeconds, now);
+    const changed = state !== m.state;
+    await tx
+      .update(monitors)
+      .set({
+        state,
+        ...(changed ? { stateSince: now } : {}),
+        lastCheckAt: now,
+        lastLatencyMs: sample.latencyMs ?? null,
+        lastDetail: why.slice(0, 500),
+        updatedAt: now,
+      })
+      .where(eq(monitors.id, monitorId));
+    return { monitor: m, state, why, changed };
+  });
+  if (!written) return null;
+
+  const { monitor: m, state, why, changed } = written;
+  if (!changed) return { state, why, changed, published: false };
+
+  const firing = DOWN.includes(state);
+  const wasDown = DOWN.includes(m.state);
+  // Neither down now nor down before: waiting → online on the first check is
+  // not news, and paging for it would page for every monitor ever created.
+  if (!firing && !wasDown) return { state, why, changed, published: false };
+
+  const tenant = await getTenantById(tenantId);
+  const origin = tenant ? tenantOrigin(tenant.slug, tenant.customDomain) : null;
+  if (!origin) return { state, why, changed, published: false };
+
+  const source = await withTenant(tenantId, (tx) => ensureMonitorSource(tx, tenantId));
+  const published = await postAlert(origin, source, {
+    title: firing ? `${m.name} is ${state}` : `${m.name} is back online`,
+    status: firing ? "firing" : "resolved",
+    dedup_key: `monitor:${m.id}`,
+    severity: state === "offline" ? "P2" : "P3",
+    description: why,
+    attributes: {
+      ...(m.serviceKey ? { service: m.serviceKey } : {}),
+      monitor: m.name,
+      // The id, not only the name: a rule that has to single out one
+      // monitor needs something a rename cannot break.
+      monitor_id: m.id,
+      monitor_type: m.type,
+    },
+    url: `${origin}/app/monitors/${m.id}`,
+  });
+  return { state, why, changed, published };
+}
+
+/**
+ * Hands a synthetic monitor to the browser runner.
+ *
+ * Nothing is written here: the run has not happened yet, and a check row for a
+ * journey that has not been played would be an invention. When no runner has
+ * announced itself the job is not even queued — jobs piling up in Redis for a
+ * service nobody started is a silence the screens already explain, with the
+ * command to fix it.
+ */
+async function dispatchSynthetic(
+  tenantId: string,
+  m: { id: string; name: string; type: string; config: Record<string, unknown> },
+): Promise<"queued" | "no-runner" | "invalid"> {
+  if (!(await syntheticRunnerLive())) return "no-runner";
+  const journey = syntheticConfigOf(m);
+  if (!journey) return "invalid";
+  const queued = await enqueueSyntheticRun({
+    tenantId,
+    monitorId: m.id,
+    monitorName: m.name,
+    steps: journey.steps,
+    budgetMs: journey.budgetMs,
+    viewport: journey.viewport,
+    trigger: "sweep",
+  });
+  return queued ? "queued" : "no-runner";
+}
+
 /**
  * Runs every monitor whose turn it is, across the given workspaces.
  *
@@ -593,6 +735,7 @@ async function rollUp(
  */
 export async function sweepMonitors(tenantIds: string[], now = new Date()): Promise<number> {
   let changes = 0;
+  let unrunnable = 0;
   for (const tenantId of tenantIds) {
     const due = await withTenant(tenantId, (tx) =>
       tx
@@ -602,15 +745,11 @@ export async function sweepMonitors(tenantIds: string[], now = new Date()): Prom
           type: monitors.type,
           target: monitors.target,
           config: monitors.config,
-          criteria: monitors.criteria,
           intervalSeconds: monitors.intervalSeconds,
-          state: monitors.state,
           lastCheckAt: monitors.lastCheckAt,
           expectEverySeconds: monitors.expectEverySeconds,
-          serviceKey: services.key,
         })
         .from(monitors)
-        .leftJoin(services, eq(services.id, monitors.serviceId))
         .where(
           and(
             eq(monitors.tenantId, tenantId),
@@ -627,13 +766,17 @@ export async function sweepMonitors(tenantIds: string[], now = new Date()): Prom
     );
     if (due.length === 0) continue;
 
-    const tenant = await getTenantById(tenantId);
-    const origin = tenant ? tenantOrigin(tenant.slug, tenant.customDomain) : null;
-
     for (const m of due) {
       // A manual monitor is set by a human; an incoming one is judged by its
       // silence, which the heartbeat sweep already watches.
       if (m.type === "manual") continue;
+
+      // A browser is not this process's to run: the job goes to the runner,
+      // which writes its result back through applyCheckResult like the rest.
+      if (m.type === "synthetic") {
+        if ((await dispatchSynthetic(tenantId, m)) !== "queued") unrunnable++;
+        continue;
+      }
 
       const sample =
         m.type === "incoming"
@@ -645,55 +788,13 @@ export async function sweepMonitors(tenantIds: string[], now = new Date()): Prom
             }
           : await performCheck({ type: m.type, target: m.target, config: m.config });
 
-      const { state, why } = stateFromSample(m.criteria, sample);
-      const changed = state !== m.state;
-
-      await withTenant(tenantId, async (tx) => {
-        await tx.insert(monitorChecks).values({
-          tenantId,
-          monitorId: m.id,
-          at: now,
-          state,
-          latencyMs: sample.latencyMs ?? null,
-          detail: why.slice(0, 500),
-        });
-        await rollUp(tx, tenantId, m.id, state, m.intervalSeconds, now);
-        await tx
-          .update(monitors)
-          .set({
-            state,
-            ...(changed ? { stateSince: now } : {}),
-            lastCheckAt: now,
-            lastLatencyMs: sample.latencyMs ?? null,
-            lastDetail: why.slice(0, 500),
-            updatedAt: now,
-          })
-          .where(eq(monitors.id, m.id));
-      });
-
-      if (!changed || !origin) continue;
-      const source = await withTenant(tenantId, (tx) => ensureMonitorSource(tx, tenantId));
-      const firing = DOWN.includes(state);
-      const wasDown = DOWN.includes(m.state);
-      if (!firing && !wasDown) continue;
-      const posted = await postAlert(origin, source, {
-        title: firing ? `${m.name} is ${state}` : `${m.name} is back online`,
-        status: firing ? "firing" : "resolved",
-        dedup_key: `monitor:${m.id}`,
-        severity: state === "offline" ? "P2" : "P3",
-        description: why,
-        attributes: {
-          ...(m.serviceKey ? { service: m.serviceKey } : {}),
-          monitor: m.name,
-          // The id, not only the name: a rule that has to single out one
-          // monitor needs something a rename cannot break.
-          monitor_id: m.id,
-          monitor_type: m.type,
-        },
-        url: `${origin}/app/monitors/${m.id}`,
-      });
-      if (posted) changes++;
+      const outcome = await applyCheckResult(tenantId, m.id, sample, { now });
+      if (outcome?.published) changes++;
     }
   }
+  if (unrunnable)
+    console.log(
+      `[monitor-sweep] ${unrunnable} synthetic monitor(s) not run — no browser runner announced itself`,
+    );
   return changes;
 }

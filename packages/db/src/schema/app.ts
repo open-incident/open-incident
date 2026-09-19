@@ -2686,10 +2686,44 @@ export const monitorChecks = app.table(
     state: monitorState("state").notNull(),
     latencyMs: integer("latency_ms"),
     detail: text("detail"),
+    /**
+     * What the check produced beyond one number, when the type has more to
+     * say. A synthetic run puts its per-step timings, the step that broke and
+     * the key of its screenshot here; the other types leave it null. A column
+     * rather than a second table: it is read with the check or not at all.
+     */
+    result: jsonb("result").$type<Record<string, unknown>>(),
     probeId: uuid("probe_id").references(() => probes.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (t) => [index("monitor_checks_monitor_at").on(t.monitorId, t.at)],
+);
+
+/**
+ * The credentials a synthetic journey signs in with.
+ *
+ * Encrypted at rest with the same treatment as the chat tokens, written once
+ * and never read back by a screen: the product returns the NAME so a journey
+ * can say `{{secrets.PASSWORD}}`, and only the browser runner ever decrypts the
+ * value. Deleting the monitor takes them with it.
+ */
+export const monitorSecrets = app.table(
+  "monitor_secrets",
+  {
+    tenantId: tenantId(),
+    monitorId: uuid("monitor_id")
+      .notNull()
+      .references(() => monitors.id, { onDelete: "cascade" }),
+    /** What `{{secrets.NAME}}` names. Letters, digits and underscores. */
+    name: text("name").notNull(),
+    encryptedValue: text("encrypted_value").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.monitorId, t.name] }),
+    index("monitor_secrets_tenant").on(t.tenantId),
+  ],
 );
 
 /** A day of a monitor's life, in seconds — the bars, the uptime, the downtime. */

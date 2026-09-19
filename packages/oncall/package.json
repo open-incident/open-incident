@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./routing": "./src/routing.ts"
+    "./routing": "./src/routing.ts",
+    "./synthetic-steps": "./src/synthetic-steps.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -11,6 +11,7 @@ import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import {
   monitorChecks,
   monitorDays,
+  monitorSecrets,
   monitors,
   services,
   type MonitorCriterion,
@@ -19,7 +20,12 @@ import {
   type SignalAction,
   type Tx,
 } from "@openincident/db";
-import { defaultHttpCriteria } from "@openincident/oncall";
+import {
+  SYNTHETIC_DEFAULT_BUDGET_MS,
+  defaultHttpCriteria,
+  syntheticConfigOf,
+  syntheticRunnerLive,
+} from "@openincident/oncall";
 
 export type MonitorRow = {
   id: string;
@@ -125,15 +131,31 @@ export async function getMonitor(tx: Tx, tenantId: string, id: string) {
 
   const checks = await tx
     .select({
+      id: monitorChecks.id,
       at: monitorChecks.at,
       state: monitorChecks.state,
       latencyMs: monitorChecks.latencyMs,
       detail: monitorChecks.detail,
+      result: monitorChecks.result,
     })
     .from(monitorChecks)
     .where(and(eq(monitorChecks.tenantId, tenantId), eq(monitorChecks.monitorId, id)))
     .orderBy(desc(monitorChecks.at))
     .limit(60);
+
+  // The credentials a journey carries, by NAME only. The value was written
+  // once, encrypted, and no screen reads it back — not even a masked version:
+  // a hint of a password is a hint of a password.
+  const secretNames =
+    row.type === "synthetic"
+      ? (
+          await tx
+            .select({ name: monitorSecrets.name })
+            .from(monitorSecrets)
+            .where(and(eq(monitorSecrets.tenantId, tenantId), eq(monitorSecrets.monitorId, id)))
+            .orderBy(asc(monitorSecrets.name))
+        ).map((r) => r.name)
+      : [];
 
   const since = lastDays(90)[0]!;
   const [agg] = await tx
@@ -155,6 +177,9 @@ export async function getMonitor(tx: Tx, tenantId: string, id: string) {
   return {
     ...row,
     checks,
+    secretNames,
+    /** The typed journey, when this monitor is one and it still parses. */
+    journey: syntheticConfigOf(row),
     uptime90: total > 0 ? ((agg?.online ?? 0) / total) * 100 : null,
     downtime90Seconds: agg?.offline ?? 0,
   };
@@ -194,6 +219,21 @@ export function defaultCriteria(type: MonitorType): MonitorCriterion[] {
       return [
         { on: "reachable", op: "eq", value: "false", then: "offline" },
         { on: "response_time_ms", op: "gt", value: "500", then: "degraded" },
+        { on: "reachable", op: "eq", value: "true", then: "online" },
+      ];
+    case "synthetic":
+      // A journey either completes or it does not — the failing step is the
+      // detail, not a second degree of failure. Degraded is the journey that
+      // still works but has become slow enough to be worth a look: half the
+      // budget, the moment the margin is gone.
+      return [
+        { on: "reachable", op: "eq", value: "false", then: "offline" },
+        {
+          on: "response_time_ms",
+          op: "gt",
+          value: String(Math.round(SYNTHETIC_DEFAULT_BUDGET_MS / 2)),
+          then: "degraded",
+        },
         { on: "reachable", op: "eq", value: "true", then: "online" },
       ];
     default:
@@ -244,8 +284,21 @@ async function canPing(): Promise<MonitorCapability> {
   return pingProbe;
 }
 
+/**
+ * Whether a browser runner has announced itself in the last minute.
+ *
+ * Not cached, unlike the ping probe: an image either carries a binary or it
+ * does not, but a service starts and stops. A reader who has just run
+ * `docker compose --profile synthetic up -d` must see the type light up on the
+ * next page load, not after the web process restarts.
+ */
+async function canSynthetic(): Promise<MonitorCapability> {
+  const live = await syntheticRunnerLive().catch(() => null);
+  return live ? { ok: true } : { ok: false, why: "synthetic-service" };
+}
+
 export async function monitorCapabilities(): Promise<Record<string, MonitorCapability>> {
-  const ping = await canPing();
+  const [ping, synthetic] = await Promise.all([canPing(), canSynthetic()]);
   return {
     http: { ok: true },
     api: { ok: true },
@@ -256,7 +309,6 @@ export async function monitorCapabilities(): Promise<Record<string, MonitorCapab
     incoming: { ok: true },
     manual: { ok: true },
     ping,
-    // The browser runner is a separate service; until it exists, say so.
-    synthetic: { ok: false, why: "synthetic-service" },
+    synthetic,
   };
 }

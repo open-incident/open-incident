@@ -7,13 +7,16 @@
  * rather than a form: a person creating their first monitor should not have to
  * write a rule to get a useful one, and the rule is right there to be read.
  *
- * Only the kinds the worker can really perform are offered. A type that would
- * sit forever "waiting for first check" is not a type.
+ * The ten types are all shown. One this instance cannot perform is greyed,
+ * carries the reason and the command that turns it on, and refuses to be
+ * created — the reader learns the feature exists and how to have it, rather
+ * than that it does not exist.
  */
 
 import { useState } from "react";
 import { useT } from "@/i18n/client";
 import { createMonitor } from "./actions";
+import { JourneyEditor, SecretsEditor } from "./journey-editor";
 import type { MessageKey } from "@/i18n/dictionaries/en";
 
 type Kind = { id: string; key: string; name: MessageKey; hint: MessageKey; placeholder: string };
@@ -129,6 +132,10 @@ export function NewMonitor({
     setKind(null);
   };
 
+  const synthetic = kind?.id === "synthetic";
+  /** Kinds whose address is not typed: it is derived, or there is none. */
+  const targetless = kind?.id === "manual" || kind?.id === "incoming" || synthetic;
+
   return (
     <>
       <button
@@ -174,12 +181,19 @@ export function NewMonitor({
             aria-modal="true"
             data-testid="monitor-form"
             style={{
-              width: 640,
+              width: synthetic ? 880 : 640,
               maxWidth: "calc(100vw - 32px)",
               background: "var(--panel)",
               borderRadius: "var(--radius-modal)",
               boxShadow: "var(--shadow-modal)",
               overflow: "hidden",
+              // A journey of ten steps makes this dialog taller than the
+              // screen, and the footer went with it: "Create monitor" was on
+              // the page and out of reach. The header and the footer stay put;
+              // the middle scrolls.
+              display: "flex",
+              flexDirection: "column",
+              maxHeight: "86vh",
             }}
           >
             <div
@@ -188,6 +202,7 @@ export function NewMonitor({
                 alignItems: "center",
                 padding: "16px 22px",
                 borderBottom: "1px solid var(--line)",
+                flex: "none",
               }}
             >
               <span style={{ fontFamily: "var(--title)", fontSize: 17, fontWeight: 600 }}>
@@ -225,6 +240,8 @@ export function NewMonitor({
                   display: "grid",
                   gridTemplateColumns: "repeat(4, 1fr)",
                   gap: 8,
+                  overflowY: "auto",
+                  minHeight: 0,
                 }}
               >
                 {KINDS.map((k) => {
@@ -274,14 +291,24 @@ export function NewMonitor({
                 })}
               </div>
             ) : (
-              <form action={createMonitor}>
+              <form
+                action={createMonitor}
+                style={{ display: "flex", flexDirection: "column", minHeight: 0 }}
+              >
                 <input type="hidden" name="type" value={kind.id} />
+                {/*
+                  Three kinds have no target to type: a manual monitor is set by
+                  hand, an incoming one is a URL the product hands out, and a
+                  synthetic one takes its address from the journey's first step.
+                */}
                 <div
                   style={{
                     padding: "18px 22px",
                     display: "flex",
                     flexDirection: "column",
                     gap: 14,
+                    overflowY: "auto",
+                    minHeight: 0,
                   }}
                 >
                   <div
@@ -289,12 +316,10 @@ export function NewMonitor({
                   >
                     <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                       <span style={LABEL}>
-                        {kind.id === "manual" || kind.id === "incoming"
-                          ? t("monitors.fieldName")
-                          : t("monitors.fieldTarget")}
+                        {targetless ? t("monitors.fieldName") : t("monitors.fieldTarget")}
                       </span>
                       <input
-                        name={kind.id === "manual" || kind.id === "incoming" ? "name" : "target"}
+                        name={targetless ? "name" : "target"}
                         required
                         placeholder={kind.placeholder}
                         className="oi-field"
@@ -303,8 +328,18 @@ export function NewMonitor({
                     </label>
                     <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                       <span style={LABEL}>{t("monitors.fieldEvery")}</span>
-                      <select name="intervalSeconds" defaultValue="60" style={CONTROL}>
-                        <option value="60">{t("monitors.every1m")}</option>
+                      <select
+                        name="intervalSeconds"
+                        defaultValue={synthetic ? "300" : "60"}
+                        style={CONTROL}
+                      >
+                        {/*
+                          A browser run costs a few hundred megabytes and
+                          several seconds of CPU. Five minutes is the floor, so
+                          the minute is not even offered — and the server
+                          refuses it too, for a request that skips this form.
+                        */}
+                        {!synthetic && <option value="60">{t("monitors.every1m")}</option>}
                         <option value="300">{t("monitors.every5m")}</option>
                         <option value="900">{t("monitors.every15m")}</option>
                         <option value="3600">{t("monitors.every1h")}</option>
@@ -312,11 +347,18 @@ export function NewMonitor({
                     </label>
                   </div>
 
-                  {kind.id !== "manual" && kind.id !== "incoming" && (
+                  {!targetless && (
                     <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                       <span style={LABEL}>{t("monitors.fieldName")}</span>
                       <input name="name" required className="oi-field" style={CONTROL} />
                     </label>
+                  )}
+
+                  {synthetic && (
+                    <>
+                      <JourneyEditor />
+                      <SecretsEditor />
+                    </>
                   )}
 
                   <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -350,6 +392,11 @@ export function NewMonitor({
                     <div style={{ fontSize: 13, lineHeight: 1.6 }}>
                       {t(`monitors.criteriaSentence.${kind.id}` as MessageKey)}
                     </div>
+                    {synthetic && (
+                      <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                        {t("synthetic.floorNote")}
+                      </div>
+                    )}
                   </div>
 
                   <Choice
@@ -391,6 +438,7 @@ export function NewMonitor({
                     padding: "14px 22px",
                     borderTop: "1px solid var(--line)",
                     background: "var(--sunk)",
+                    flex: "none",
                   }}
                 >
                   <button
