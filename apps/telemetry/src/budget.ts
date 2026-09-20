@@ -21,12 +21,6 @@ const GB = 1024 ** 3;
 
 const cache = new Map<string, { rate: number; at: number }>();
 
-/** Testing seam, and the thing a worker calls after a cap changes. */
-export function forgetBudget(tenantId?: string): void {
-  if (tenantId) cache.delete(tenantId);
-  else cache.clear();
-}
-
 /**
  * The share of ordinary logs and traces this workspace keeps right now.
  *

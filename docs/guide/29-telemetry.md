@@ -106,9 +106,15 @@ stores about three times it, not ten. Metrics are never thinned at all — a
 chart with holes lies, where a thinner log stream only says less.
 
 Nothing about it is silent. The sender is told in OTLP's own partial-success
-field, so the exporter logs the reason; the **Telemetry** screen carries the
-share alongside the day's count; and each kept row records what it stands for,
-so a count can be corrected rather than quietly under-reporting.
+field, so the exporter logs the reason, and the **Telemetry** screen carries the
+share alongside the day's count.
+
+One limit worth knowing: each kept span records what it stands for — a row kept
+at one in four carries a weight of four, and an error carries one because none
+of its kind were dropped — but **no screen weights by it today**. While a
+workspace is over its cap, a count on screen is a count of what was stored, not
+an estimate of what happened. The thinning is recoverable from the data; it is
+not yet recovered.
 
 ## Sending
 
