@@ -308,10 +308,26 @@ function withoutName(labels: Record<string, string>): Record<string, string> {
   return rest;
 }
 
-function keyFor(labels: Record<string, string>, by: string[], without: string[]): string {
-  const entries = Object.entries(labels).filter(([k]) =>
-    by.length > 0 ? by.includes(k) : !without.includes(k) && k !== "__name__",
-  );
+/**
+ * The group a series belongs to.
+ *
+ * The three cases are genuinely three, and treating "no modifier" as "without
+ * nothing" is the bug this replaced: `sum(x)` then kept every label, so every
+ * series was its own group and the most common expression in PromQL quietly
+ * did nothing. A dashboard panel asking for a total drew one line per series
+ * and looked plausible.
+ */
+function keyFor(
+  labels: Record<string, string>,
+  grouping: "none" | "by" | "without",
+  chosen: string[],
+): string {
+  const entries =
+    grouping === "none"
+      ? []
+      : Object.entries(labels).filter(([k]) =>
+          grouping === "by" ? chosen.includes(k) : !chosen.includes(k) && k !== "__name__",
+        );
   entries.sort(([a], [b]) => a.localeCompare(b));
   return JSON.stringify(entries);
 }
@@ -332,7 +348,7 @@ function aggregate(
 
   const groups = new Map<string, { labels: Record<string, string>; series: Series[] }>();
   for (const s of input) {
-    const key = keyFor(s.labels, node.by, node.without);
+    const key = keyFor(s.labels, node.grouping, node.labels);
     const labels = Object.fromEntries(JSON.parse(key) as [string, string][]);
     const g = groups.get(key) ?? { labels, series: [] };
     g.series.push(s);

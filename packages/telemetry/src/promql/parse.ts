@@ -30,7 +30,23 @@ export type Node =
   | { kind: "number"; value: number }
   | { kind: "selector"; metric: string; matchers: Matcher[]; range?: number; offset?: number }
   | { kind: "call"; name: string; args: Node[] }
-  | { kind: "aggregation"; op: string; by: string[]; without: string[]; arg: Node; param?: Node }
+  | {
+      kind: "aggregation";
+      op: string;
+      /**
+       * Which modifier was written, if either.
+       *
+       * `sum(x)`, `sum by () (x)` and `sum without () (x)` are three different
+       * questions and two empty arrays cannot tell them apart: the first
+       * collapses everything into one series, the last keeps every label and
+       * is a no-op. Recording the modifier itself is what keeps the evaluator
+       * from having to guess.
+       */
+      grouping: "none" | "by" | "without";
+      labels: string[];
+      arg: Node;
+      param?: Node;
+    }
   | { kind: "binary"; op: string; left: Node; right: Node };
 
 /** Everything the evaluator implements. Anything else is named and refused. */
@@ -240,26 +256,32 @@ class Parser {
   }
 
   private aggregation(op: string): Node {
-    let by: string[] = [];
-    let without: string[] = [];
-    const grouping = () => {
-      if (this.eat("by")) by = this.labelList();
-      else if (this.eat("without")) without = this.labelList();
+    let grouping: "none" | "by" | "without" = "none";
+    let labels: string[] = [];
+    const modifier = () => {
+      if (this.eat("by")) {
+        grouping = "by";
+        labels = this.labelList();
+      } else if (this.eat("without")) {
+        grouping = "without";
+        labels = this.labelList();
+      }
     };
-    grouping();
+    modifier();
     this.expect("(");
     const args: Node[] = [];
     do args.push(this.expression(0));
     while (this.eat(","));
     this.expect(")");
-    grouping();
+    // Prometheus allows the modifier on either side of the parentheses.
+    modifier();
 
     if ((op === "topk" || op === "bottomk") && args.length !== 2)
       throw new PromqlError(`"${op}" takes a count and a vector`, op);
     const arg = op === "topk" || op === "bottomk" ? args[1]! : args[0]!;
     const param = op === "topk" || op === "bottomk" ? args[0] : undefined;
     if (!arg) throw new PromqlError(`"${op}" needs an argument`, op);
-    return { kind: "aggregation", op, by, without, arg, ...(param ? { param } : {}) };
+    return { kind: "aggregation", op, grouping, labels, arg, ...(param ? { param } : {}) };
   }
 
   private labelList(): string[] {

@@ -97,6 +97,44 @@ under `unknown_service`, and the refusal is kept — the last hundred are listed
 at the bottom of **Connect**, with their excerpt scrubbed. That list is the
 fastest way to find out why nothing is arriving.
 
+## Prometheus remote write
+
+A great many installations already run Prometheus, and asking them to replace
+it before they can try this is asking them not to try it. `/api/v1/write`
+accepts remote write, both 1.0 and 2.0, so one block of configuration sends
+their existing scrapes here as well and they keep everything they have:
+
+```yaml
+remote_write:
+  - url: https://otlp.<your workspace host>/api/v1/write
+    headers:
+      x-oi-key: <the ingestion key>
+```
+
+The path is not one we chose — it is what a `remote_write` block appends to
+whatever URL it is given.
+
+Three things about the mapping, all of them stated rather than guessed:
+
+- **`job` becomes the service, and stays a label.** Every dashboard and alert a
+  Prometheus user already has says `job="…"`, and dropping the label because we
+  had used it for something else would make all of them return nothing,
+  silently. A series with no `job` at all is refused rather than filed under a
+  made-up name.
+- **Everything arrives as a gauge**, unless the sender says otherwise. 1.0
+  carries no type at all, and Prometheus 3.5 sends an empty metadata message on
+  every series in 2.0. Guessing from the name would be worse: `_total` is
+  usually a counter and sometimes is not, and storing a gauge as a counter
+  makes `rate()` invent resets that never happened. `rate()` and `increase()`
+  read these series correctly either way.
+- **`NaN` is dropped.** It is how Prometheus marks a series stale, not a
+  measurement, and storing it would draw a gap as a zero.
+
+The endpoint answers the way Prometheus expects: 204 with no body, 400 for a
+body it cannot read — which it will not retry — and 503 for a store that is
+briefly away, which it will, holding the samples in its write-ahead log
+meanwhile. Answering 500 there loses them.
+
 ## What happens to a signal on the way in
 
 1. The key resolves its workspace **before** the body is decoded. An unknown

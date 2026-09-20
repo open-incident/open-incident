@@ -33,6 +33,8 @@ import {
 } from "./protobuf";
 import { decodeMetricsJson } from "./metrics";
 import { ingestMetrics } from "./metrics-ingest";
+import { decodeRemoteWrite, remoteWriteVersion, RemoteWriteError } from "./remote-write";
+import { SnappyError } from "./snappy";
 
 const PORT = Number(process.env.TELEMETRY_PORT ?? 4318);
 /** OTLP's own limit, and the one §15.4 names. */
@@ -120,6 +122,17 @@ const ROUTES: Record<string, Signal> = {
   "/v1/metrics": "metrics",
 };
 
+/*
+ * Prometheus remote write, on the path Prometheus expects.
+ *
+ * `/api/v1/write` is not a path we chose — it is the one a `remote_write`
+ * block appends to whatever URL it is given, and a sender cannot be told
+ * otherwise. It is handled apart from the OTLP routes because everything about
+ * it differs: snappy rather than raw protobuf, a response that carries nothing,
+ * and a 204 rather than a 200.
+ */
+const REMOTE_WRITE = "/api/v1/write";
+
 /** Each signal answers a protobuf sender in its own response message. */
 function protoResponse(signal: Signal, rejected: number, message: string): Buffer {
   if (signal === "logs") return encodeLogsResponse(rejected, message);
@@ -137,6 +150,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       detail: telemetryInstalled() ? "ready" : "telemetry module not installed (CLICKHOUSE_URL)",
     });
   }
+
+  if (req.method === "POST" && path === REMOTE_WRITE) return remoteWrite(req, res);
 
   const signal = ROUTES[path];
   if (!signal || req.method !== "POST") return send(res, 404, { error: { code: "not_found" } });
@@ -222,6 +237,58 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   void record(caller, signal, outcome, body.byteLength);
 }
 
+/**
+ * One Prometheus remote-write request.
+ *
+ * Prometheus is not an OTLP sender and must not be answered like one: it reads
+ * the status code and nothing else, retries on 5xx, and gives up permanently
+ * on 4xx. So a body it cannot use is a 400 it will not retry, and a store that
+ * is briefly unavailable is a 503 it will — the write-ahead log holds the
+ * samples in the meantime, and answering 500 there loses them.
+ */
+async function remoteWrite(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!telemetryInstalled()) return send(res, 503, { error: { code: "module_not_installed" } });
+
+  const key = keyFromHeaders(req.headers);
+  if (!key) return send(res, 401, { error: { code: "missing_key", message: "send x-oi-key" } });
+  const caller = await callerFor(key);
+  if (!caller) return send(res, 401, { error: { code: "invalid_key" } });
+  if (!caller.signals.includes("metrics"))
+    return send(res, 403, { error: { code: "signal_not_allowed" } });
+
+  let body: Buffer;
+  try {
+    body = await readBody(req);
+  } catch {
+    return send(res, 413, { error: { code: "payload_too_large" } });
+  }
+
+  const settings = await settingsFor(caller.tenantId);
+  if (!settings.enabledSignals.includes("metrics"))
+    return send(res, 403, { error: { code: "signal_disabled" } });
+
+  let outcome: Outcome;
+  try {
+    const decoded = decodeRemoteWrite(body, remoteWriteVersion(req.headers));
+    outcome = await ingestMetrics(caller, settings, decoded);
+  } catch (err) {
+    // A body we cannot read is the sender's problem and will not be fixed by
+    // sending it again; anything else is ours and is worth retrying.
+    const ours = !(err instanceof SnappyError || err instanceof RemoteWriteError);
+    if (!ours) {
+      console.warn(`[telemetry] remote write refused: ${(err as Error).message}`);
+      return send(res, 400, { error: { code: "invalid_body", message: (err as Error).message } });
+    }
+    console.error("[telemetry] remote write failed:", err);
+    return send(res, 503, { error: { code: "storage_unavailable" } });
+  }
+
+  // 204: Prometheus reads the status and discards the body, and sending one it
+  // will not look at is bytes on every request for ever.
+  res.writeHead(204).end();
+  void record(caller, "metrics", outcome, body.byteLength);
+}
+
 createServer((req, res) => {
   handle(req, res).catch((err) => {
     console.error("[telemetry] unhandled:", err);
@@ -230,7 +297,7 @@ createServer((req, res) => {
 }).listen(PORT, () => {
   console.log(
     telemetryInstalled()
-      ? `Open Incident telemetry ingestion on :${PORT} — OTLP logs, traces and metrics, protobuf and JSON`
+      ? `Open Incident telemetry ingestion on :${PORT} — OTLP logs, traces and metrics (protobuf and JSON), Prometheus remote write`
       : `Open Incident telemetry ingestion on :${PORT} — no storage configured, answering 503`,
   );
 });

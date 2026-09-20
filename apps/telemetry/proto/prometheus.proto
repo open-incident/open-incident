@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+// Prometheus remote write, both versions, condensed to what is read.
+//
+// The field numbers are the contract — they are what is on the wire — so they
+// are written out explicitly rather than inferred from order. Anything this
+// endpoint does not use is left out entirely: a field that is decoded and
+// thrown away is a field somebody will later assume is stored.
+
+package prometheus;
+
+// ---------- 1.0 (prometheus.WriteRequest) ----------
+// Still what most senders speak. Labels carry their names in full on every
+// series, which is the thing 2.0 exists to fix.
+
+message Label {
+  string name = 1;
+  string value = 2;
+}
+
+message Sample {
+  double value = 1;
+  // Milliseconds since the epoch, and signed: Prometheus allows timestamps
+  // before 1970 and the decoder must not read them as enormous positive ones.
+  int64 timestamp = 2;
+}
+
+message TimeSeries {
+  repeated Label labels = 1;
+  repeated Sample samples = 2;
+}
+
+message WriteRequest {
+  repeated TimeSeries timeseries = 1;
+}
+
+// ---------- 2.0 (io.prometheus.write.v2.Request) ----------
+// Every string appears once in `symbols`, and everything else refers to it by
+// index. A request with a thousand series of the same ten label names carries
+// those names once instead of a thousand times.
+
+message V2Metadata {
+  // 0 unspecified, 1 counter, 2 gauge, 3 histogram, 4 gauge histogram,
+  // 5 summary, 6 info, 7 stateset.
+  int32 type = 1;
+  uint32 help_ref = 3;
+  uint32 unit_ref = 4;
+}
+
+message V2TimeSeries {
+  // Indices into `symbols`, in pairs: name, value, name, value…
+  repeated uint32 label_refs = 1;
+  repeated Sample samples = 2;
+  // 3 is `histograms` and 4 is `exemplars`, neither of which is read here.
+  // They are not omitted silently: metadata is field 5 and putting it at 4
+  // decoded every exemplar as a metadata message, which is how every counter
+  // arrived as a gauge until a real Prometheus said otherwise.
+  V2Metadata metadata = 5;
+}
+
+message V2Request {
+  // Fields 1 to 3 were reserved when 2.0 was written, so that a 1.0 decoder
+  // reading a 2.0 body fails loudly rather than producing nonsense. Numbering
+  // starts at 4 for that reason, and the gap is deliberate.
+  repeated string symbols = 4;
+  repeated V2TimeSeries timeseries = 5;
+}

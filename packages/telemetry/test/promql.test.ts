@@ -52,8 +52,21 @@ describe("the published subset parses", () => {
       expect(n.kind).toBe("aggregation");
       if (n.kind !== "aggregation") return;
       expect(n.op).toBe("sum");
-      expect(n.by).toEqual(["route"]);
+      expect(n.grouping).toBe("by");
+      expect(n.labels).toEqual(["route"]);
     }
+  });
+
+  it("tells a bare aggregation apart from one that groups by nothing", () => {
+    // Three questions, not two. `sum(x)` collapses everything into one series;
+    // `sum without () (x)` keeps every label and is a no-op. Two empty arrays
+    // cannot say which was written, and reading the first as the second made
+    // the commonest expression in PromQL do nothing.
+    const bare = parsePromql("sum(http_requests)");
+    const nothing = parsePromql("sum without () (http_requests)");
+    if (bare.kind !== "aggregation" || nothing.kind !== "aggregation") throw new Error("shape");
+    expect(bare.grouping).toBe("none");
+    expect(nothing.grouping).toBe("without");
   });
 
   it("gives multiplication precedence over addition", () => {
