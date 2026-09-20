@@ -80,9 +80,21 @@ function shadowingAlias(sql: string): { fn: string; column: string } | null {
     const [whole, fn, column, alias] = m;
     if (!fn || !column || alias !== column) continue;
     const after = sql.slice((m.index ?? 0) + whole.length);
-    // Qualified or bare, but as a whole word: `minute` must not match
-    // `minutes` or `metric_1m_t`.
-    if (new RegExp(`(?:^|[^\\w.])(?:\\w+\\.)?${column}\\b`).test(after)) {
+    /*
+     * Only an UNQUALIFIED use is shadowed.
+     *
+     * The alias replaces the bare name for the rest of the query, and nothing
+     * else: `m.minute` still resolves to the column, which is exactly how the
+     * queries that legitimately reuse a name are written. Flagging those too
+     * made this guard refuse a correct query — it broke the metric chart, and
+     * the breakage sat unnoticed because nothing else in the product opens
+     * that screen. A guard with false positives is worse than no guard: it
+     * blocks work that is right and teaches people to route around it.
+     *
+     * `[^\w.]` before the name, so `minute` does not match `m.minute` (the dot)
+     * nor the tail of `last_minute`.
+     */
+    if (new RegExp(`(?:^|[^\\w.])${column}\\b`).test(after)) {
       return { fn, column };
     }
   }
@@ -448,10 +460,14 @@ export type SeriesLabels = { attributes_hash: string; attributes: Record<string,
 export async function seriesLabels(tenantId: string, metricName: string): Promise<SeriesLabels[]> {
   return read<SeriesLabels>(
     tenantId,
-    `SELECT toString(attributes_hash) AS attributes_hash, attributes
-       FROM ${SERIES}
-      WHERE metric_name = {name:String}
-      ORDER BY attributes_hash`,
+    // Aliased through `s`, like the query above. Unqualified, `ORDER BY
+    // attributes_hash` sorts the String this SELECT produces rather than the
+    // UInt64 column — lexicographic where the column is numeric. Harmless in
+    // effect and wrong on purpose nowhere, which is why the guard flags it.
+    `SELECT toString(s.attributes_hash) AS attributes_hash, s.attributes AS attributes
+       FROM ${SERIES} AS s
+      WHERE s.metric_name = {name:String}
+      ORDER BY s.attributes_hash`,
     { params: { name: metricName } },
   );
 }

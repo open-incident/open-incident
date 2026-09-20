@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getT } from "@/i18n/server";
 import { metricChart, metricCatalogue, type MetricName } from "@/lib/telemetry";
+import { MetricChart } from "./metric-chart";
 
 const CARD: React.CSSProperties = {
   background: "var(--panel)",
@@ -11,34 +12,16 @@ const CARD: React.CSSProperties = {
 const MONO: React.CSSProperties = { fontFamily: "var(--mono)", fontSize: 12 };
 
 /**
- * A sparkline, drawn from the per-minute rollup.
+ * How many series get a chart.
  *
- * Deliberately not a charting library: one path, no axes, no legend. The
- * question this answers is "is this series alive and roughly flat", which is
- * the question somebody has while reading a list. The real chart belongs to
- * the dashboards, and dashboards are the next milestone — so this says less
- * rather than pretending to be one.
+ * `system.cpu.utilization` on one host has eighty — one per core per state —
+ * and eighty stacked charts is not a screen, it is a wall. The cap is stated
+ * under the charts rather than applied silently: "showing 12 of 80" tells the
+ * reader the metric is high-cardinality, which is usually the thing worth
+ * knowing about it. Narrowing to the series you want is what the dashboards
+ * and their PromQL are for.
  */
-function Spark({ values }: { values: number[] }) {
-  if (values.length < 2) return <span style={{ ...MONO, color: "var(--ink-3)" }}>—</span>;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const points = values
-    .map((v, i) => `${(i / (values.length - 1)) * 100},${28 - ((v - min) / span) * 26}`)
-    .join(" ");
-  return (
-    <svg viewBox="0 0 100 30" preserveAspectRatio="none" style={{ width: "100%", height: 30 }}>
-      <polyline
-        points={points}
-        fill="none"
-        stroke="var(--brand)"
-        strokeWidth="1.5"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
-  );
-}
+const SERIES_SHOWN = 12;
 
 export async function MetricsTab({ tenantId, open }: { tenantId: string; open?: string }) {
   const t = await getT();
@@ -113,7 +96,7 @@ export async function MetricsTab({ tenantId, open }: { tenantId: string; open?: 
           {chart.series.length === 0 ? (
             <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("telemetry.noPoints")}</div>
           ) : (
-            chart.series.map((s) => (
+            chart.series.slice(0, SERIES_SHOWN).map((s) => (
               <div key={s.hash} style={{ marginBottom: 14 }}>
                 <div style={{ ...MONO, fontSize: 11, color: "var(--ink-2)", marginBottom: 2 }}>
                   {Object.entries(s.labels).length === 0
@@ -122,12 +105,28 @@ export async function MetricsTab({ tenantId, open }: { tenantId: string; open?: 
                         .map(([k, v]) => `${k}=${v}`)
                         .join(" · ")}
                 </div>
-                <Spark values={s.values} />
+                <MetricChart
+                  points={s.points}
+                  changes={chart.changes}
+                  from={chart.from}
+                  to={chart.to}
+                  labels={{ noPoints: t("telemetry.noPoints") }}
+                />
                 <div style={{ ...MONO, fontSize: 11, color: "var(--ink-3)" }}>
-                  {t("telemetry.lastValue", { v: String(s.values[s.values.length - 1] ?? "—") })}
+                  {t("telemetry.lastValue", {
+                    v: String(s.points[s.points.length - 1]?.value ?? "—"),
+                  })}
                 </div>
               </div>
             ))
+          )}
+          {chart.series.length > SERIES_SHOWN && (
+            <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 4 }}>
+              {t("telemetry.seriesCapped", {
+                shown: SERIES_SHOWN,
+                total: chart.series.length,
+              })}
+            </div>
           )}
         </div>
       )}

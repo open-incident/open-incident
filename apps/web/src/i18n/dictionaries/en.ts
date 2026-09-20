@@ -115,6 +115,7 @@ export const en = {
   "telemetry.seriesCount": "{n} series",
   "telemetry.lastHours": "Last {n} hours, one point per minute",
   "telemetry.noPoints": "This metric has no point in the window.",
+  "telemetry.seriesCapped": "Showing {shown} of {total} series. Narrow it with a dashboard query.",
   "telemetry.noLabels": "no labels",
   "telemetry.lastValue": "last: {v}",
   "telemetry.todayRows": "Today",

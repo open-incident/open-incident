@@ -106,6 +106,8 @@ export const de: Dictionary = {
   "telemetry.seriesCount": "{n} Serien",
   "telemetry.lastHours": "Letzte {n} Stunden, ein Punkt pro Minute",
   "telemetry.noPoints": "Diese Metrik hat im Zeitfenster keinen Punkt.",
+  "telemetry.seriesCapped":
+    "{shown} von {total} Reihen angezeigt. Mit einer Dashboard-Abfrage eingrenzen.",
   "telemetry.noLabels": "ohne Labels",
   "telemetry.lastValue": "zuletzt: {v}",
   "telemetry.todayRows": "Heute",

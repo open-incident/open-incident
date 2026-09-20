@@ -11,11 +11,12 @@
  */
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import {
   forgetTelemetryKey,
   registerTelemetryKey,
   telemetryIngestionKeys,
+  changeEvents,
   telemetryRejections,
   telemetrySettings,
   telemetryUsage,
@@ -194,25 +195,73 @@ export async function metricCatalogue(tenantId: string) {
  * that stopped reporting an hour ago still has a name, and a chart that drops
  * it silently is a chart that hides an outage.
  */
-export async function metricChart(tenantId: string, metricName: string) {
-  if (!telemetryInstalled()) return { series: [] };
-  const [rows, labels] = await Promise.all([
-    metricSeries(tenantId, metricName, { hours: 24 }),
+export type MetricPoint = { at: number; value: number };
+
+/**
+ * One metric's series over a window, and the changes that landed inside it.
+ *
+ * The points keep their timestamps. They used to be flattened to bare numbers,
+ * which is enough to draw a shape and not enough to say *when* — and "when"
+ * is the whole question once a deploy marker is drawn on the same axis.
+ *
+ * The changes come from the same window rather than from a fixed count: "what
+ * changed while this was happening" is the first question of every incident,
+ * and a chart that answers it costs one small query against a table the
+ * product already fills.
+ */
+export async function metricChart(tenantId: string, metricName: string, hours = 24) {
+  if (!telemetryInstalled()) return { series: [], changes: [], from: 0, to: 0 };
+  const to = Date.now();
+  const from = to - hours * 3_600_000;
+  const [rows, labels, changes] = await Promise.all([
+    metricSeries(tenantId, metricName, { hours }),
     seriesLabels(tenantId, metricName),
+    changesSince(tenantId, new Date(from)),
   ]);
-  const byHash = new Map<string, number[]>();
+  const byHash = new Map<string, MetricPoint[]>();
   for (const r of rows) {
     const list = byHash.get(r.attributes_hash) ?? [];
-    list.push(Number(r.value));
+    // ClickHouse hands back "2026-09-20 21:04:00" — no zone, and it is UTC.
+    // Parsed without the `Z` a browser reads it as local time and every point
+    // lands an hour or two off the deploy marker beside it.
+    list.push({ at: Date.parse(`${r.minute.replace(" ", "T")}Z`), value: Number(r.value) });
     byHash.set(r.attributes_hash, list);
   }
   return {
+    from,
+    to,
+    changes,
     series: labels.map((l) => ({
       hash: l.attributes_hash,
       labels: l.attributes,
-      values: byHash.get(l.attributes_hash) ?? [],
+      points: byHash.get(l.attributes_hash) ?? [],
     })),
   };
+}
+
+export type ChangeMark = { id: string; kind: string; title: string; at: number };
+
+/** Deploys, flags and config changes since an instant — what a chart annotates. */
+export async function changesSince(tenantId: string, since: Date): Promise<ChangeMark[]> {
+  const rows = await withTenant(tenantId, (tx) =>
+    tx
+      .select({
+        id: changeEvents.id,
+        kind: changeEvents.kind,
+        title: changeEvents.title,
+        occurredAt: changeEvents.occurredAt,
+      })
+      .from(changeEvents)
+      .where(and(eq(changeEvents.tenantId, tenantId), gte(changeEvents.occurredAt, since)))
+      .orderBy(desc(changeEvents.occurredAt))
+      .limit(20),
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    title: r.title,
+    at: r.occurredAt.getTime(),
+  }));
 }
 
 export type { ExceptionGroup, ExceptionOccurrence } from "@openincident/telemetry";
