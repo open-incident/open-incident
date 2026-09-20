@@ -186,6 +186,7 @@ export type RumCaller = {
   replayEnabled: boolean;
   replaySampleRate: number;
   replayUnmask: string[];
+  mobileEnabled: boolean;
 };
 
 /**
@@ -217,6 +218,7 @@ export async function resolveRumApp(appId: string): Promise<RumCaller | null> {
     replayEnabled: a.replayEnabled,
     replaySampleRate: a.replaySampleRate,
     replayUnmask: a.replayUnmask,
+    mobileEnabled: a.mobileEnabled,
   };
 }
 
@@ -234,6 +236,7 @@ export async function registerRumApp(
     replayEnabled: entry.replayEnabled,
     replaySampleRate: entry.replaySampleRate,
     replayUnmask: entry.replayUnmask,
+    mobileEnabled: entry.mobileEnabled,
     active: entry.active ?? true,
   });
 }

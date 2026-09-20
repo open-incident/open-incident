@@ -134,6 +134,8 @@ export const rumAppLookup = directory.table("rum_app_lookup", {
   replayEnabled: boolean("replay_enabled").notNull().default(false),
   replaySampleRate: doublePrecision("replay_sample_rate").notNull().default(0.1),
   replayUnmask: jsonb("replay_unmask").$type<string[]>().notNull().default([]),
+  /** Whether a request with no `Origin` — an app, not a page — is accepted. */
+  mobileEnabled: boolean("mobile_enabled").notNull().default(false),
   active: boolean("active").notNull().default(true),
 });
 

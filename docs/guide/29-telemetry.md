@@ -74,6 +74,49 @@ Two things running them taught us, both pinned into the files:
   later refuse; and the collector image runs unprivileged while the socket
   belongs to root, so it needs `--user 0` or the socket's group.
 
+## Mobile applications
+
+Two SDKs in [`sdk/`](../../sdk): a Swift package for iOS 13+ and an Android
+library for API 21+. Neither has a dependency — the Android one uses `org.json`
+and `HttpURLConnection` from the platform, so adding it cannot drag a second
+copy of OkHttp into your app, and the released library is 27 kB.
+
+They send to the same endpoint the browser SDK does and land in the same
+tables, so an application and a website appear side by side on **RUM**.
+
+**A RUM application has to accept mobile applications first**, on
+**Settings → Observability**, and it is off until somebody turns it on. That is
+a switch rather than a default because it costs something real: a browser is
+made to send an `Origin` it cannot forge, and that header is what stands in for
+a credential when the application id is public. An app sends none, so accepting
+one means accepting that the id is a **public write-only token** — anybody who
+pulls your binary apart can read it and post events to that application. Every
+mobile RUM SDK works this way; the difference here is that you read the
+sentence before it is true of your workspace rather than after.
+
+What it measures:
+
+|                                         |                                                                                                                                                                   |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app_start`                             | From the moment the process began — not from when the SDK started, by which point the expensive part is over — to the first frame. Rated against 2 s and 5 s.     |
+| `screen_load`                           | Between two `screen()` calls, counted once per screen. A screen somebody sat on for four minutes is not a four-minute load. Rated against 1 s and 2.5 s.          |
+| Sessions                                | Resumed after up to fifteen minutes of silence, then a new one. The sampling draw is taken once per session and kept, so a visit is reported whole or not at all. |
+| Screens, actions, errors, network calls | One line each, at the place that knows about them.                                                                                                                |
+
+Two things neither SDK does, written here rather than discovered later.
+
+**Neither captures crashes.** Doing it properly means signal handlers and a
+Mach exception port on iOS, a report written to disk and replayed on the next
+launch, and symbolication — a subsystem, not a feature. An SDK that claims
+crash reporting and delivers a `try`/`catch` is worse than one that says it has
+none, because somebody stops looking for a real one.
+
+**Neither intercepts your networking.** Both take a `resource(...)` call
+instead. Interception means a `URLProtocol` re-issuing every request through a
+session of ours, or an interceptor in an OkHttp client we do not own, which
+changes uploads, streaming and background transfers in an application nobody
+here can test. A line of code per call site is the better half of that trade.
+
 ## Session replay
 
 Sometimes the numbers do not settle the argument. A p75 LCP of 3.1 s says the

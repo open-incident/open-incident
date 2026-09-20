@@ -1,0 +1,2 @@
+ALTER TABLE "directory"."rum_app_lookup" ADD COLUMN "mobile_enabled" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "app"."rum_applications" ADD COLUMN "mobile_enabled" boolean DEFAULT false NOT NULL;

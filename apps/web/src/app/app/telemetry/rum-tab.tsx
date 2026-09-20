@@ -31,12 +31,21 @@ const VIEWS = ["overview", "sessions", "errors"] as const;
 type View = (typeof VIEWS)[number];
 
 /** Google's own thresholds, so "good" here means what it means everywhere. */
+/** The acronyms a reader already knows, kept as acronyms. */
+const WEB_VITALS = new Set(["LCP", "INP", "CLS", "FCP", "TTFB"]);
+
 const THRESHOLDS: Record<string, [number, number]> = {
   LCP: [2500, 4000],
   INP: [200, 500],
   CLS: [0.1, 0.25],
   FCP: [1800, 3000],
   TTFB: [800, 1800],
+  // Not Google's, because Google has none for these. Apple's own guidance puts
+  // a cold start over 2 s in the territory the watchdog eventually kills, and
+  // Android's vitals dashboard marks 5 s as excessive; a tap that takes longer
+  // than a second to paint is the one users call "laggy".
+  app_start: [2000, 5000],
+  screen_load: [1000, 2500],
 };
 
 function tone(vital: string, value: number): string {
@@ -204,13 +213,28 @@ async function Overview({
     rumSegments(tenantId, "country", window),
   ]);
   const byName = new Map(vitals.map((v) => [v.vital_name, v]));
+  /*
+   * Which tiles to draw.
+   *
+   * The web five are shown whenever a page has reported, and when nothing has
+   * reported at all — that empty row is what tells somebody the screen works
+   * and the traffic has not arrived. The mobile two are appended only when a
+   * phone has actually sent them, because a workspace with no application has
+   * no use for two permanently blank tiles, and one with only an application
+   * should not be asked to read five.
+   */
+  const web = (["LCP", "INP", "CLS", "FCP", "TTFB"] as const).filter(() =>
+    vitals.length === 0 ? true : vitals.some((v) => WEB_VITALS.has(v.vital_name)),
+  );
+  const mobile = (["app_start", "screen_load"] as const).filter((n) => byName.has(n));
+  const shown: string[] = [...web, ...mobile];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(5, 1fr)",
+          gridTemplateColumns: `repeat(${Math.max(1, shown.length)}, 1fr)`,
           gap: 1,
           background: "var(--line)",
           border: "1px solid var(--line)",
@@ -218,12 +242,14 @@ async function Overview({
           overflow: "hidden",
         }}
       >
-        {(["LCP", "INP", "CLS", "FCP", "TTFB"] as const).map((name) => {
+        {shown.map((name) => {
           const row = byName.get(name);
           const value = row?.p75 ?? 0;
           return (
             <div key={name} style={{ background: "var(--panel)", padding: "12px 14px" }}>
-              <div style={EYEBROW}>{name}</div>
+              <div style={EYEBROW}>
+                {WEB_VITALS.has(name) ? name : t(`rum.vital.${name}` as MessageKey)}
+              </div>
               <div
                 style={{ fontSize: 19, fontWeight: 600, color: tone(name, value), marginTop: 3 }}
               >

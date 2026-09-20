@@ -3051,6 +3051,18 @@ export const rumApplications = app.table(
      * forgetting to un-mask one makes a replay less legible.
      */
     replayUnmask: jsonb("replay_unmask").$type<string[]>().notNull().default([]),
+    /**
+     * Whether a mobile application may report to this id.
+     *
+     * Its own switch because it costs something real. A browser is made to
+     * send an `Origin` it cannot forge, and that header is what stands in for
+     * a credential here; an app sends none, so accepting one means accepting
+     * that the application id is a public write-only token — anybody who pulls
+     * the binary apart can post events to it. That is how every mobile RUM SDK
+     * works, ours included, and it is a sentence somebody should read before
+     * it is true of their workspace rather than after.
+     */
+    mobileEnabled: boolean("mobile_enabled").notNull().default(false),
     active: boolean("active").notNull().default(true),
     /** The service its traces belong to, so a browser error reaches a backend. */
     serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),

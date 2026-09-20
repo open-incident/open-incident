@@ -21,3 +21,14 @@ certs/
 # never committed: a 178 kB artifact in git is one that silently stops matching
 # the version claiming to have produced it.
 apps/web/public/rum/oi-rum-replay.js
+
+# Mobile SDK build output. SwiftPM's .build is a module cache of the whole
+# platform — two thousand files — and `local.properties` points at one
+# machine's Android SDK. All regenerated, none of it anyone else's.
+sdk/ios/.build/
+sdk/ios/.swiftpm/
+sdk/android/local.properties
+sdk/android/.gradle/
+sdk/android/build/
+sdk/android/*/build/
+.kotlin/

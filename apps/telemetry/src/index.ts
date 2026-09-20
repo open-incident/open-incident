@@ -556,7 +556,19 @@ async function rum(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const appId = new URL(req.url ?? "/", "http://localhost").searchParams.get("app") ?? "";
 
   const caller = appId && UUID.test(appId) ? await resolveRumApp(appId) : null;
-  const allowed = caller !== null && origin !== "" && originAllowed(origin, caller.allowedOrigins);
+  /*
+   * A page proves where it came from; an app cannot.
+   *
+   * `Origin` is set by the browser and cannot be forged from script, which is
+   * what makes it a credential for a public application id. A phone sends
+   * none, so the only honest reading of a request without one is "this is not
+   * a page" — and accepting it means accepting that the id is a public
+   * write-only token. Every mobile RUM SDK works that way; the difference here
+   * is that it is off until somebody turns it on, on a screen that says so.
+   */
+  const fromApp = caller !== null && origin === "" && caller.mobileEnabled;
+  const allowed =
+    caller !== null && (fromApp || (origin !== "" && originAllowed(origin, caller.allowedOrigins)));
 
   if (req.method === "OPTIONS") {
     if (!allowed) {
@@ -581,7 +593,9 @@ async function rum(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!allowed) return send(res, 403, { error: { code: "origin_not_allowed" } });
   if (!telemetryInstalled()) return send(res, 503, { error: { code: "module_not_installed" } });
 
-  const cors = CORS(origin);
+  // No CORS headers for an app: there is no origin to echo, and
+  // `access-control-allow-origin: ""` is not a header, it is a malformed one.
+  const cors = fromApp ? {} : CORS(origin);
 
   let body: Buffer;
   try {

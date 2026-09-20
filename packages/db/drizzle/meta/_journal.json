@@ -337,6 +337,13 @@
       "when": 1789923189420,
       "tag": "0047_rum_replay",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1789925394584,
+      "tag": "0048_rum_mobile",
+      "breakpoints": true
     }
   ]
 }

@@ -24,6 +24,12 @@ export class RumError extends Error {}
 export const EVENT_TYPES = [
   "page_view",
   "web_vital",
+  // A phone has no largest contentful paint and a browser has no cold start.
+  // Its own type rather than a sixth name under `web_vital`, so a screen can
+  // label it truthfully and a chart can apply the right thresholds — the two
+  // populations are not comparable and putting them in one bucket invites
+  // exactly that comparison.
+  "mobile_vital",
   "error",
   "resource",
   "action",
@@ -33,6 +39,16 @@ export type RumEventType = (typeof EVENT_TYPES)[number];
 
 /** Core Web Vitals plus the two that explain them. */
 export const VITALS = ["LCP", "INP", "CLS", "FCP", "TTFB"] as const;
+
+/**
+ * What a phone measures instead.
+ *
+ * Two, not ten. `app_start` is the number a user feels before they have done
+ * anything, and `screen_load` is the one they feel after every tap; the rest
+ * of what a mobile SDK can collect is either a crash (an error) or a network
+ * call (a resource), both of which already have a place here.
+ */
+export const MOBILE_VITALS = ["app_start", "screen_load"] as const;
 
 export const MAX_EVENTS = 1_000;
 
@@ -73,7 +89,7 @@ export function decodeRumBatch(
   payload: unknown,
   context: { userAgent: string; country: string; salt: string },
 ): RumEvent[] {
-  const body = payload as { events?: unknown };
+  const body = payload as { events?: unknown; app?: unknown };
   if (!Array.isArray(body?.events)) throw new RumError("a batch is { events: [...] }");
   if (body.events.length > MAX_EVENTS) {
     throw new RumError(`a batch holds at most ${MAX_EVENTS} events`);
@@ -81,7 +97,12 @@ export function decodeRumBatch(
 
   // Parsed once for the whole batch: every event in it came from the same
   // browser, and a user-agent string is not cheap to pick apart.
-  const agent = parseUserAgent(context.userAgent);
+  //
+  // A mobile SDK states its device instead of being guessed at. It knows
+  // exactly what it is running on, where a user-agent string is a thirty-year
+  // pile of compatibility lies that a phone would have to fake to be read
+  // correctly — and faking it is how "iPhone" ends up filed under "Safari".
+  const agent = deviceOf(body.app) ?? parseUserAgent(context.userAgent);
   const out: RumEvent[] = [];
 
   for (const raw of body.events as Incoming[]) {
@@ -103,7 +124,7 @@ export function decodeRumBatch(
       route: clip(String(raw.route ?? ""), 200),
       vitalName: clip(String(raw.vital ?? ""), 16),
       vitalValue: finite(raw.value),
-      vitalRating: clip(String(raw.rating ?? ""), 16),
+      vitalRating: ratingOf(raw.rating),
       browser: agent.browser,
       os: agent.os,
       device: agent.device,
@@ -122,6 +143,43 @@ export function decodeRumBatch(
     });
   }
   return out;
+}
+
+/**
+ * The device, as the application itself reports it.
+ *
+ * Returned only when the batch actually carries one, so a browser batch — which
+ * never will — falls through to the user-agent exactly as before.
+ */
+function deviceOf(value: unknown): { browser: string; os: string; device: string } | null {
+  if (!value || typeof value !== "object") return null;
+  const a = value as Record<string, unknown>;
+  const platform = clip(String(a.platform ?? ""), 16);
+  if (platform !== "ios" && platform !== "android") return null;
+  return {
+    // Not a browser, and the column is not renamed for it: what fills this
+    // slot on a phone is the thing the code runs inside, which is the app.
+    browser: clip(String(a.app ?? (platform === "ios" ? "iOS app" : "Android app")), 60),
+    os: clip(String(a.os ?? ""), 60),
+    device: clip(String(a.device ?? ""), 60),
+  };
+}
+
+/** The three Google names, and nothing else. */
+const RATINGS = ["good", "needs-improvement", "poor"] as const;
+
+/**
+ * The rating, checked against the three rather than clipped to a length.
+ *
+ * It was clipped to sixteen characters, and `needs-improvement` is seventeen.
+ * Nothing failed: the row stored `needs-improvemen`, and the vitals table
+ * counts `vital_rating = 'needs-improvement'`, so the middle column of that
+ * table read zero for every workspace since the screen was written. A clip is
+ * the wrong tool for a value from a fixed set — the set is the bound.
+ */
+function ratingOf(value: unknown): string {
+  const text = String(value ?? "");
+  return (RATINGS as readonly string[]).includes(text) ? text : "";
 }
 
 /** At most sixteen short pairs: a browser is not a place to put a document. */

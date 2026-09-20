@@ -22,6 +22,8 @@ export default tseslint.config(
       // Linting somebody else's minified bundle reports six hundred problems
       // about code nobody here wrote and nobody here can fix.
       "apps/web/public/rum/oi-rum-replay.js",
+      // Gradle's own HTML test reports ship a bundled script.
+      "sdk/android/**/build/**",
     ],
   },
   js.configs.recommended,

@@ -9,8 +9,8 @@ import { telemetryInstalled } from "@/lib/telemetry";
 import {
   createRumApplication,
   deleteRumApplication,
-  setRumReplay,
   saveObservabilitySettings,
+  saveRumApplication,
 } from "./actions";
 
 const CARD: React.CSSProperties = {
@@ -373,6 +373,20 @@ export default async function ObservabilitySettingsPage({
               {a.sampleRate < 1 ? ` · ${Math.round(a.sampleRate * 100)} %` : ""}
             </span>
             <span style={{ flex: 1 }} />
+            {a.mobileEnabled && (
+              <span
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  padding: "1px 7px",
+                  borderRadius: 999,
+                  background: "var(--open-t)",
+                  color: "var(--open)",
+                }}
+              >
+                {t("settings.rum.mobileOn")}
+              </span>
+            )}
             {a.replayEnabled && (
               <span
                 style={{
@@ -409,7 +423,7 @@ export default async function ObservabilitySettingsPage({
             )}
             {manages && (
               <form
-                action={setRumReplay}
+                action={saveRumApplication}
                 data-testid={`rum-replay-${a.id}`}
                 style={{
                   flexBasis: "100%",
@@ -429,6 +443,15 @@ export default async function ObservabilitySettingsPage({
                     data-testid="replay-enabled"
                   />
                   {t("settings.rum.replay")}
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
+                  <input
+                    type="checkbox"
+                    name="mobileEnabled"
+                    defaultChecked={a.mobileEnabled}
+                    data-testid="mobile-enabled"
+                  />
+                  {t("settings.rum.mobile")}
                 </label>
                 <input
                   name="replaySampleRate"

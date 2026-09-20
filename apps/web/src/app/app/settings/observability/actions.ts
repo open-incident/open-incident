@@ -173,13 +173,14 @@ export async function createRumApplication(form: FormData): Promise<void> {
     replayEnabled: false,
     replaySampleRate: 0.1,
     replayUnmask: [],
+    mobileEnabled: false,
   });
   revalidatePath(PAGE);
   redirect(`${PAGE}?created=${id}`);
 }
 
 /**
- * Turning replay on, and saying what it may show.
+ * The two switches an application grows after it exists: replay, and mobile.
  *
  * Its own action rather than a field on the create form, because it is its own
  * decision and it is usually taken later: an application is added to get page
@@ -194,15 +195,17 @@ export async function createRumApplication(form: FormData): Promise<void> {
 const replaySchema = z.object({
   id: z.string().uuid(),
   replayEnabled: z.enum(["on", "off"]).default("off"),
+  mobileEnabled: z.enum(["on", "off"]).default("off"),
   replaySampleRate: z.coerce.number().min(0.01).max(1).default(0.1),
   replayUnmask: z.string().max(2_000).optional(),
 });
 
-export async function setRumReplay(form: FormData): Promise<void> {
+export async function saveRumApplication(form: FormData): Promise<void> {
   const current = await requireManager();
   const parsed = replaySchema.safeParse({
     id: form.get("id"),
     replayEnabled: form.get("replayEnabled") === "on" ? "on" : "off",
+    mobileEnabled: form.get("mobileEnabled") === "on" ? "on" : "off",
     replaySampleRate: form.get("replaySampleRate") ?? 0.1,
     replayUnmask: form.get("replayUnmask") ?? "",
   });
@@ -222,6 +225,7 @@ export async function setRumReplay(form: FormData): Promise<void> {
   }
   const values = {
     replayEnabled: v.replayEnabled === "on",
+    mobileEnabled: v.mobileEnabled === "on",
     replaySampleRate: v.replaySampleRate,
     replayUnmask: unmask.slice(0, 50),
     updatedAt: new Date(),
@@ -239,9 +243,10 @@ export async function setRumReplay(form: FormData): Promise<void> {
         sampleRate: rumApplications.sampleRate,
       });
     if (row)
-      await recordAudit(tx, current, "config", "rum.replay.changed", {
+      await recordAudit(tx, current, "config", "rum.application.changed", {
         name: row.name,
-        enabled: values.replayEnabled,
+        replay: values.replayEnabled,
+        mobile: values.mobileEnabled,
         sampleRate: values.replaySampleRate,
         unmask: values.replayUnmask.length,
       });
@@ -257,6 +262,7 @@ export async function setRumReplay(form: FormData): Promise<void> {
     replayEnabled: values.replayEnabled,
     replaySampleRate: values.replaySampleRate,
     replayUnmask: values.replayUnmask,
+    mobileEnabled: values.mobileEnabled,
   });
   revalidatePath(PAGE);
   redirect(`${PAGE}?saved=1`);

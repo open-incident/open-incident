@@ -768,6 +768,9 @@ export const de: Dictionary = {
   "rum.nPeople": { one: "{count} Person", other: "{count} Personen" },
   "rum.event.page_view": "Seite",
   "rum.event.web_vital": "Vital",
+  "rum.event.mobile_vital": "Vital",
+  "rum.vital.app_start": "App-Start",
+  "rum.vital.screen_load": "Bildschirmaufbau",
   "rum.event.error": "Fehler",
   "rum.event.resource": "Ressource",
   "rum.event.action": "Aktion",
@@ -777,6 +780,10 @@ export const de: Dictionary = {
     "Eine Anwendung ist eine Website, deren Browser berichten. Ihre Kennung reist in der Seite mit, ist also von Natur aus öffentlich und kein Geheimnis — was fremde Websites aus Ihrer Tabelle hält, ist die Liste der Ursprünge, die Sie hier nennen.",
   "settings.rum.none": "Noch keine Anwendung.",
   "settings.rum.replay": "Sitzungen aufzeichnen",
+  "settings.rum.mobile": "Mobile Apps akzeptieren",
+  "settings.rum.mobileOn": "mobil",
+  "settings.rum.mobileHint":
+    "Ein Browser sendet eine Origin, die er nicht fälschen kann, und dieser Header steht hier für ein Zugangsmerkmal. Eine App sendet keine: sie zu akzeptieren heißt zu akzeptieren, dass die Anwendungs-ID ein öffentliches Schreib-Token ist — wer das Binary auseinandernimmt, kann Ereignisse senden. Alle mobilen RUM-SDKs arbeiten so; dieses fragt vorher.",
   "settings.rum.replayOn": "Replay {pct} %",
   "settings.rum.replayRate":
     "Anteil der gesampelten Sitzungen, die auch aufgezeichnet werden, 0,01 bis 1",

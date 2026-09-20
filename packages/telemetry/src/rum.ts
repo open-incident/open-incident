@@ -54,7 +54,7 @@ export async function rumVitals(tenantId: string, w: RumWindow = {}): Promise<Vi
             toString(countIf(e.vital_rating = 'poor')) AS poor,
             toString(count()) AS samples
        FROM ${RUM_EVENTS} AS e
-      WHERE ${clause} AND e.event_type = 'web_vital' AND e.vital_name != ''
+      WHERE ${clause} AND e.event_type IN ('web_vital', 'mobile_vital') AND e.vital_name != ''
       GROUP BY vital_name`,
     { params },
   );
