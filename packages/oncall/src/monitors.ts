@@ -127,12 +127,55 @@ async function checkHttp(
   }
 }
 
+/**
+ * The host and port a target names, whatever the person pasted.
+ *
+ * Written once because two checks needed it and each got it wrong in its own
+ * way. People paste what their browser shows them, and a browser shows
+ * `https://example.com/` — with the trailing slash. The certificate check used
+ * to strip the scheme and nothing else, so that became the host
+ * `example.com/`, and DNS answered `ENOTFOUND example.com/`: a monitor that
+ * looked configured and could never succeed. The port check strips no scheme
+ * at all, so the same string gave it the host `https`.
+ *
+ * Everything goes through `URL` now. It knows about paths, query strings,
+ * credentials, trailing dots and IPv6 literals, and `hostname` returns an IPv6
+ * address without its brackets — which is what `tls.connect` and `net.connect`
+ * want.
+ */
+export function hostAndPort(
+  target: string,
+  defaultPort: number,
+): { host: string; port: number } | null {
+  const text = target.trim();
+  if (!text) return null;
+  // A synthetic scheme when there is none, so `example.com:8443` and
+  // `[::1]:8443` parse by the same rules as a full URL.
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text);
+  try {
+    const url = new URL(hasScheme ? text : `tcp://${text}`);
+    // `hostname` keeps the brackets on an IPv6 literal — `[2001:db8::1]` — and
+    // both `tls.connect` and `net.connect` want it without them.
+    const host = url.hostname.replace(/^\[|\]$/g, "");
+    if (!host) return null;
+    // An explicit port wins; then the one the scheme implies, so `http://x`
+    // means 80 rather than silently becoming whatever the caller defaults to;
+    // then the caller's default.
+    const implied = url.protocol === "https:" ? 443 : url.protocol === "http:" ? 80 : NaN;
+    const port = url.port ? Number(url.port) : Number.isFinite(implied) ? implied : defaultPort;
+    if (!Number.isFinite(port) || port < 1 || port > 65_535) return null;
+    return { host, port };
+  } catch {
+    return null;
+  }
+}
+
 async function checkPort(target: string, timeoutMs: number): Promise<CheckSample> {
-  const [host, portText] = target.split(":");
-  const port = Number(portText);
-  if (!host || !Number.isFinite(port)) {
+  const parsed = hostAndPort(target, NaN);
+  if (!parsed || !Number.isFinite(parsed.port)) {
     return { reachable: false, detail: "target must be host:port" };
   }
+  const { host, port } = parsed;
   const started = Date.now();
   return new Promise<CheckSample>((done) => {
     const socket = new Socket();
@@ -180,8 +223,20 @@ async function checkDns(target: string, config: Record<string, unknown>): Promis
 }
 
 async function checkSsl(target: string, timeoutMs: number): Promise<CheckSample> {
-  const [host, portText] = target.replace(/^https?:\/\//, "").split(":");
-  const port = Number(portText ?? 443) || 443;
+  const parsed = hostAndPort(target, 443);
+  if (!parsed) {
+    return { reachable: false, detail: `cannot read a host from "${target}"` };
+  }
+  // `http://` here is a typo, not a request to handshake on port 80. Saying so
+  // beats a TLS error about a plaintext server, which is what the honest
+  // attempt would produce and what nobody could act on.
+  if (/^http:\/\//i.test(target.trim())) {
+    return {
+      reachable: false,
+      detail: "this is an http:// address — a certificate lives behind https://",
+    };
+  }
+  const { host, port } = parsed;
   const started = Date.now();
   return new Promise<CheckSample>((done) => {
     const socket = tlsConnect({ host, port, servername: host, timeout: timeoutMs }, () => {
