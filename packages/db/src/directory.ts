@@ -183,6 +183,9 @@ export type RumCaller = {
   appId: string;
   allowedOrigins: string[];
   sampleRate: number;
+  replayEnabled: boolean;
+  replaySampleRate: number;
+  replayUnmask: string[];
 };
 
 /**
@@ -211,6 +214,9 @@ export async function resolveRumApp(appId: string): Promise<RumCaller | null> {
     appId: a.appId,
     allowedOrigins: a.allowedOrigins,
     sampleRate: a.sampleRate,
+    replayEnabled: a.replayEnabled,
+    replaySampleRate: a.replaySampleRate,
+    replayUnmask: a.replayUnmask,
   };
 }
 
@@ -225,6 +231,9 @@ export async function registerRumApp(
     tenantId: entry.tenantId,
     allowedOrigins: entry.allowedOrigins,
     sampleRate: entry.sampleRate,
+    replayEnabled: entry.replayEnabled,
+    replaySampleRate: entry.replaySampleRate,
+    replayUnmask: entry.replayUnmask,
     active: entry.active ?? true,
   });
 }

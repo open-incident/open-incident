@@ -15,3 +15,9 @@ packages/smoke/playwright-report/
 
 # Local TLS material (scripts/dev-certs.sh). Never committed.
 certs/
+
+# The session-replay recorder, bundled from a pinned rrweb by
+# apps/web/scripts/build-rum-replay.mjs on predev and prebuild. Generated, so
+# never committed: a 178 kB artifact in git is one that silently stops matching
+# the version claiming to have produced it.
+apps/web/public/rum/oi-rum-replay.js

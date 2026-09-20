@@ -330,6 +330,13 @@
       "when": 1789921284559,
       "tag": "0046_telemetry_soft_cap",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1789923189420,
+      "tag": "0047_rum_replay",
+      "breakpoints": true
     }
   ]
 }

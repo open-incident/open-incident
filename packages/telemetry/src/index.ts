@@ -141,6 +141,8 @@ export {
   VITALS as RUM_VITALS,
   rumApps,
   rumErrors,
+  rumReplay,
+  rumReplayed,
   rumRoutes,
   rumSegments,
   rumSession,

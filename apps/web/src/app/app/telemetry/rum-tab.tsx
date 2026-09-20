@@ -4,10 +4,12 @@ import {
   rumErrors,
   rumRoutes,
   rumSegments,
+  rumReplayed,
   rumSession,
   rumSessions,
   rumVitals,
 } from "@/lib/telemetry";
+import { ReplayPlayer } from "./replay-player";
 import type { MessageKey } from "@/i18n/dictionaries/en";
 
 const CARD: React.CSSProperties = {
@@ -336,7 +338,17 @@ async function Sessions({
 }) {
   const t = await getT();
   const rows = await rumSessions(tenantId, window);
-  const timeline = open ? await rumSession(tenantId, open) : [];
+  const [timeline, replayed] = await Promise.all([
+    open
+      ? rumSession(tenantId, open)
+      : Promise.resolve([] as Awaited<ReturnType<typeof rumSession>>),
+    // One query for the whole page of rows: the badge is worth a round trip,
+    // not fifty.
+    rumReplayed(
+      tenantId,
+      rows.map((r) => r.session_id),
+    ),
+  ]);
 
   return (
     <div
@@ -387,6 +399,15 @@ async function Sessions({
             </span>
             <span style={{ ...MONO, color: tone("LCP", s.lcp_p75) }}>
               {vitalText("LCP", s.lcp_p75)}
+              {replayed.has(s.session_id) && (
+                <span
+                  data-testid="replay-badge"
+                  title={t("rum.hasReplay")}
+                  style={{ color: "var(--viol)", marginLeft: 5 }}
+                >
+                  ●
+                </span>
+              )}
             </span>
           </Link>
         ))}
@@ -394,6 +415,22 @@ async function Sessions({
 
       {open && (
         <div style={{ ...CARD, overflow: "hidden" }} data-testid="rum-timeline">
+          {replayed.has(open) && (
+            <>
+              <Head>{t("rum.replay")}</Head>
+              <ReplayPlayer
+                sessionId={open}
+                labels={{
+                  play: t("rum.replayPlay"),
+                  loading: t("rum.replayLoading"),
+                  failed: t("rum.replayFailed"),
+                  empty: t("rum.replayEmpty"),
+                  events: t("rum.replayEvents", { count: "{count}" }),
+                  isolated: t("rum.replayIsolated"),
+                }}
+              />
+            </>
+          )}
           <Head>{t("rum.timeline")}</Head>
           {timeline.map((e, i) => (
             <div

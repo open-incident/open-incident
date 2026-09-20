@@ -127,6 +127,13 @@ export const rumAppLookup = directory.table("rum_app_lookup", {
   allowedOrigins: jsonb("allowed_origins").$type<string[]>().notNull().default([]),
   /** 0 to 1. Applied in the browser, so a sampled-out session costs no request. */
   sampleRate: doublePrecision("sample_rate").notNull().default(1),
+  /**
+   * Replay, mirrored here because the browser asks for its configuration
+   * before any tenant context exists — the application id is all it has.
+   */
+  replayEnabled: boolean("replay_enabled").notNull().default(false),
+  replaySampleRate: doublePrecision("replay_sample_rate").notNull().default(0.1),
+  replayUnmask: jsonb("replay_unmask").$type<string[]>().notNull().default([]),
   active: boolean("active").notNull().default(true),
 });
 

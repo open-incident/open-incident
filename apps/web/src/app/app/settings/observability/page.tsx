@@ -6,7 +6,12 @@ import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
 import { currentOrigin } from "@/lib/tenant";
 import { telemetryInstalled } from "@/lib/telemetry";
-import { createRumApplication, deleteRumApplication, saveObservabilitySettings } from "./actions";
+import {
+  createRumApplication,
+  deleteRumApplication,
+  setRumReplay,
+  saveObservabilitySettings,
+} from "./actions";
 
 const CARD: React.CSSProperties = {
   background: "var(--panel)",
@@ -368,6 +373,20 @@ export default async function ObservabilitySettingsPage({
               {a.sampleRate < 1 ? ` · ${Math.round(a.sampleRate * 100)} %` : ""}
             </span>
             <span style={{ flex: 1 }} />
+            {a.replayEnabled && (
+              <span
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  padding: "1px 7px",
+                  borderRadius: 999,
+                  background: "var(--viol-t)",
+                  color: "var(--viol)",
+                }}
+              >
+                {t("settings.rum.replayOn", { pct: Math.round(a.replaySampleRate * 100) })}
+              </span>
+            )}
             {manages && (
               <form action={deleteRumApplication}>
                 <input type="hidden" name="id" value={a.id} />
@@ -386,6 +405,63 @@ export default async function ObservabilitySettingsPage({
                 >
                   {t("common.delete")}
                 </button>
+              </form>
+            )}
+            {manages && (
+              <form
+                action={setRumReplay}
+                data-testid={`rum-replay-${a.id}`}
+                style={{
+                  flexBasis: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  paddingTop: 6,
+                }}
+              >
+                <input type="hidden" name="id" value={a.id} />
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
+                  <input
+                    type="checkbox"
+                    name="replayEnabled"
+                    defaultChecked={a.replayEnabled}
+                    data-testid="replay-enabled"
+                  />
+                  {t("settings.rum.replay")}
+                </label>
+                <input
+                  name="replaySampleRate"
+                  type="number"
+                  min={0.01}
+                  max={1}
+                  step={0.01}
+                  defaultValue={a.replaySampleRate}
+                  title={t("settings.rum.replayRate")}
+                  style={{ ...CONTROL, width: 78, fontFamily: "var(--mono)", fontSize: 11.5 }}
+                />
+                <input
+                  name="replayUnmask"
+                  defaultValue={a.replayUnmask.join(", ")}
+                  placeholder={t("settings.rum.replayUnmask")}
+                  title={t("settings.rum.replayUnmaskHint")}
+                  style={{ ...CONTROL, flex: 1, minWidth: 180, fontSize: 11.5 }}
+                />
+                <button
+                  type="submit"
+                  className="oi-hover-brand-2"
+                  style={{
+                    border: "1px solid var(--line)",
+                    background: "var(--panel)",
+                    borderRadius: 7,
+                    padding: "3px 10px",
+                    fontSize: 11.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("common.save")}
+                </button>
+                <span style={{ ...HINT, flexBasis: "100%" }}>{t("settings.rum.replayHint")}</span>
               </form>
             )}
           </div>

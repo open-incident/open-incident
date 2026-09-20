@@ -746,6 +746,15 @@ export const fr: Dictionary = {
   "rum.sessions": "Sessions",
   "rum.noSessions": "Aucune session sur cette fenêtre.",
   "rum.nViews": { one: "{count} vue", other: "{count} vues" },
+  "rum.replay": "REPLAY",
+  "rum.hasReplay": "Cette session a été enregistrée",
+  "rum.replayPlay": "Lire l’enregistrement",
+  "rum.replayLoading": "Chargement…",
+  "rum.replayFailed": "L’enregistrement n’a pas pu être chargé.",
+  "rum.replayEmpty": "Trop peu a été enregistré pour être rejoué.",
+  "rum.replayEvents": "{count} événements",
+  "rum.replayIsolated":
+    "Textes et champs sont masqués, sauf ceux que l’application a désignés comme sûrs à montrer.",
   "rum.timeline": "Ce qui s’est passé",
   "rum.openTrace": "la trace →",
   "rum.errors": "Erreurs JavaScript",
@@ -762,6 +771,14 @@ export const fr: Dictionary = {
   "settings.rum.intro":
     "Une application est un site dont les navigateurs rapportent. Son identifiant voyage dans la page : il est public par construction et n’est pas un secret — ce qui empêche le site de quelqu’un d’autre de remplir votre table, c’est la liste d’origines que vous nommez ici.",
   "settings.rum.none": "Aucune application pour l’instant.",
+  "settings.rum.replay": "Enregistrer les sessions",
+  "settings.rum.replayOn": "replay {pct} %",
+  "settings.rum.replayRate": "Part des sessions échantillonnées aussi enregistrées, 0,01 à 1",
+  "settings.rum.replayUnmask": "sélecteurs à montrer, ex. .oi-show, [data-public]",
+  "settings.rum.replayUnmaskHint":
+    "Sélecteurs CSS dont le texte et les champs apparaissent tels quels. Tout le reste est masqué.",
+  "settings.rum.replayHint":
+    "Un replay est une copie de ce qu’a vu un visiteur : tout est donc masqué tant que vous ne dites pas le contraire — chaque nœud de texte, chaque champ — et le canvas n’est jamais enregistré. Nommez les sélecteurs qu’il est sûr de montrer. L’enregistreur est un fichier séparé de 56 ko que seules les pages d’une application enregistrée téléchargent, et la décision d’enregistrer se prend une fois par session, pas par page : une demi-session se lit comme un visiteur parti.",
   "settings.rum.created": "Créée. Collez ceci dans les pages à mesurer :",
   "settings.rum.name": "Nom",
   "settings.rum.origins": "Origines autorisées",

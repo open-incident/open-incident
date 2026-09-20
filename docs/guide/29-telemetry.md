@@ -74,6 +74,56 @@ Two things running them taught us, both pinned into the files:
   later refuse; and the collector image runs unprivileged while the socket
   belongs to root, so it needs `--user 0` or the socket's group.
 
+## Session replay
+
+Sometimes the numbers do not settle the argument. A p75 LCP of 3.1 s says the
+page was slow; a recording says the spinner ran twice because the retry fired
+before the first response landed. Only one of those ends a meeting.
+
+Turn it on per application, under **Settings → Observability**. It is off until
+somebody turns it on, and a new application is created off, because a replay is
+a copy of what a visitor saw and that is a different promise from a page-load
+timing.
+
+**Everything is masked until you say otherwise.** Every text node, every input.
+Canvas is never recorded at all — on a real site that is photographs,
+signatures and scanned documents, and nobody switching on "session replay" is
+agreeing to those. You name CSS selectors whose contents are safe to show, and
+only those come through as themselves. That order is the one that is safe to
+get wrong: a field somebody forgot to mask is a leak, where a field somebody
+forgot to un-mask is a recording that is harder to read. The workspace's scrub
+rules are applied to the recording as well, before it is stored — and if a rule
+mangles the recording into something unparseable the chunk is refused rather
+than stored unscrubbed, because "store it raw instead" would put back the exact
+text the rule exists to remove.
+
+A few things worth knowing about how it behaves:
+
+- **The recorder is a separate file.** The base SDK is 6 kB over the wire and
+  loads on every page; the recorder is 56 kB and is fetched only by pages of an
+  application that has replay on. It is built from a pinned rrweb — the library
+  PostHog, Highlight and OpenReplay all record with — because a homegrown DOM
+  recorder gets shadow DOM, adopted stylesheets and web components subtly
+  wrong, and "the replay looks wrong" is worse than no replay.
+- **The decision is taken once per session, not per page.** Half a session
+  reads as a visitor who left.
+- **Recording has its own rate.** A replay costs a hundred times a vitals
+  beacon, so wanting every session's numbers is not wanting every session's
+  DOM. The default is one session in ten of those already sampled.
+- **It is sent in chunks, cut on bytes.** A session has no end a browser can
+  predict — the visitor closes the tab — so a recording written only at the end
+  is a recording usually never written. The cut is on size rather than on a
+  count of events because `sendBeacon`, which carries the last chunk after the
+  page is gone, silently refuses a body over about 64 kB.
+- **It expires with your RUM retention**, by the same mechanism as everything
+  else. The recordings live in the column store rather than in a bucket for
+  exactly that reason: a chunk in a bucket expires from the index and stays in
+  the bucket, which is the failure where somebody's recordings outlive the
+  retention their workspace was promised.
+
+On the **Sessions** list a recorded session carries a dot; opening it offers
+**Play the recording**, and nothing is downloaded until you press it.
+
 ## Keeping fewer traces without losing the ones you need
 
 Two different things thin a trace stream, they sit in different places, and

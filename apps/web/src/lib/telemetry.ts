@@ -242,6 +242,7 @@ export {
   profileKinds,
   rumErrors,
   rumRoutes,
+  rumReplayed,
   rumSegments,
   rumSession,
   rumSessions,

@@ -4,7 +4,9 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "scripts": {
+    "predev": "node scripts/build-rum-replay.mjs",
     "dev": "../../scripts/next-dev.sh --port ${PORT:-3100}",
+    "prebuild": "node scripts/build-rum-replay.mjs",
     "build": "next build",
     "start": "next start --port 3100",
     "typecheck": "tsc --noEmit",
@@ -37,6 +39,7 @@
     "next": "^15.5.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "rrweb": "2.1.6",
     "zod": "^4.0.0"
   },
   "devDependencies": {
@@ -44,6 +47,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "esbuild": "0.28.2",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.8.0"
   }

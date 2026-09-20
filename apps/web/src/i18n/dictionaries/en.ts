@@ -746,6 +746,15 @@ export const en = {
   "rum.sessions": "Sessions",
   "rum.noSessions": "No session in this window.",
   "rum.nViews": { one: "{count} view", other: "{count} views" },
+  "rum.replay": "REPLAY",
+  "rum.hasReplay": "This session was recorded",
+  "rum.replayPlay": "Play the recording",
+  "rum.replayLoading": "Loading…",
+  "rum.replayFailed": "The recording could not be loaded.",
+  "rum.replayEmpty": "Too little was recorded to play back.",
+  "rum.replayEvents": "{count} events",
+  "rum.replayIsolated":
+    "Text and inputs are masked unless the application named them as safe to show.",
   "rum.timeline": "What happened",
   "rum.openTrace": "the trace →",
   "rum.errors": "JavaScript errors",
@@ -762,6 +771,14 @@ export const en = {
   "settings.rum.intro":
     "An application is a site whose browsers report back. Its id travels in the page, so it is public by construction and is not a credential — what keeps somebody else's site out of your table is the list of origins you name here.",
   "settings.rum.none": "No application yet.",
+  "settings.rum.replay": "Record sessions",
+  "settings.rum.replayOn": "replay {pct} %",
+  "settings.rum.replayRate": "Share of sampled sessions also recorded, 0.01 to 1",
+  "settings.rum.replayUnmask": "selectors to show, e.g. .oi-show, [data-public]",
+  "settings.rum.replayUnmaskHint":
+    "CSS selectors whose text and inputs appear as they were. Everything else is masked.",
+  "settings.rum.replayHint":
+    "A replay is a copy of what a visitor saw, so everything is masked until you say otherwise: every text node, every input, and canvas is never recorded at all. Name the selectors that are safe to show. The recorder is a separate 56 kB file that only pages of a recorded application ever download, and the decision to record is taken once per session, not per page — half a session is read as a visitor who left.",
   "settings.rum.created": "Created. Paste this into the pages you want measured:",
   "settings.rum.name": "Name",
   "settings.rum.origins": "Allowed origins",

@@ -168,9 +168,98 @@ export async function createRumApplication(form: FormData): Promise<void> {
     tenantId: current.tenant.id,
     allowedOrigins: origins,
     sampleRate: v.sampleRate,
+    // A new application never records. Replay is turned on afterwards, on
+    // purpose, by somebody who read what it does.
+    replayEnabled: false,
+    replaySampleRate: 0.1,
+    replayUnmask: [],
   });
   revalidatePath(PAGE);
   redirect(`${PAGE}?created=${id}`);
+}
+
+/**
+ * Turning replay on, and saying what it may show.
+ *
+ * Its own action rather than a field on the create form, because it is its own
+ * decision and it is usually taken later: an application is added to get page
+ * timings, and somebody decides months afterwards that an argument about what
+ * a visitor saw needs settling.
+ *
+ * Everything is masked unless a selector here says otherwise. The form checks
+ * the selectors lightly — a typo is worth catching where it is made — but the
+ * browser checks them properly, because only a browser can, and it drops the
+ * ones it cannot use rather than throwing into somebody's page.
+ */
+const replaySchema = z.object({
+  id: z.string().uuid(),
+  replayEnabled: z.enum(["on", "off"]).default("off"),
+  replaySampleRate: z.coerce.number().min(0.01).max(1).default(0.1),
+  replayUnmask: z.string().max(2_000).optional(),
+});
+
+export async function setRumReplay(form: FormData): Promise<void> {
+  const current = await requireManager();
+  const parsed = replaySchema.safeParse({
+    id: form.get("id"),
+    replayEnabled: form.get("replayEnabled") === "on" ? "on" : "off",
+    replaySampleRate: form.get("replaySampleRate") ?? 0.1,
+    replayUnmask: form.get("replayUnmask") ?? "",
+  });
+  if (!parsed.success) redirect(`${PAGE}?error=invalid`);
+  const v = parsed.data;
+
+  const unmask: string[] = [];
+  for (const line of (v.replayUnmask ?? "").split(/[\n,]/)) {
+    const text = line.trim();
+    if (!text) continue;
+    // A brace means somebody pasted a CSS rule rather than a selector, which
+    // matches nothing and would silently un-mask nothing at all.
+    if (text.length > 200 || /[{}]/.test(text)) {
+      redirect(`${PAGE}?error=selector&rule=${encodeURIComponent(text.slice(0, 80))}`);
+    }
+    unmask.push(text);
+  }
+  const values = {
+    replayEnabled: v.replayEnabled === "on",
+    replaySampleRate: v.replaySampleRate,
+    replayUnmask: unmask.slice(0, 50),
+    updatedAt: new Date(),
+  };
+
+  const app = await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .update(rumApplications)
+      .set(values)
+      .where(and(eq(rumApplications.tenantId, current.tenant.id), eq(rumApplications.id, v.id)))
+      .returning({
+        id: rumApplications.id,
+        name: rumApplications.name,
+        allowedOrigins: rumApplications.allowedOrigins,
+        sampleRate: rumApplications.sampleRate,
+      });
+    if (row)
+      await recordAudit(tx, current, "config", "rum.replay.changed", {
+        name: row.name,
+        enabled: values.replayEnabled,
+        sampleRate: values.replaySampleRate,
+        unmask: values.replayUnmask.length,
+      });
+    return row;
+  });
+  if (!app) redirect(`${PAGE}?error=invalid`);
+
+  await registerRumApp({
+    appId: app.id,
+    tenantId: current.tenant.id,
+    allowedOrigins: app.allowedOrigins,
+    sampleRate: app.sampleRate,
+    replayEnabled: values.replayEnabled,
+    replaySampleRate: values.replaySampleRate,
+    replayUnmask: values.replayUnmask,
+  });
+  revalidatePath(PAGE);
+  redirect(`${PAGE}?saved=1`);
 }
 
 export async function deleteRumApplication(form: FormData): Promise<void> {

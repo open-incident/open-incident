@@ -18,6 +18,10 @@ export default tseslint.config(
       "**/playwright-report/**",
       "**/test-results/**",
       "**/next-env.d.ts",
+      // Generated from a pinned rrweb by apps/web/scripts/build-rum-replay.mjs.
+      // Linting somebody else's minified bundle reports six hundred problems
+      // about code nobody here wrote and nobody here can fix.
+      "apps/web/public/rum/oi-rum-replay.js",
     ],
   },
   js.configs.recommended,
@@ -46,6 +50,13 @@ export default tseslint.config(
         Blob: "readonly",
         PerformanceObserver: "readonly",
       },
+    },
+  },
+  {
+    /* Build scripts. Node, not a browser and not Next. */
+    files: ["apps/*/scripts/**/*.mjs", "scripts/**/*.mjs"],
+    languageOptions: {
+      globals: { console: "readonly", process: "readonly" },
     },
   },
   {

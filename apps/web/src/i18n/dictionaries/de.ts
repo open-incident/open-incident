@@ -751,6 +751,15 @@ export const de: Dictionary = {
   "rum.sessions": "Sitzungen",
   "rum.noSessions": "Keine Sitzung in diesem Zeitraum.",
   "rum.nViews": { one: "{count} Ansicht", other: "{count} Ansichten" },
+  "rum.replay": "REPLAY",
+  "rum.hasReplay": "Diese Sitzung wurde aufgezeichnet",
+  "rum.replayPlay": "Aufzeichnung abspielen",
+  "rum.replayLoading": "Wird geladen…",
+  "rum.replayFailed": "Die Aufzeichnung konnte nicht geladen werden.",
+  "rum.replayEmpty": "Zu wenig aufgezeichnet, um es abzuspielen.",
+  "rum.replayEvents": "{count} Ereignisse",
+  "rum.replayIsolated":
+    "Texte und Eingaben sind maskiert, außer denen, die die Anwendung als sicher benannt hat.",
   "rum.timeline": "Was geschah",
   "rum.openTrace": "der Trace →",
   "rum.errors": "JavaScript-Fehler",
@@ -767,6 +776,15 @@ export const de: Dictionary = {
   "settings.rum.intro":
     "Eine Anwendung ist eine Website, deren Browser berichten. Ihre Kennung reist in der Seite mit, ist also von Natur aus öffentlich und kein Geheimnis — was fremde Websites aus Ihrer Tabelle hält, ist die Liste der Ursprünge, die Sie hier nennen.",
   "settings.rum.none": "Noch keine Anwendung.",
+  "settings.rum.replay": "Sitzungen aufzeichnen",
+  "settings.rum.replayOn": "Replay {pct} %",
+  "settings.rum.replayRate":
+    "Anteil der gesampelten Sitzungen, die auch aufgezeichnet werden, 0,01 bis 1",
+  "settings.rum.replayUnmask": "Selektoren, die sichtbar bleiben, z. B. .oi-show, [data-public]",
+  "settings.rum.replayUnmaskHint":
+    "CSS-Selektoren, deren Text und Eingaben unverändert erscheinen. Alles andere wird maskiert.",
+  "settings.rum.replayHint":
+    "Eine Aufzeichnung ist eine Kopie dessen, was ein Besucher gesehen hat: deshalb ist alles maskiert, bis Sie etwas anderes sagen — jeder Textknoten, jedes Eingabefeld — und Canvas wird nie aufgezeichnet. Nennen Sie die Selektoren, die gefahrlos sichtbar sein dürfen. Der Rekorder ist eine eigene 56-kB-Datei, die nur Seiten einer aufgezeichneten Anwendung laden, und die Entscheidung fällt einmal pro Sitzung, nicht pro Seite: eine halbe Sitzung liest sich wie ein Besucher, der gegangen ist.",
   "settings.rum.created": "Angelegt. Fügen Sie dies in die zu messenden Seiten ein:",
   "settings.rum.name": "Name",
   "settings.rum.origins": "Zugelassene Ursprünge",

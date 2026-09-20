@@ -28,6 +28,8 @@ export const PROFILES = "otel_profiles_t(tenant = {tenant:UUID})";
 export const PROFILE_STACKS = "profile_stacks_t(tenant = {tenant:UUID})";
 export const RUM_EVENTS = "rum_events_t(tenant = {tenant:UUID})";
 export const RUM_SESSIONS = "rum_sessions_t(tenant = {tenant:UUID})";
+export const RUM_REPLAYS = "rum_replays_t(tenant = {tenant:UUID})";
+export const RUM_REPLAY_CHUNKS = "rum_replay_chunks_t(tenant = {tenant:UUID})";
 
 export const TENANT_VIEWS = [LOGS, SPANS, TRACES] as const;
 export type TenantView = (typeof TENANT_VIEWS)[number];

@@ -237,6 +237,214 @@
   });
   window.addEventListener("popstate", pageView);
 
+  /* ---------- session replay ---------- */
+
+  /*
+   * Recording is off unless the workspace turned it on, and the page is
+   * *asked* rather than told. A flag in the snippet would have been one less
+   * request, and would have made the switch in the product a lie: turning
+   * replay on would mean editing somebody's site.
+   *
+   * Nothing here is on the critical path. The configuration is fetched after
+   * the page has its own work under way, the recorder is a separate file only
+   * an application with replay on ever downloads, and every failure is a
+   * recording that does not happen rather than a page that does not work.
+   */
+  var replayParts = [];
+  var replayBytes = 0;
+  var replayOn = false;
+
+  function replayConfig() {
+    try {
+      fetch(endpoint + "/v1/rum/config?app=" + encodeURIComponent(app), { mode: "cors" })
+        .then(function (r) {
+          return r.ok ? r.json() : null;
+        })
+        .then(function (c) {
+          if (!c || !c.replay) return;
+          var rate = typeof c.replaySampleRate === "number" ? c.replaySampleRate : 1;
+          if (!replayDraw(rate)) return;
+          loadRecorder(c.unmask || []);
+        })
+        .catch(noop);
+    } catch (e) {
+      noop(e);
+    }
+  }
+
+  /**
+   * Drawn once per session and remembered, like the sampling above.
+   *
+   * Per page load it would record the first page of a session and not the
+   * third, and a recording that stops halfway through a visit is read as the
+   * visitor leaving. Without storage the session is one page anyway, so the
+   * fallback is consistent rather than merely tolerable.
+   */
+  function replayDraw(rate) {
+    try {
+      var held = sessionStorage.getItem("oi_rum_replay");
+      if (held === "1") return true;
+      if (held === "0") return false;
+      var on = Math.random() < rate;
+      sessionStorage.setItem("oi_rum_replay", on ? "1" : "0");
+      return on;
+    } catch {
+      return Math.random() < rate;
+    }
+  }
+
+  /** The chunk counter, shared across the pages of one session. */
+  function nextSeq() {
+    try {
+      var n = parseInt(sessionStorage.getItem("oi_rum_replay_seq") || "0", 10) || 0;
+      sessionStorage.setItem("oi_rum_replay_seq", String(n + 1));
+      return n;
+    } catch {
+      return 0;
+    }
+  }
+
+  function loadRecorder(unmask) {
+    // The sibling of whatever this file was served as. Deriving it beats
+    // another data attribute, and if this file has been renamed or inlined the
+    // derivation fails and nothing is recorded — which is the right way to be
+    // wrong: no guessed URL is fetched from somebody's page.
+    var src = (script.src || "").replace(/oi-rum\.js(\?.*)?$/, "oi-rum-replay.js");
+    if (!src || src === script.src) return;
+    var el = document.createElement("script");
+    el.src = src;
+    el.async = true;
+    el.onload = function () {
+      try {
+        beginRecording(unmask);
+      } catch (e) {
+        noop(e);
+      }
+    };
+    el.onerror = noop;
+    (document.head || document.documentElement).appendChild(el);
+  }
+
+  function beginRecording(unmask) {
+    var record = window.openIncidentRumRecord;
+    if (typeof record !== "function") return;
+    var show = usable(unmask);
+    replayOn = true;
+    // Its own timer, and a shorter one than the beacon's fifteen seconds: what
+    // is still buffered when the tab closes has to fit in a `sendBeacon`, and
+    // flushing often is what keeps it small. Started here rather than beside
+    // the other timer so a page without replay pays nothing for it.
+    setInterval(function () {
+      flushReplay();
+    }, 5000);
+    record({
+      emit: emitReplay,
+      // Masked by default, every text node and every input, and un-masked only
+      // where the workspace named a selector. That order is the one that is
+      // safe to get wrong: a field somebody forgot to mask is a leak, where a
+      // field somebody forgot to un-mask is a replay that is harder to read.
+      maskAllInputs: true,
+      maskTextSelector: "*",
+      maskTextFn: function (text, el) {
+        return visible(el, show) ? text : mask(text);
+      },
+      maskInputFn: function (text, el) {
+        return visible(el, show) ? text : mask(text);
+      },
+      // Canvas is off: it records what was drawn, which on a real site is
+      // photographs, signatures and documents, and nobody turning on "session
+      // replay" is agreeing to that.
+      recordCanvas: false,
+      // A fresh snapshot every two minutes, so losing one chunk costs the
+      // player two minutes rather than the rest of the session.
+      checkoutEveryNms: 120000,
+    });
+  }
+
+  /** Selectors the browser will actually accept. A typo costs its own rule. */
+  function usable(list) {
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      try {
+        document.createDocumentFragment().querySelector(list[i]);
+        out.push(list[i]);
+      } catch (e) {
+        noop(e);
+      }
+    }
+    return out;
+  }
+
+  /** `closest`, so un-masking a container un-masks the text inside it. */
+  function visible(el, show) {
+    if (!el || show.length === 0) return false;
+    for (var i = 0; i < show.length; i++) {
+      try {
+        if (el.closest(show[i])) return true;
+      } catch (e) {
+        noop(e);
+      }
+    }
+    return false;
+  }
+
+  function mask(text) {
+    return String(text).replace(/[^\s]/g, "*");
+  }
+
+  /**
+   * Each event is serialised once, here, and the strings are joined at flush.
+   *
+   * Not an optimisation for its own sake: the chunk has to be cut on **bytes**
+   * rather than on a count, because `sendBeacon` silently refuses a body over
+   * about 64 kB and the last chunk of a session is the one that travels that
+   * way. Counting events instead would make the cut depend on how busy the
+   * page was, which is exactly when the events are big.
+   */
+  function emitReplay(event) {
+    var text;
+    try {
+      text = JSON.stringify(event);
+    } catch (e) {
+      return noop(e);
+    }
+    replayParts.push(text);
+    replayBytes += text.length + 1;
+    if (replayBytes >= 48000) flushReplay();
+  }
+
+  function flushReplay(beacon) {
+    if (replayParts.length === 0) return;
+    var body = "[" + replayParts.join(",") + "]";
+    replayParts = [];
+    replayBytes = 0;
+    var u =
+      endpoint +
+      "/v1/rum/replay?app=" +
+      encodeURIComponent(app) +
+      "&session=" +
+      encodeURIComponent(session) +
+      "&seq=" +
+      nextSeq();
+    try {
+      // No `keepalive` on the periodic path: it carries the same 64 kB ceiling
+      // as `sendBeacon`, and the first chunk of a page — the one holding the
+      // full DOM snapshot — is routinely larger than that.
+      if (beacon && navigator.sendBeacon) {
+        navigator.sendBeacon(u, new Blob([body], { type: "application/json" }));
+        return;
+      }
+      fetch(u, {
+        method: "POST",
+        body: body,
+        mode: "cors",
+        headers: { "content-type": "application/json" },
+      }).catch(noop);
+    } catch (e) {
+      noop(e);
+    }
+  }
+
   /* ---------- flushing ---------- */
 
   // The vitals are only final when the page goes away: LCP keeps growing, CLS
@@ -248,6 +456,7 @@
     if (inp) vital("INP", inp);
     lcp = cls = inp = 0;
     flush(true);
+    if (replayOn) flushReplay(true);
   }
 
   document.addEventListener("visibilitychange", function () {
@@ -257,6 +466,8 @@
   setInterval(function () {
     flush();
   }, 15000);
+
+  replayConfig();
 
   /* ---------- what the page can call ---------- */
 

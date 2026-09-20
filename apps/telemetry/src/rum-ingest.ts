@@ -10,6 +10,7 @@ import { clickhouse } from "@openincident/telemetry";
 import type { Outcome } from "./ingest";
 import { retentionAt, scrub, scrubAttributes, type Settings } from "./shared";
 import type { RumEvent } from "./rum";
+import { scrubPayload, type ReplayChunk } from "./replay";
 
 export async function ingestRum(
   tenantId: string,
@@ -54,4 +55,43 @@ export async function ingestRum(
 
   out.accepted = events.length;
   return out;
+}
+
+/**
+ * One chunk of a session recording, written.
+ *
+ * Its own insert rather than a row in `rum_events`: a chunk is two orders of
+ * magnitude larger than an event, and putting it in the wide table would make
+ * every timeline query drag megabytes of DOM it does not read.
+ */
+export async function ingestReplay(
+  tenantId: string,
+  appId: string,
+  settings: Settings,
+  chunk: ReplayChunk,
+): Promise<void> {
+  const payload = scrubPayload(chunk.payload, (text) => scrub(text, settings.scrubRules));
+  await clickhouse().insert({
+    table: "rum_replay_chunks",
+    format: "JSONEachRow",
+    values: [
+      {
+        tenant_id: tenantId,
+        app_id: appId,
+        session_id: chunk.sessionId,
+        seq: chunk.seq,
+        first_ts: chTime(chunk.firstTs),
+        last_ts: chTime(chunk.lastTs),
+        events: chunk.events,
+        has_snapshot: chunk.hasSnapshot,
+        payload,
+        retention_at: retentionAt(settings.retentionRumDays),
+      },
+    ],
+  });
+}
+
+/** ClickHouse wants `YYYY-MM-DD hh:mm:ss.mmm`, not an ISO string with a `T`. */
+function chTime(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 23).replace("T", " ");
 }

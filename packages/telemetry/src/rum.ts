@@ -11,7 +11,7 @@
 import { read } from "./query";
 
 export { RUM_EVENTS, RUM_SESSIONS } from "./views";
-import { RUM_EVENTS, RUM_SESSIONS } from "./views";
+import { RUM_EVENTS, RUM_REPLAY_CHUNKS, RUM_REPLAYS, RUM_SESSIONS } from "./views";
 
 /** The five, in the order a page produces them. */
 export const VITALS = ["TTFB", "FCP", "LCP", "CLS", "INP"] as const;
@@ -256,4 +256,59 @@ export async function rumApps(
       GROUP BY app_id`,
     { params: { since: sinceHours } },
   );
+}
+
+/**
+ * Whether these sessions have a recording, asked for a page of them at once.
+ *
+ * A set rather than a flag per row, and one query rather than one per session:
+ * the list screen shows fifty sessions and asking fifty times would be fifty
+ * round trips to answer a question worth one badge.
+ */
+export async function rumReplayed(tenantId: string, sessionIds: string[]): Promise<Set<string>> {
+  if (sessionIds.length === 0) return new Set();
+  const rows = await read<{ session_id: string }>(
+    tenantId,
+    `SELECT r.session_id AS session_id
+       FROM ${RUM_REPLAYS} AS r
+      WHERE r.session_id IN {ids:Array(String)}`,
+    { params: { ids: sessionIds } },
+  );
+  return new Set(rows.map((r) => r.session_id));
+}
+
+/**
+ * The recording of one session, in order, as the events themselves.
+ *
+ * The payloads are concatenated here rather than in the player, because the
+ * chunk boundary is an artefact of how a browser had to send it and means
+ * nothing to a person watching. `seq` is the browser's own counter: ordering
+ * by arrival would put a chunk that was retried after one recorded later, and
+ * rrweb applied out of order does not look wrong, it throws.
+ */
+export async function rumReplay(
+  tenantId: string,
+  sessionId: string,
+): Promise<{ events: unknown[]; chunks: number; bytes: number }> {
+  const rows = await read<{ payload: string }>(
+    tenantId,
+    `SELECT c.payload AS payload
+       FROM ${RUM_REPLAY_CHUNKS} AS c
+      WHERE c.session_id = {session:String}
+      ORDER BY c.seq ASC`,
+    { params: { session: sessionId } },
+  );
+  const events: unknown[] = [];
+  let bytes = 0;
+  for (const row of rows) {
+    bytes += row.payload.length;
+    try {
+      const part: unknown = JSON.parse(row.payload);
+      if (Array.isArray(part)) events.push(...part);
+    } catch {
+      // A chunk that will not parse is skipped, not fatal. Losing one is a gap
+      // in the recording; refusing the session loses all of it.
+    }
+  }
+  return { events, chunks: rows.length, bytes };
 }

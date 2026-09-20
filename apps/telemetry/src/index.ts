@@ -35,7 +35,8 @@ import { decodePprof, PprofError } from "./pprof";
 import { decodeRumBatch, originAllowed, RumError } from "./rum";
 import { decodeFluent } from "./fluent";
 import { startSyslog, syslogConfig } from "./syslog-server";
-import { ingestRum } from "./rum-ingest";
+import { ingestReplay, ingestRum } from "./rum-ingest";
+import { decodeReplayChunk, ReplayError } from "./replay";
 import { ingestProfiles, parsePyroscopeName } from "./profiles-ingest";
 import { SnappyError } from "./snappy";
 
@@ -128,6 +129,23 @@ const PROFILE_PATHS = new Set(["/v1/profiles", "/ingest", "/ingest/v1/profiles"]
 const RUM_PATH = "/v1/rum";
 
 /*
+ * What the page is allowed to do, asked before it does it.
+ *
+ * Session replay is a workspace's decision, taken on a screen, and a decision
+ * taken on a screen has to reach the browser somehow. The alternative — a flag
+ * in the snippet — would mean turning replay on requires editing somebody's
+ * site, which makes the toggle in the product a lie.
+ *
+ * It answers with a short cache lifetime rather than none: a visitor loading
+ * six pages should ask once, and a workspace turning replay off should see it
+ * stop within a few minutes rather than at the end of every session.
+ */
+const RUM_CONFIG_PATH = "/v1/rum/config";
+
+/** Where a chunk of a recording lands. Addressed by session and sequence. */
+const RUM_REPLAY_PATH = "/v1/rum/replay";
+
+/*
  * Fluent Bit's HTTP output, which is one line of its configuration.
  *
  * Its native protocol is MessagePack over a socket; its HTTP output is a JSON
@@ -158,6 +176,12 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (req.method === "POST" && path === REMOTE_WRITE) return remoteWrite(req, res);
   if (req.method === "POST" && PROFILE_PATHS.has(path)) return profiles(req, res);
+  if (path === RUM_CONFIG_PATH && (req.method === "GET" || req.method === "OPTIONS")) {
+    return rumConfig(req, res);
+  }
+  if (path === RUM_REPLAY_PATH && (req.method === "POST" || req.method === "OPTIONS")) {
+    return rumReplay(req, res);
+  }
   if (path === RUM_PATH && (req.method === "POST" || req.method === "OPTIONS")) {
     return rum(req, res);
   }
@@ -420,6 +444,111 @@ function CORS(origin: string): Record<string, string> {
     // remembers the first would refuse the second.
     vary: "Origin",
   };
+}
+
+/**
+ * What this application is configured to do, answered to the page itself.
+ *
+ * Origin-checked exactly like the beacon endpoint: the application id is
+ * public, so it proves nothing, and the origin the browser is required to send
+ * and cannot forge is what stands in for a credential. A page that is not on
+ * the list is told 403 and learns nothing about whether the id exists.
+ */
+async function rumConfig(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const origin = String(req.headers.origin ?? "");
+  const appId = new URL(req.url ?? "/", "http://localhost").searchParams.get("app") ?? "";
+  const caller = appId && UUID.test(appId) ? await resolveRumApp(appId) : null;
+  const allowed = caller !== null && origin !== "" && originAllowed(origin, caller.allowedOrigins);
+
+  if (req.method === "OPTIONS") {
+    if (!allowed) return void res.writeHead(403).end();
+    return void res
+      .writeHead(204, {
+        ...CORS(origin),
+        "access-control-allow-methods": "GET, OPTIONS",
+        "access-control-allow-headers": "content-type",
+        "access-control-max-age": "86400",
+      })
+      .end();
+  }
+  if (!allowed) return send(res, 403, { error: { code: "origin_not_allowed" } });
+
+  send(
+    res,
+    200,
+    {
+      replay: caller!.replayEnabled,
+      replaySampleRate: caller!.replaySampleRate,
+      unmask: caller!.replayUnmask,
+    },
+    // Five minutes. Long enough that a visitor reading six pages asks once,
+    // short enough that switching replay off takes effect while somebody is
+    // still watching the screen they switched it off on.
+    { ...CORS(origin), "cache-control": "private, max-age=300" },
+  );
+}
+
+/**
+ * One chunk of a session recording.
+ *
+ * Refused unless the application has replay turned on, and refused again if
+ * the workspace has the RUM signal off — a recording is the heaviest thing a
+ * browser can send us, and neither switch may be bypassed by a page that kept
+ * an old copy of its configuration.
+ */
+async function rumReplay(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const origin = String(req.headers.origin ?? "");
+  const params = new URL(req.url ?? "/", "http://localhost").searchParams;
+  const appId = params.get("app") ?? "";
+  const caller = appId && UUID.test(appId) ? await resolveRumApp(appId) : null;
+  const allowed = caller !== null && origin !== "" && originAllowed(origin, caller.allowedOrigins);
+
+  if (req.method === "OPTIONS") {
+    if (!allowed) return void res.writeHead(403).end();
+    return void res
+      .writeHead(204, {
+        ...CORS(origin),
+        "access-control-allow-methods": "POST, OPTIONS",
+        "access-control-allow-headers": "content-type",
+        "access-control-max-age": "86400",
+      })
+      .end();
+  }
+
+  if (!allowed) return send(res, 403, { error: { code: "origin_not_allowed" } });
+  const cors = CORS(origin);
+  if (!caller!.replayEnabled) return send(res, 403, { error: { code: "replay_disabled" } }, cors);
+  if (!telemetryInstalled())
+    return send(res, 503, { error: { code: "module_not_installed" } }, cors);
+
+  let body: Buffer;
+  try {
+    body = await readBody(req);
+  } catch {
+    return send(res, 413, { error: { code: "payload_too_large" } }, cors);
+  }
+
+  const settings = await settingsFor(caller!.tenantId);
+  if (!settings.enabledSignals.includes("rum"))
+    return send(res, 403, { error: { code: "signal_disabled" } }, cors);
+
+  try {
+    const chunk = decodeReplayChunk(JSON.parse(body.toString("utf8")), {
+      sessionId: params.get("session") ?? "",
+      seq: Number(params.get("seq") ?? "-1"),
+    });
+    await ingestReplay(caller!.tenantId, caller!.appId, settings, chunk);
+  } catch (err) {
+    if (err instanceof ReplayError || err instanceof SyntaxError) {
+      return send(res, 400, { error: { code: "invalid_chunk", message: err.message } }, cors);
+    }
+    console.error("[telemetry] replay failed:", err);
+    return send(res, 503, { error: { code: "storage_unavailable" } }, cors);
+  }
+
+  // 204 like the beacon endpoint, and for the same reason: the SDK sends the
+  // last chunk with `sendBeacon`, which discards whatever comes back.
+  res.writeHead(204, cors).end();
 }
 
 async function rum(req: IncomingMessage, res: ServerResponse): Promise<void> {

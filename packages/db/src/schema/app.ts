@@ -3030,6 +3030,27 @@ export const rumApplications = app.table(
      * throw away.
      */
     sampleRate: doublePrecision("sample_rate").notNull().default(1),
+    /**
+     * Whether sessions are recorded for replay. Off, and it stays off until
+     * somebody turns it on knowing what it does: a replay is a copy of what a
+     * visitor saw, and that is a different promise from a page-load timing.
+     */
+    replayEnabled: boolean("replay_enabled").notNull().default(false),
+    /**
+     * What fraction of the sampled sessions are also recorded. Its own rate,
+     * not the one above: a replay costs a hundred times what a vitals beacon
+     * costs, and wanting every session's numbers is not wanting every
+     * session's DOM.
+     */
+    replaySampleRate: doublePrecision("replay_sample_rate").notNull().default(0.1),
+    /**
+     * Elements the recording is allowed to show. Everything is masked by
+     * default — every text node, every input, every image — and a selector
+     * here un-masks what the application says is safe. That is the only order
+     * that is safe to get wrong: forgetting to mask a field leaks it, where
+     * forgetting to un-mask one makes a replay less legible.
+     */
+    replayUnmask: jsonb("replay_unmask").$type<string[]>().notNull().default([]),
     active: boolean("active").notNull().default(true),
     /** The service its traces belong to, so a browser error reaches a backend. */
     serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
