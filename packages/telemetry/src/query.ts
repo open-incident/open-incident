@@ -41,7 +41,7 @@ export type TenantView = (typeof TENANT_VIEWS)[number];
  * explicitly rather than matched by prefix.
  */
 const RAW_TABLES =
-  /\b(otel_logs|otel_spans|otel_traces_index|otel_metrics_gauge|otel_metrics_sum|otel_metrics_histogram|metric_series|metric_1m|otel_exceptions|exception_groups_1h|otel_profiles|profile_stacks)(?!_t\s*\()\b/;
+  /\b(otel_logs|otel_spans|otel_traces_index|otel_metrics_gauge|otel_metrics_sum|otel_metrics_histogram|metric_series|metric_1m|otel_exceptions|exception_groups_1h|otel_profiles|profile_stacks|rum_events|rum_sessions_agg)(?!_t\s*\()\b/;
 
 export type ReadOptions = {
   /** Extra bound parameters. `tenant` is reserved and set by this function. */
@@ -52,7 +52,45 @@ export type ReadOptions = {
   timeoutSeconds?: number;
 };
 
+/*
+ * An output alias that repeats the name of a column, and is then used again.
+ *
+ * In ClickHouse the alias replaces the column for the rest of the query, so
+ * `toString(minute) AS minute` makes every later mention of `minute` a String
+ * — and a `WHERE minute >= {d:DateTime}` fails with "no supertype", or worse,
+ * an aggregate silently receives its own output. This has cost six queries
+ * here, each found by running it, and the error ClickHouse gives names neither
+ * the alias nor the column.
+ *
+ * The second half of the rule matters as much as the first. `toString(ts) AS
+ * ts` in a select that never mentions `ts` again is harmless and common, and a
+ * check that refused it would be a check people route around. Only a name that
+ * is *used* after being shadowed is a problem.
+ */
+function shadowingAlias(sql: string): { fn: string; column: string } | null {
+  const pattern = /\b(\w+)\s*\(\s*(?:\w+\.)?(\w+)[^()]*\)\s+AS\s+(\w+)\b/gi;
+  for (const m of sql.matchAll(pattern)) {
+    const [whole, fn, column, alias] = m;
+    if (!fn || !column || alias !== column) continue;
+    const after = sql.slice((m.index ?? 0) + whole.length);
+    // Qualified or bare, but as a whole word: `minute` must not match
+    // `minutes` or `metric_1m_t`.
+    if (new RegExp(`(?:^|[^\\w.])(?:\\w+\\.)?${column}\\b`).test(after)) {
+      return { fn, column };
+    }
+  }
+  return null;
+}
+
 export async function read<T>(tenantId: string, sql: string, opts: ReadOptions = {}): Promise<T[]> {
+  const shadow = shadowingAlias(sql);
+  if (shadow) {
+    throw new Error(
+      `"${shadow.fn}(${shadow.column}) AS ${shadow.column}" shadows the column it reads, and ` +
+        `${shadow.column} is used again later: in ClickHouse the alias replaces the column for the ` +
+        `rest of the query. Name the output something else.`,
+    );
+  }
   if (RAW_TABLES.test(sql)) {
     throw new Error(
       "telemetry query names a raw table; interpolate LOGS, SPANS or TRACES so the tenant cannot be forgotten",

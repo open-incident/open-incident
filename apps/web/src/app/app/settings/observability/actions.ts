@@ -3,7 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { telemetrySettings, withTenant } from "@openincident/db";
+import { and, eq } from "drizzle-orm";
+import {
+  forgetRumApp,
+  registerRumApp,
+  rumApplications,
+  telemetrySettings,
+  withTenant,
+} from "@openincident/db";
 import { recordAudit } from "@/lib/audit";
 import { requireManager } from "@/lib/session";
 
@@ -86,4 +93,96 @@ export async function saveObservabilitySettings(form: FormData): Promise<void> {
   });
   revalidatePath(PAGE);
   redirect(`${PAGE}?saved=1`);
+}
+
+/**
+ * Creating a RUM application.
+ *
+ * The origins are the whole of the security here, so they are required and
+ * validated: an application with none accepts nothing, and one with a typo
+ * accepts nothing either — which is the right way round, because the failure
+ * is visible on the first page load rather than being a table quietly filling
+ * with somebody else's traffic.
+ */
+const rumSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  origins: z.string().trim().min(1).max(2_000),
+  sampleRate: z.coerce.number().min(0.01).max(1).default(1),
+});
+
+export async function createRumApplication(form: FormData): Promise<void> {
+  const current = await requireManager();
+  const parsed = rumSchema.safeParse({
+    name: form.get("name"),
+    origins: form.get("origins"),
+    sampleRate: form.get("sampleRate") ?? 1,
+  });
+  if (!parsed.success) redirect(`${PAGE}?error=invalid`);
+  const v = parsed.data;
+
+  const origins: string[] = [];
+  for (const line of v.origins.split(/[\n,]/)) {
+    const text = line.trim().replace(/\/$/, "");
+    if (!text) continue;
+    let url: URL;
+    try {
+      url = new URL(text);
+    } catch {
+      redirect(`${PAGE}?error=origin&rule=${encodeURIComponent(text.slice(0, 80))}`);
+    }
+    // An origin is a scheme and a host and nothing else. A path here would
+    // never match what a browser sends, and the workspace would be left
+    // wondering why nothing arrives.
+    if (url!.pathname !== "/" || url!.search || url!.hash) {
+      redirect(`${PAGE}?error=origin&rule=${encodeURIComponent(text.slice(0, 80))}`);
+    }
+    origins.push(url!.origin);
+  }
+  if (origins.length === 0) redirect(`${PAGE}?error=origin&rule=`);
+
+  const id = await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .insert(rumApplications)
+      .values({
+        tenantId: current.tenant.id,
+        name: v.name,
+        allowedOrigins: origins,
+        sampleRate: v.sampleRate,
+        createdByMemberId: current.member.id,
+      })
+      .returning({ id: rumApplications.id });
+    await recordAudit(tx, current, "config", "rum.application.created", {
+      name: v.name,
+      origins: origins.length,
+    });
+    return row!.id;
+  });
+  // The lookup is written outside the tenant transaction, like every other
+  // pre-tenant projection: the row it points at exists by now.
+  await registerRumApp({
+    appId: id,
+    tenantId: current.tenant.id,
+    allowedOrigins: origins,
+    sampleRate: v.sampleRate,
+  });
+  revalidatePath(PAGE);
+  redirect(`${PAGE}?created=${id}`);
+}
+
+export async function deleteRumApplication(form: FormData): Promise<void> {
+  const current = await requireManager();
+  const id = z.string().uuid().parse(form.get("id"));
+  await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .delete(rumApplications)
+      .where(and(eq(rumApplications.tenantId, current.tenant.id), eq(rumApplications.id, id)))
+      .returning({ name: rumApplications.name });
+    if (row)
+      await recordAudit(tx, current, "config", "rum.application.deleted", { name: row.name });
+  });
+  // The lookup goes last: a page still holding the id stops being accepted the
+  // moment the row is gone, and an orphan lookup would keep accepting it.
+  await forgetRumApp(id);
+  revalidatePath(PAGE);
+  redirect(PAGE);
 }

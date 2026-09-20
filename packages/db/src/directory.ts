@@ -8,6 +8,7 @@ import {
   apiKeyLookup,
   dashboardShare,
   statusSnapshots,
+  rumAppLookup,
   telemetryKeyLookup,
   tenants,
   type Tenant,
@@ -175,6 +176,64 @@ export async function forgetTelemetryKey(
   on: Pick<typeof db, "delete"> = db,
 ): Promise<void> {
   await on.delete(telemetryKeyLookup).where(eq(telemetryKeyLookup.keyHash, keyHash));
+}
+
+export type RumCaller = {
+  tenantId: string;
+  appId: string;
+  allowedOrigins: string[];
+  sampleRate: number;
+};
+
+/**
+ * The workspace behind a RUM application id, before any tenant context exists.
+ *
+ * Unlike every other resolver here, the identifier is **public**: it is shipped
+ * in a page and anybody who loads the page can read it. So this returns the
+ * origin list rather than treating the id as proof of anything, and the caller
+ * decides — an event from an origin the workspace did not name is refused even
+ * though the id was right. An application with no origins accepts nothing,
+ * which is the safe reading of "somebody pasted this into a page before
+ * thinking about it".
+ */
+export async function resolveRumApp(appId: string): Promise<RumCaller | null> {
+  const [row] = await db
+    .select()
+    .from(rumAppLookup)
+    .innerJoin(tenants, eq(tenants.id, rumAppLookup.tenantId))
+    .where(eq(rumAppLookup.appId, appId));
+  if (!row) return null;
+  const a = row.rum_app_lookup;
+  if (!a.active) return null;
+  if (row.tenants.status === "suspended" || row.tenants.status === "deleting") return null;
+  return {
+    tenantId: a.tenantId,
+    appId: a.appId,
+    allowedOrigins: a.allowedOrigins,
+    sampleRate: a.sampleRate,
+  };
+}
+
+/** Mirrors a RUM application into the lookup. Called wherever the row is written. */
+export async function registerRumApp(
+  entry: RumCaller & { active?: boolean },
+  on: Pick<typeof db, "delete" | "insert"> = db,
+): Promise<void> {
+  await on.delete(rumAppLookup).where(eq(rumAppLookup.appId, entry.appId));
+  await on.insert(rumAppLookup).values({
+    appId: entry.appId,
+    tenantId: entry.tenantId,
+    allowedOrigins: entry.allowedOrigins,
+    sampleRate: entry.sampleRate,
+    active: entry.active ?? true,
+  });
+}
+
+export async function forgetRumApp(
+  appId: string,
+  on: Pick<typeof db, "delete"> = db,
+): Promise<void> {
+  await on.delete(rumAppLookup).where(eq(rumAppLookup.appId, appId));
 }
 
 /** The workspace behind a public dashboard link, before any session exists. */

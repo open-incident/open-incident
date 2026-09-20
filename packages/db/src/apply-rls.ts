@@ -56,6 +56,10 @@ try {
     -- before a tenant context exists, so its lookup row lives outside the
     -- policies and the product is allowed to maintain it.
     grant insert, update, delete on directory.telemetry_key_lookup to ${appRole};
+    -- And a fourth: a browser sends an application id that has to name a
+    -- workspace before one is known. Public by construction — anything in a
+    -- page is — so what guards it is the origin list, not secrecy.
+    grant insert, update, delete on directory.rum_app_lookup to ${appRole};
     grant insert, delete on directory.dashboard_share to ${appRole};
     grant select, insert, update, delete on directory.status_snapshots to ${appRole};
     grant select, insert, update, delete on all tables in schema auth, app to ${appRole};

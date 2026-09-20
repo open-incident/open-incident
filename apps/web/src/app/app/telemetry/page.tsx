@@ -19,6 +19,7 @@ import { MetricsTab } from "./metrics-tab";
 import { MapTab } from "./map-tab";
 import { SqlTab } from "./sql-tab";
 import { ProfilesTab } from "./profiles-tab";
+import { RumTab } from "./rum-tab";
 import { Waterfall } from "./waterfall";
 
 /**
@@ -37,6 +38,7 @@ const TABS = [
   "metrics",
   "exceptions",
   "profiles",
+  "rum",
   "map",
   "sql",
   "connect",
@@ -73,6 +75,16 @@ function profileWindowOf(raw: string | undefined): number {
   return [15, 60, 360, 1440].includes(n) ? n : 60;
 }
 
+/** The RUM view and window, from the lists the screen offers. */
+function rumViewOf(raw: string | undefined): "overview" | "sessions" | "errors" {
+  return raw === "sessions" || raw === "errors" ? raw : "overview";
+}
+
+function rumWindowOf(raw: string | undefined): number {
+  const n = Number(raw);
+  return [1, 24, 168].includes(n) ? n : 24;
+}
+
 function ms(ns: string): string {
   const n = Number(ns);
   if (!Number.isFinite(n) || n <= 0) return "—";
@@ -91,8 +103,10 @@ export default async function TelemetryPage({
     issued?: string;
     since?: string;
     q?: string;
+    session?: string;
     type?: string;
     compare?: string;
+    view?: string;
   }>;
 }) {
   const { member } = await requireMember();
@@ -213,6 +227,14 @@ export default async function TelemetryPage({
             type={sp.type}
             sinceMinutes={profileWindowOf(sp.since)}
             compare={sp.compare === "1"}
+          />
+        )}
+        {tab === "rum" && (
+          <RumTab
+            tenantId={tenant.id}
+            view={rumViewOf(sp.view)}
+            sinceHours={rumWindowOf(sp.since)}
+            session={sp.session}
           />
         )}
         {tab === "sql" && <SqlTab tenantId={tenant.id} query={sp.q} />}

@@ -23,6 +23,32 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    /*
+     * The browser SDK, which is a script served to other people's pages rather
+     * than anything this repository builds. It is still linted — it is the one
+     * file here that runs on somebody else's site — but against the globals it
+     * actually has, and as the plain ES5 it is deliberately written in so that
+     * no build step stands between the source and what a page loads.
+     */
+    files: ["apps/web/public/**/*.js"],
+    languageOptions: {
+      globals: {
+        window: "readonly",
+        document: "readonly",
+        navigator: "readonly",
+        location: "readonly",
+        history: "readonly",
+        sessionStorage: "readonly",
+        crypto: "readonly",
+        fetch: "readonly",
+        setTimeout: "readonly",
+        setInterval: "readonly",
+        Blob: "readonly",
+        PerformanceObserver: "readonly",
+      },
+    },
+  },
+  {
     rules: {
       // `_` prefixed parameters are the accepted way to name what a signature imposes.
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],

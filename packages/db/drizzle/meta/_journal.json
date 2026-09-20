@@ -309,6 +309,13 @@
       "when": 1789915646011,
       "tag": "0043_profiles_signal",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1789916636684,
+      "tag": "0044_rum_applications",
+      "breakpoints": true
     }
   ]
 }

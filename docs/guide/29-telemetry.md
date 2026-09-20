@@ -339,6 +339,74 @@ migrated dashboard that quietly changes its numbers is worse than a missing
 panel. Skipped panels are listed with their reason so the gap is visible the
 day of the migration, not a week later.
 
+## Real user monitoring
+
+What a browser sees, which is the one thing the rest of the telemetry cannot
+say. A p95 of 40 ms at the edge and a page that takes four seconds to become
+usable are both true at once, and only this knows the second.
+
+Create an application under **Settings → Observability**, then paste what it
+gives you:
+
+```html
+<script
+  src="https://<your instance>/rum/oi-rum.js"
+  data-app="<application id>"
+  data-endpoint="https://otlp.<your workspace host>"
+  defer
+></script>
+```
+
+The application id is **public by construction** — anything in a page is — so
+it is not a credential and is not treated as one. What keeps somebody else's
+site out of your table is the list of origins you name: the browser sends its
+`Origin`, it cannot forge it, and an application with no origins accepts
+nothing. An unknown id and a disallowed origin are refused with the same
+answer, so the ids cannot be enumerated.
+
+### What is never stored
+
+This is the one table in the product holding something about a person who never
+agreed to anything — a visitor to a customer's site, who has no account here
+and never will. Two things follow and neither is negotiable at read time,
+because by then the row exists:
+
+- **The address is never stored.** The country is taken from whatever the proxy
+  in front resolved; the address itself is not read. An IP is the field that
+  makes a row about a person rather than about a page.
+- **The user is hashed with the workspace's own salt** and the value thrown
+  away. Enough to say "one person hit this forty times", never enough to say
+  who — and the same visitor on two customers' sites is two different hashes,
+  so the tables cannot be joined against each other.
+
+### What the SDK does, and does not
+
+It never throws into the host page and never delays anything. Every observer
+and handler is wrapped; a failure costs its own measurement and nothing else.
+Events are buffered and flushed on a timer, on visibility change and on
+pagehide, with `sendBeacon` where it exists.
+
+Sampling is decided **once per session**, in the browser. Sampling events
+independently gives half a session, which is worse than none: a timeline with
+holes reads as a page that stopped rather than one that was not recorded. And a
+session that is not sampled costs the visitor nothing, where taking everything
+and dropping some here would make them pay for data we throw away.
+
+LCP, CLS and INP are reported only when the page goes away, because that is
+when they are final — LCP keeps growing, CLS keeps shifting and INP keeps
+getting worse until then. They therefore travel by beacon and by nothing else,
+which is why the endpoint answers `Access-Control-Allow-Credentials`:
+`sendBeacon` always sends in credentials mode `include`, with no way to ask it
+not to, and without that header the browser refuses the response before reading
+it. The symptom was a table with every event in it except the three that
+matter, and nothing in any log, because the request never left the browser.
+
+Every figure on the screen is a **p75**. An average page load is a number no
+visitor experienced — dragged down by cached repeat visits, hiding the
+first-time visitor on a phone who is the one deciding whether to come back. It
+is also what Google's thresholds are defined against, so a "good" here means
+what it means in every other tool.
+
 ## Profiles
 
 Send a pprof and a flamegraph appears. Every Go, Java, Python and Rust
@@ -515,8 +583,9 @@ satisfy nobody.
 
 ## What is not here yet
 
-Profiles and real user monitoring are later milestones. They are absent from
-the screens rather than present and empty.
+Session replay, queue-based sampling, syslog and Fluent reception, mobile RUM
+and log patterns are later milestones. They are absent from the screens rather
+than present and empty.
 
 The map feeds no `DEPENDS_ON` facts yet, because the context graph they belong
 to is not built. The edges are there and queryable the day it is.

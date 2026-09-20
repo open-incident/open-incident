@@ -133,3 +133,21 @@ export {
   type FunctionRow,
   type ProfileWindow,
 } from "./profiles";
+export {
+  RUM_EVENTS,
+  RUM_SESSIONS,
+  VITALS as RUM_VITALS,
+  rumApps,
+  rumErrors,
+  rumRoutes,
+  rumSegments,
+  rumSession,
+  rumSessions,
+  rumVitals,
+  type RouteRow,
+  type RumErrorRow,
+  type RumWindow,
+  type SegmentRow,
+  type SessionRow,
+  type VitalRow,
+} from "./rum";

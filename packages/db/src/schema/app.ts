@@ -2967,6 +2967,43 @@ export const memberNotifications = app.table(
 
 /** One row per workspace, created on first use. Absent means "the defaults". */
 /**
+ * A site or application whose browsers report back.
+ *
+ * Its id travels in a page, so it is public by construction and is not a
+ * credential. What keeps somebody else's site from filling this workspace's
+ * table is `allowedOrigins`: the browser sends its `Origin` and the ingestion
+ * refuses anything not on the list. A workspace that lists nothing accepts
+ * nothing, which is the safe default for a value somebody will paste into a
+ * page before they have thought about it.
+ */
+export const rumApplications = app.table(
+  "rum_applications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    name: text("name").notNull(),
+    /** Exact origins, scheme and host: `https://shop.example.com`. */
+    allowedOrigins: jsonb("allowed_origins").$type<string[]>().notNull().default([]),
+    /**
+     * What fraction of sessions report. Applied in the browser, so a session
+     * that is not sampled costs the visitor nothing — the alternative, taking
+     * every event and dropping some here, makes the visitor pay for data we
+     * throw away.
+     */
+    sampleRate: doublePrecision("sample_rate").notNull().default(1),
+    active: boolean("active").notNull().default(true),
+    /** The service its traces belong to, so a browser error reaches a backend. */
+    serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
+    createdByMemberId: uuid("created_by_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("rum_applications_tenant_name").on(t.tenantId, t.name)],
+);
+
+/**
  * A service level objective, and the budget it spends.
  *
  * An SLO is the one number that turns "is it slow?" into a decision. The

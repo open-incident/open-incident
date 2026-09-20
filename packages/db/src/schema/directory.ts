@@ -8,7 +8,16 @@
  * itself (name, language, branding live in `app.workspaces`). The application
  * role reads it and never writes it: provisioning does.
  */
-import { boolean, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  doublePrecision,
+  jsonb,
+  pgSchema,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 export const directory = pgSchema("directory");
 
@@ -90,6 +99,35 @@ export const telemetryKeyLookup = directory.table("telemetry_key_lookup", {
   pinnedServiceName: text("pinned_service_name"),
   revoked: boolean("revoked").notNull().default(false),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
+});
+
+/**
+ * A real user monitoring application, resolvable before a workspace is known.
+ *
+ * The fourth thing to need this treatment, after API keys, telemetry keys and
+ * shared dashboards, and for the same reason: `app.rum_applications` is under
+ * row-level security, so reading it to find out whose workspace a browser
+ * belongs to would return nothing — the very context we are trying to
+ * establish.
+ *
+ * What is different here is that the identifier is **public on purpose**. A
+ * browser cannot hold a secret; anything shipped in a page is readable by
+ * anyone who loads it. So the app id is not a credential, and the thing that
+ * stands in for one is the origin list: an event is accepted when it arrives
+ * from a page the workspace said it would. That is weaker than a key and it is
+ * the strongest thing available in a browser, which is worth saying plainly
+ * rather than dressing an id up as a token.
+ */
+export const rumAppLookup = directory.table("rum_app_lookup", {
+  appId: uuid("app_id").primaryKey(),
+  tenantId: uuid("tenant_id")
+    .notNull()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  /** Exact origins, `https://shop.example.com`. Empty accepts none. */
+  allowedOrigins: jsonb("allowed_origins").$type<string[]>().notNull().default([]),
+  /** 0 to 1. Applied in the browser, so a sampled-out session costs no request. */
+  sampleRate: doublePrecision("sample_rate").notNull().default(1),
+  active: boolean("active").notNull().default(true),
 });
 
 /**

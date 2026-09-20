@@ -14,6 +14,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { gunzipSync } from "node:zlib";
 import { eq, sql } from "drizzle-orm";
 import {
+  resolveRumApp,
   telemetryIngestionKeys,
   telemetryRejections,
   telemetryUsage,
@@ -35,6 +36,8 @@ import { decodeMetricsJson } from "./metrics";
 import { ingestMetrics } from "./metrics-ingest";
 import { decodeRemoteWrite, remoteWriteVersion, RemoteWriteError } from "./remote-write";
 import { decodePprof, PprofError } from "./pprof";
+import { decodeRumBatch, originAllowed, RumError } from "./rum";
+import { ingestRum } from "./rum-ingest";
 import { ingestProfiles, parsePyroscopeName } from "./profiles-ingest";
 import { SnappyError } from "./snappy";
 
@@ -50,11 +53,24 @@ function sendProto(res: ServerResponse, status: number, body: Buffer): void {
   res.end(body);
 }
 
-function send(res: ServerResponse, status: number, body: unknown): void {
+/**
+ * A JSON answer, with whatever extra headers the caller needs.
+ *
+ * The extras exist for the browser endpoint: a CORS header has to ride on the
+ * error responses too, or the page receives an opaque network failure instead
+ * of the sentence saying what was wrong.
+ */
+function send(
+  res: ServerResponse,
+  status: number,
+  body: unknown,
+  extra: Record<string, string> = {},
+): void {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
     "content-type": "application/json",
     "content-length": Buffer.byteLength(payload),
+    ...extra,
   });
   res.end(payload);
 }
@@ -116,7 +132,10 @@ async function record(caller: Caller, signal: Signal, outcome: Outcome, bytes: n
   }
 }
 
-type Signal = "logs" | "traces" | "metrics" | "profiles";
+type Signal = "logs" | "traces" | "metrics" | "profiles" | "rum";
+
+/** An application id is a UUID; anything else is refused before a query runs. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const ROUTES: Record<string, Signal> = {
   "/v1/logs": "logs",
@@ -146,6 +165,17 @@ const REMOTE_WRITE = "/api/v1/write";
  */
 const PROFILE_PATHS = new Set(["/v1/profiles", "/ingest", "/ingest/v1/profiles"]);
 
+/*
+ * Real user monitoring, from a browser.
+ *
+ * The only endpoint here that a page calls directly, which makes it the only
+ * one that needs CORS and the only one whose caller cannot hold a secret. Both
+ * follow from the same fact and neither is worked around: the application id
+ * is public, and what stands in for a credential is the origin the browser is
+ * required to send and cannot forge.
+ */
+const RUM_PATH = "/v1/rum";
+
 /** Each signal answers a protobuf sender in its own response message. */
 function protoResponse(signal: Signal, rejected: number, message: string): Buffer {
   if (signal === "logs") return encodeLogsResponse(rejected, message);
@@ -166,6 +196,9 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   if (req.method === "POST" && path === REMOTE_WRITE) return remoteWrite(req, res);
   if (req.method === "POST" && PROFILE_PATHS.has(path)) return profiles(req, res);
+  if (path === RUM_PATH && (req.method === "POST" || req.method === "OPTIONS")) {
+    return rum(req, res);
+  }
 
   const signal = ROUTES[path];
   if (!signal || req.method !== "POST") return send(res, 404, { error: { code: "not_found" } });
@@ -374,6 +407,118 @@ async function profiles(req: IncomingMessage, res: ServerResponse): Promise<void
   void record(caller, "profiles", outcome, body.byteLength);
 }
 
+/**
+ * One batch from a browser.
+ *
+ * A preflight is answered before anything else, because a browser will not
+ * send the real request until it is — and it is answered per-origin rather
+ * than with `*`, so the list of origins a workspace declared is enforced at
+ * the first opportunity rather than after the data has arrived.
+ */
+/**
+ * The headers a browser needs to accept our answer.
+ *
+ * `allow-credentials` is here for one reason and it is not a preference:
+ * `sendBeacon` always sends in credentials mode `include`, with no way to ask
+ * it not to, and a browser rejects any cross-origin response to such a request
+ * that does not say `true`. Without this line the beacon is refused before it
+ * is read — and the beacon is the only thing that carries LCP, CLS and INP,
+ * because those are only final once the page is going away. The symptom was a
+ * RUM table with every event in it except the three that matter, and nothing
+ * in any server log, because the request never left the browser.
+ *
+ * The origin is echoed rather than starred: `*` is not allowed with
+ * credentials, and echoing is exact here because the origin was already
+ * checked against the workspace's own list.
+ */
+function CORS(origin: string): Record<string, string> {
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-credentials": "true",
+    // Two origins can be allowed for one application, and a cache that
+    // remembers the first would refuse the second.
+    vary: "Origin",
+  };
+}
+
+async function rum(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const origin = String(req.headers.origin ?? "");
+  const appId = new URL(req.url ?? "/", "http://localhost").searchParams.get("app") ?? "";
+
+  const caller = appId && UUID.test(appId) ? await resolveRumApp(appId) : null;
+  const allowed = caller !== null && origin !== "" && originAllowed(origin, caller.allowedOrigins);
+
+  if (req.method === "OPTIONS") {
+    if (!allowed) {
+      res.writeHead(403).end();
+      return;
+    }
+    res
+      .writeHead(204, {
+        ...CORS(origin),
+        "access-control-allow-methods": "POST, OPTIONS",
+        "access-control-allow-headers": "content-type",
+        // A day, so a page that reports every few seconds preflights once.
+        "access-control-max-age": "86400",
+      })
+      .end();
+    return;
+  }
+
+  // The reasons are not distinguished to the caller. A page that can tell an
+  // unknown application id from a disallowed origin is a page that can
+  // enumerate which ids exist.
+  if (!allowed) return send(res, 403, { error: { code: "origin_not_allowed" } });
+  if (!telemetryInstalled()) return send(res, 503, { error: { code: "module_not_installed" } });
+
+  const cors = CORS(origin);
+
+  let body: Buffer;
+  try {
+    body = await readBody(req);
+  } catch {
+    return send(res, 413, { error: { code: "payload_too_large" } }, cors);
+  }
+
+  const settings = await settingsFor(caller!.tenantId);
+  if (!settings.enabledSignals.includes("rum"))
+    return send(res, 403, { error: { code: "signal_disabled" } }, cors);
+
+  let outcome: Outcome;
+  try {
+    const events = decodeRumBatch(JSON.parse(body.toString("utf8")), {
+      userAgent: String(req.headers["user-agent"] ?? ""),
+      // Whatever the proxy in front of this resolved. Nothing derives it from
+      // the address here, and the address is not read at all: it is the field
+      // that would make these rows about a person.
+      country: String(req.headers["cf-ipcountry"] ?? req.headers["x-country"] ?? "").slice(0, 2),
+      salt: caller!.tenantId,
+    });
+    outcome = await ingestRum(caller!.tenantId, caller!.appId, settings, events);
+  } catch (err) {
+    if (err instanceof RumError || err instanceof SyntaxError) {
+      return send(
+        res,
+        400,
+        { error: { code: "invalid_batch", message: String(err.message) } },
+        cors,
+      );
+    }
+    console.error("[telemetry] rum failed:", err);
+    return send(res, 503, { error: { code: "storage_unavailable" } }, cors);
+  }
+
+  // 204: the SDK uses sendBeacon where it can, which discards the response
+  // entirely, and a body nobody reads is bytes on every page in the world.
+  res.writeHead(204, cors).end();
+  void record(
+    { tenantId: caller!.tenantId, keyId: caller!.appId } as never,
+    "rum",
+    outcome,
+    body.byteLength,
+  );
+}
+
 createServer((req, res) => {
   handle(req, res).catch((err) => {
     console.error("[telemetry] unhandled:", err);
@@ -382,7 +527,7 @@ createServer((req, res) => {
 }).listen(PORT, () => {
   console.log(
     telemetryInstalled()
-      ? `Open Incident telemetry ingestion on :${PORT} — OTLP logs, traces, metrics and profiles, Prometheus remote write`
+      ? `Open Incident telemetry ingestion on :${PORT} — OTLP logs, traces, metrics and profiles, Prometheus remote write, browser RUM`
       : `Open Incident telemetry ingestion on :${PORT} — no storage configured, answering 503`,
   );
 });

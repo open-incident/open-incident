@@ -1,11 +1,12 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import Link from "next/link";
-import { telemetrySettings, withTenant } from "@openincident/db";
+import { rumApplications, telemetrySettings, withTenant } from "@openincident/db";
 import { isManagerRole } from "@openincident/config";
 import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
+import { currentOrigin } from "@/lib/tenant";
 import { telemetryInstalled } from "@/lib/telemetry";
-import { saveObservabilitySettings } from "./actions";
+import { createRumApplication, deleteRumApplication, saveObservabilitySettings } from "./actions";
 
 const CARD: React.CSSProperties = {
   background: "var(--panel)",
@@ -50,16 +51,27 @@ const HINT: React.CSSProperties = { fontSize: 11.5, color: "var(--ink-3)", lineH
 export default async function ObservabilitySettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; error?: string; rule?: string }>;
+  searchParams: Promise<{ saved?: string; error?: string; rule?: string; created?: string }>;
 }) {
   const { tenant, member } = await requireMember();
   const t = await getT();
   const q = await searchParams;
   const manages = isManagerRole(member);
+  // The instance's own address, so the snippet is one somebody can paste
+  // rather than one they have to finish.
+  const origin = await currentOrigin();
 
-  const [row] = await withTenant(tenant.id, (tx) =>
-    tx.select().from(telemetrySettings).where(eq(telemetrySettings.tenantId, tenant.id)),
-  );
+  const data = await withTenant(tenant.id, async (tx) => ({
+    settings: (
+      await tx.select().from(telemetrySettings).where(eq(telemetrySettings.tenantId, tenant.id))
+    )[0],
+    apps: await tx
+      .select()
+      .from(rumApplications)
+      .where(eq(rumApplications.tenantId, tenant.id))
+      .orderBy(asc(rumApplications.name)),
+  }));
+  const row = data.settings;
   const installed = telemetryInstalled();
 
   return (
@@ -131,7 +143,9 @@ export default async function ObservabilitySettingsPage({
         >
           {q.error === "regex"
             ? t("settings.telemetry.badRegex", { rule: q.rule ?? "" })
-            : t("settings.telemetry.invalid")}
+            : q.error === "origin"
+              ? t("settings.rum.badOrigin", { rule: q.rule ?? "" })
+              : t("settings.telemetry.invalid")}
         </div>
       )}
 
@@ -273,6 +287,161 @@ export default async function ObservabilitySettingsPage({
           </div>
         )}
       </form>
+
+      {/*
+        Outside the settings form on purpose: an application is a thing that is
+        created and deleted, not a value that is saved, and putting it inside
+        would make "Save" mean two different things.
+      */}
+      <div style={CARD} data-testid="rum-applications">
+        <span className="oi-eyebrow">{t("settings.rum.title")}</span>
+        <span style={HINT}>{t("settings.rum.intro")}</span>
+
+        {q.created && (
+          <div
+            style={{
+              border: "1px solid var(--ok)",
+              background: "var(--ok-t)",
+              borderRadius: 9,
+              padding: "10px 12px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
+              {t("settings.rum.created")}
+            </span>
+            <pre
+              style={{
+                fontFamily: "var(--mono)",
+                fontSize: 11.5,
+                margin: 0,
+                overflowX: "auto",
+                lineHeight: 1.5,
+              }}
+            >
+              {snippet(q.created, origin)}
+            </pre>
+          </div>
+        )}
+
+        {data.apps.length === 0 && !q.created && (
+          <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("settings.rum.none")}</span>
+        )}
+
+        {data.apps.map((a) => (
+          <div
+            key={a.id}
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 10,
+              padding: "8px 0",
+              borderTop: "1px solid var(--line-2)",
+              fontSize: 12.5,
+              flexWrap: "wrap",
+            }}
+          >
+            <span style={{ fontWeight: 600, minWidth: 140 }}>{a.name}</span>
+            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)" }}>
+              {a.id}
+            </span>
+            <span style={{ fontSize: 11.5, color: "var(--ink-2)" }}>
+              {a.allowedOrigins.join(", ")}
+              {a.sampleRate < 1 ? ` · ${Math.round(a.sampleRate * 100)} %` : ""}
+            </span>
+            <span style={{ flex: 1 }} />
+            {manages && (
+              <form action={deleteRumApplication}>
+                <input type="hidden" name="id" value={a.id} />
+                <button
+                  type="submit"
+                  className="oi-hover-dang"
+                  style={{
+                    border: "1px solid var(--line)",
+                    background: "var(--panel)",
+                    borderRadius: 7,
+                    padding: "3px 9px",
+                    fontSize: 11.5,
+                    color: "var(--dang)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {t("common.delete")}
+                </button>
+              </form>
+            )}
+          </div>
+        ))}
+
+        {manages && (
+          <form
+            action={createRumApplication}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr) 110px auto",
+              gap: 8,
+              alignItems: "end",
+              borderTop: "1px solid var(--line-2)",
+              paddingTop: 12,
+            }}
+          >
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={LABEL}>{t("settings.rum.name")}</span>
+              <input name="name" required className="oi-field" style={CONTROL} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={LABEL}>{t("settings.rum.origins")}</span>
+              <input
+                name="origins"
+                required
+                placeholder="https://shop.example.com, https://www.example.com"
+                className="oi-field"
+                style={{ ...CONTROL, fontFamily: "var(--mono)", fontSize: 12 }}
+              />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span style={LABEL}>{t("settings.rum.sample")}</span>
+              <select name="sampleRate" defaultValue="1" style={CONTROL}>
+                <option value="1">100 %</option>
+                <option value="0.5">50 %</option>
+                <option value="0.1">10 %</option>
+                <option value="0.01">1 %</option>
+              </select>
+            </label>
+            <button
+              type="submit"
+              data-testid="rum-create"
+              className="oi-hover-brand-2"
+              style={{
+                height: 34,
+                padding: "0 13px",
+                borderRadius: 9,
+                background: "var(--brand)",
+                color: "var(--on-brand)",
+                border: 0,
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {t("settings.rum.add")}
+            </button>
+          </form>
+        )}
+        <span style={HINT}>{t("settings.rum.originsHint")}</span>
+      </div>
     </div>
+  );
+}
+
+/** The two lines somebody pastes into a page, with the id already in them. */
+function snippet(appId: string, origin: string): string {
+  return (
+    `<script src="${origin}/rum/oi-rum.js"\n` +
+    `        data-app="${appId}"\n` +
+    `        data-endpoint="${process.env.TELEMETRY_PUBLIC_ORIGIN || "https://otlp.<your workspace host>"}"\n` +
+    `        defer></script>`
   );
 }
