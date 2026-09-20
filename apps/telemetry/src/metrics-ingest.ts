@@ -15,13 +15,8 @@
  */
 import { clickhouse } from "@openincident/telemetry";
 import type { Caller } from "./auth";
-import {
-  resolveServices,
-  retentionAt,
-  scrubAttributes,
-  type Outcome,
-  type Settings,
-} from "./ingest";
+import { resolveServices, type Outcome } from "./ingest";
+import { retentionAt, scrubAttributes, type Settings } from "./shared";
 import { hashAttributes, type MetricDecode, type MetricPoint } from "./metrics";
 
 const DEFAULT_CARDINALITY_BUDGET = 50_000;

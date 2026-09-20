@@ -41,7 +41,7 @@ export type TenantView = (typeof TENANT_VIEWS)[number];
  * explicitly rather than matched by prefix.
  */
 const RAW_TABLES =
-  /\b(otel_logs|otel_spans|otel_traces_index|otel_metrics_gauge|otel_metrics_sum|otel_metrics_histogram|metric_series|metric_1m)(?!_t\s*\()\b/;
+  /\b(otel_logs|otel_spans|otel_traces_index|otel_metrics_gauge|otel_metrics_sum|otel_metrics_histogram|metric_series|metric_1m|otel_exceptions|exception_groups_1h)(?!_t\s*\()\b/;
 
 export type ReadOptions = {
   /** Extra bound parameters. `tenant` is reserved and set by this function. */
@@ -335,4 +335,66 @@ export async function metricMetadata(
     out[r.n] = [{ type, unit: r.u, help: "" }];
   }
   return out;
+}
+
+export const EXCEPTIONS = "otel_exceptions_t(tenant = {tenant:UUID})";
+export const EXCEPTION_GROUPS = "exception_groups_t(tenant = {tenant:UUID})";
+
+export type ExceptionGroup = {
+  fingerprint: string;
+  type: string;
+  message: string;
+  occurrences: string;
+  first_seen: string;
+  last_seen: string;
+  releases: string[];
+  services: string[];
+};
+
+/** The groups list, worst first — most recent activity, then volume. */
+export async function exceptionGroups(tenantId: string, limit = 100): Promise<ExceptionGroup[]> {
+  return read<ExceptionGroup>(
+    tenantId,
+    `SELECT fingerprint, type, message, toString(occurrences) AS occurrences,
+            toString(first_seen) AS first_seen, toString(last_seen) AS last_seen,
+            releases, services
+       FROM ${EXCEPTION_GROUPS}
+      ORDER BY last_seen DESC, occurrences DESC
+      LIMIT {limit:UInt32}`,
+    { params: { limit } },
+  );
+}
+
+export type ExceptionFrame = {
+  function: string;
+  file: string;
+  line: number;
+  col: number;
+  in_app: boolean;
+};
+
+export type ExceptionOccurrence = {
+  ts: string;
+  service_name: string;
+  release: string;
+  trace_id: string;
+  stacktrace: string;
+  frames: ExceptionFrame[];
+};
+
+/** The most recent occurrence of a group, which is the one worth reading. */
+export async function exceptionDetail(
+  tenantId: string,
+  fingerprint: string,
+): Promise<ExceptionOccurrence | null> {
+  const rows = await read<ExceptionOccurrence>(
+    tenantId,
+    `SELECT toString(ts) AS ts, service_name, release, trace_id, stacktrace, frames
+       FROM ${EXCEPTIONS}
+      WHERE fingerprint = {fp:String}
+      ORDER BY ts DESC
+      LIMIT 1`,
+    { params: { fp: fingerprint } },
+  );
+  return rows[0] ?? null;
 }

@@ -99,6 +99,12 @@ export const en = {
   "dash.delete": "Delete",
   "dash.report": "Imported {translated} of {panels} panels",
   "dash.reportClean": "Everything translated.",
+  "telemetry.tab.exceptions": "Exceptions",
+  "telemetry.noExceptions":
+    "No exception has arrived yet. Stack traces in logs and spans are grouped here automatically.",
+  "telemetry.frames": "Stack, your code in bold",
+  "telemetry.noFrames": "No frame could be parsed from this stack.",
+  "telemetry.fullStack": "Full stack trace",
   "telemetry.tab.logs": "Logs",
   "telemetry.tab.traces": "Traces",
   "telemetry.tab.connect": "Connect",

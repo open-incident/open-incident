@@ -21,6 +21,8 @@ import {
   withTenant,
 } from "@openincident/db";
 import {
+  exceptionDetail as detailOf,
+  exceptionGroups as groupsOf,
   metricNames,
   metricSeries,
   recentLogs,
@@ -182,4 +184,17 @@ export async function metricChart(tenantId: string, metricName: string) {
       values: byHash.get(l.attributes_hash) ?? [],
     })),
   };
+}
+
+export type { ExceptionGroup, ExceptionOccurrence } from "@openincident/telemetry";
+
+/** The exception groups a workspace carries, newest activity first. */
+export async function exceptionGroups(tenantId: string) {
+  if (!telemetryInstalled()) return [];
+  return groupsOf(tenantId);
+}
+
+export async function exceptionDetail(tenantId: string, fingerprint: string) {
+  if (!telemetryInstalled()) return null;
+  return detailOf(tenantId, fingerprint);
 }

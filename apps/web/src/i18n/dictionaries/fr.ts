@@ -91,6 +91,12 @@ export const fr: Dictionary = {
   "dash.delete": "Supprimer",
   "dash.report": "{translated} panneaux importés sur {panels}",
   "dash.reportClean": "Tout a été traduit.",
+  "telemetry.tab.exceptions": "Exceptions",
+  "telemetry.noExceptions":
+    "Aucune exception n’est encore arrivée. Les traces de pile des logs et des spans sont regroupées ici automatiquement.",
+  "telemetry.frames": "Pile, votre code en gras",
+  "telemetry.noFrames": "Aucun cadre n’a pu être lu dans cette pile.",
+  "telemetry.fullStack": "Trace de pile complète",
   "telemetry.tab.logs": "Logs",
   "telemetry.tab.traces": "Traces",
   "telemetry.tab.connect": "Brancher",

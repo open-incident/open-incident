@@ -91,6 +91,12 @@ export const de: Dictionary = {
   "dash.delete": "Löschen",
   "dash.report": "{translated} von {panels} Panels importiert",
   "dash.reportClean": "Alles übersetzt.",
+  "telemetry.tab.exceptions": "Exceptions",
+  "telemetry.noExceptions":
+    "Noch keine Exception eingegangen. Stacktraces aus Logs und Spans werden hier automatisch gruppiert.",
+  "telemetry.frames": "Stack, Ihr Code fett",
+  "telemetry.noFrames": "Aus diesem Stack konnte kein Frame gelesen werden.",
+  "telemetry.fullStack": "Vollständiger Stacktrace",
   "telemetry.tab.logs": "Logs",
   "telemetry.tab.traces": "Traces",
   "telemetry.tab.connect": "Verbinden",
