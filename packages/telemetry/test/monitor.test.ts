@@ -55,9 +55,7 @@ describe("a filter becomes a bound WHERE clause", () => {
     expect(compileFilter("logs", "body contains 'timeout'").sql).toBe(
       "positionCaseInsensitive(body, {f0:String}) > 0",
     );
-    expect(compileFilter("exceptions", "type =~ '.*Timeout'").sql).toBe(
-      "match(type, {f0:String})",
-    );
+    expect(compileFilter("exceptions", "type =~ '.*Timeout'").sql).toBe("match(type, {f0:String})");
   });
 
   it("an empty filter is every row, not a syntax error", () => {
@@ -70,12 +68,10 @@ describe("a filter becomes a bound WHERE clause", () => {
 
   it("refuses an injection instead of quoting it", () => {
     // The apostrophe and everything after it is a value, not SQL: it is bound.
-    const { sql, params } = compileFilter("logs", "service_name = \"a' OR 1=1 --\"");
+    const { sql, params } = compileFilter("logs", 'service_name = "a\' OR 1=1 --"');
     expect(sql).toBe("service_name = {f0:String}");
     expect(params.f0).toBe("a' OR 1=1 --");
-    expect(() => compileFilter("logs", "1=1 OR service_name = 'x'")).toThrow(
-      TelemetryMonitorError,
-    );
+    expect(() => compileFilter("logs", "1=1 OR service_name = 'x'")).toThrow(TelemetryMonitorError);
   });
 
   it("refuses an ordering on text and a word where a number goes", () => {
