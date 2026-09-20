@@ -133,6 +133,7 @@ export function Waterfall({
                     fontFamily: "var(--mono)",
                     fontSize: 10.5,
                     color: "var(--ink-3)",
+                    whiteSpace: "nowrap",
                     // The last tick sits on the right edge: centring it would
                     // push half the label outside the panel.
                     transform:

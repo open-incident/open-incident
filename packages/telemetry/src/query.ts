@@ -177,6 +177,8 @@ export type TraceRow = {
   duration_ns: string;
   root_service: string;
   root_name: string;
+  /** The root span's HTTP status. 0 when the trace is not an HTTP request. */
+  root_status: number;
   span_count: string;
   error_count: string;
   services: string[];
@@ -210,7 +212,7 @@ export async function recentTraces(
   }
   return read<TraceRow>(
     tenantId,
-    `SELECT trace_id, start_ts, duration_ns, root_service, root_name,
+    `SELECT trace_id, start_ts, duration_ns, root_service, root_name, root_status,
             span_count, error_count, services, has_exception
        FROM ${TRACES}
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}

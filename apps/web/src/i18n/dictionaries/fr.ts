@@ -119,6 +119,7 @@ export const fr: Dictionary = {
     "Aucune trace n’est encore arrivée. Dès qu’un service est instrumenté, ses requêtes apparaissent ici.",
   "telemetry.openTrace": "trace →",
   "telemetry.spans": "spans",
+  "telemetry.nSpans": { one: "{count} span", other: "{count} spans" },
   "trace.span": "SPAN",
   "trace.depth": "profondeur",
   "trace.criticalPath": "Chemin critique",

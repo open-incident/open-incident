@@ -23,6 +23,7 @@ import { ProfilesTab } from "./profiles-tab";
 import { FilterError, QueryBar } from "./query-bar";
 import { RumTab } from "./rum-tab";
 import { Waterfall } from "./waterfall";
+import { SERVICE_COLOURS } from "./trace-model";
 
 /**
  * Telemetry — logs, traces, and the four lines that start them arriving.
@@ -304,6 +305,41 @@ async function Usage({ tenantId, label }: { tenantId: string; label: string }) {
           }}
         >
           {t("telemetry.sampled", { share })}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * The services a trace went through, as a strip of colour.
+ *
+ * Read before opening anything: "this one crossed four services and that one
+ * stayed in the front end" is the difference between the trace worth reading
+ * and the other eleven. Colour is assigned per row in the order the services
+ * come back, which is stable within a trace and deliberately not shared with
+ * the waterfall below — a strip of four squares is a shape, not a legend, and
+ * pretending it maps to the detail panel would be a promise it cannot keep
+ * across rows.
+ */
+function TraceServices({ services }: { services: string[] }) {
+  const shown = services.slice(0, 6);
+  return (
+    <span style={{ display: "flex", gap: 3, alignItems: "center" }} title={services.join(" · ")}>
+      {shown.map((name, i) => (
+        <span
+          key={name}
+          style={{
+            width: 9,
+            height: 9,
+            borderRadius: 2,
+            background: SERVICE_COLOURS[i % SERVICE_COLOURS.length],
+          }}
+        />
+      ))}
+      {services.length > shown.length && (
+        <span style={{ fontSize: 10, color: "var(--ink-3)" }}>
+          +{services.length - shown.length}
         </span>
       )}
     </span>
@@ -619,40 +655,89 @@ async function TracesTab({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {bar}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: open ? "minmax(0,1fr) minmax(0,1.2fr)" : "1fr",
-          gap: 14,
-        }}
-      >
-        <div style={{ ...CARD, overflow: "hidden", alignSelf: "start" }}>
+      {/*
+       * Stacked, not side by side.
+       *
+       * The list is what you scan and the trace is what you read, and they
+       * want different widths: a waterfall squeezed into half the page loses
+       * the only axis that matters. Putting the list across the top also keeps
+       * the trace you came from visible while you read the one you opened.
+       */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/*
+         * Capped once a trace is open, so opening one does not push it below a
+         * hundred rows of list. Left full height when nothing is open, because
+         * then the list *is* the screen.
+         */}
+        <div
+          style={{
+            ...CARD,
+            overflow: "hidden",
+            ...(open ? { maxHeight: 220, overflowY: "auto" as const } : {}),
+          }}
+        >
           {rows.map((r, i) => (
             <Link
               key={r.trace_id}
               href={`/app/telemetry?tab=traces&trace=${r.trace_id}`}
               style={{
                 display: "grid",
-                gridTemplateColumns: "minmax(0,1fr) 70px 58px",
-                gap: 10,
+                gridTemplateColumns: "76px 52px minmax(0,1fr) auto 76px 66px",
+                gap: 12,
                 alignItems: "center",
-                padding: "9px 14px",
+                padding: "8px 14px",
                 borderTop: i ? "1px solid var(--line-2)" : "none",
                 background: r.trace_id === open ? "var(--sunk)" : "transparent",
                 textDecoration: "none",
                 color: "inherit",
               }}
             >
-              <span style={{ minWidth: 0 }}>
-                <span style={{ display: "block", fontSize: 13, fontWeight: 600 }}>
-                  {r.root_name}
-                </span>
-                <span style={{ ...MONO, fontSize: 11, color: "var(--ink-3)" }}>
-                  {r.root_service}
-                  {r.services.length > 1 ? ` +${r.services.length - 1}` : ""} ·{" "}
-                  {r.start_ts.slice(0, 19)}
-                </span>
+              <span style={{ ...MONO, fontSize: 11.5, color: "var(--ink-3)" }}>
+                {r.start_ts.slice(11, 19)}
               </span>
+              {/*
+               * The status the caller got, which is the thing somebody scans a
+               * trace list for. Blank rather than zero when the trace is not an
+               * HTTP request, or predates the column: an invented 0 would read
+               * as a status.
+               */}
+              <span
+                style={{
+                  ...MONO,
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  textAlign: "center",
+                  padding: "1px 0",
+                  borderRadius: 6,
+                  background:
+                    r.root_status === 0
+                      ? "transparent"
+                      : r.root_status >= 400
+                        ? "var(--dang-t)"
+                        : "var(--ok-t)",
+                  color:
+                    r.root_status === 0
+                      ? "var(--ink-3)"
+                      : r.root_status >= 400
+                        ? "var(--dang)"
+                        : "var(--ok)",
+                }}
+              >
+                {r.root_status === 0 ? "—" : r.root_status}
+              </span>
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {r.root_name}
+              </span>
+              {/* Which services the request went through, before opening it. */}
+              <TraceServices services={r.services} />
               <span style={{ ...MONO, color: "var(--ink-2)", textAlign: "right" }}>
                 {ms(r.duration_ns)}
               </span>
@@ -664,7 +749,7 @@ async function TracesTab({
                   color: Number(r.error_count) > 0 ? "var(--dang)" : "var(--ink-3)",
                 }}
               >
-                {r.span_count} {t("telemetry.spans")}
+                {t("telemetry.nSpans", { count: Number(r.span_count) })}
               </span>
             </Link>
           ))}

@@ -127,6 +127,7 @@ export const en = {
     "No trace has arrived yet. Once a service is instrumented, its requests appear here.",
   "telemetry.openTrace": "trace →",
   "telemetry.spans": "spans",
+  "telemetry.nSpans": { one: "{count} span", other: "{count} spans" },
   "trace.span": "SPAN",
   "trace.depth": "depth",
   "trace.criticalPath": "Critical path",
