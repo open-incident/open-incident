@@ -556,6 +556,44 @@ export const de: Dictionary = {
     "Telemetrie — Logs, Traces und Ausnahmen des betroffenen Dienstes",
   "ai.investigation.check.telemetry": "Telemetrie",
   "ai.investigation.check.dependencies": "Abhängigkeiten",
+  "exceptions.status.open": "Offen",
+  "exceptions.status.resolved": "Behoben",
+  "exceptions.status.ignored": "Ignoriert",
+  "exceptions.status.snoozed": "Stummgeschaltet",
+  "exceptions.snoozedUntil": "bis {when}",
+  "exceptions.reopen": "Wieder öffnen",
+  "exceptions.resolve": "Beheben",
+  "exceptions.snooze": "Einen Tag stummschalten",
+  "exceptions.ignore": "Ignorieren",
+  "settings.telemetry.regressions":
+    "Melden, wenn ein Fehler neu ist, wiederkommt oder plötzlich viel häufiger auftritt",
+  "settings.telemetry.regressionsHint":
+    "Eine Meldung je Ausnahmegruppe, auf der Gruppe selbst — kein Monitor, den jemand hätte schreiben müssen. Eine ignorierte oder stummgeschaltete Gruppe meldet nichts.",
+  "settings.telemetry.regressionSeverity": "Schweregrad einer Regression",
+  "settings.nav.observability": "Observability",
+  "settings.telemetry.intro":
+    "Wie lange dieser Workspace behält, was seine Dienste senden, was vor dem Schreiben geschwärzt wird, und ob ein auftauchender Fehler von sich aus meldet.",
+  "settings.telemetry.notInstalled":
+    "Diese Instanz hat keinen Spaltenspeicher, es wird also noch nichts aufbewahrt. Diese Einstellungen gelten, sobald ClickHouse gestartet ist — der Telemetrie-Bildschirm nennt den Befehl.",
+  "settings.telemetry.saved": "Gespeichert.",
+  "settings.telemetry.invalid": "Ein Wert lag außerhalb des Bereichs, es wurde nichts gespeichert.",
+  "settings.telemetry.badRegex":
+    "„{rule}“ ist kein gültiger regulärer Ausdruck, es wurde nichts gespeichert. Eine Regel, die nicht kompiliert, wird bei der Aufnahme verworfen — Sie hätten geglaubt, etwas sei geschwärzt, obwohl es das nicht war.",
+  "settings.telemetry.retention": "WIE LANGE ES BLEIBT",
+  "settings.telemetry.logs": "Logs",
+  "settings.telemetry.traces": "Traces",
+  "settings.telemetry.metrics": "Metriken",
+  "settings.telemetry.retentionHint":
+    "In Tagen. Alles Ältere löscht der Spaltenspeicher selbst, es wird nicht archiviert — es gibt keinen Kaltspeicher zum Zurückholen. Metriken stehen länger, weil sie pro Zeile weniger kosten und über die Zeit mehr aussagen.",
+  "settings.telemetry.scrub": "WAS GESCHWÄRZT WIRD",
+  "settings.telemetry.scrubHint":
+    "Ein regulärer Ausdruck pro Zeile, bei der Aufnahme durch [redacted] ersetzt — vor jedem Schreiben, denn eine beim Lesen angewandte Regel hätte das Geheimnis bereits gespeichert. Sie kommen zu den Geheimnis-Erkennern hinzu, die nie optional sind.",
+  "settings.telemetry.budget": "KARDINALITÄTSBUDGET",
+  "settings.telemetry.series": "Verschiedene Reihen",
+  "settings.telemetry.budgetHint":
+    "Ein falsch beschrifteter Zähler — eine Benutzer-ID in einem Label — macht aus einer Reihe eine Million und bremst den Speicher für alle. Oberhalb dieser Grenze werden neue Reihen abgelehnt und gezählt, während bestehende weiterlaufen: funktionierende Dashboards funktionieren weiter, während der Fehler gesucht wird. Leer bedeutet der Instanzwert von 50 000.",
+  "settings.telemetry.regressionsTitle": "WANN EIN FEHLER EINE NACHRICHT IST",
+  "settings.telemetry.seeExceptions": "Ausnahmegruppen ansehen →",
   "monitors.on.packet_loss_pct": "Paketverlust (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

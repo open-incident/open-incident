@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getT } from "@/i18n/server";
-import { isManager, requireMember } from "@/lib/session";
+import { canRespond, isManager, requireMember } from "@/lib/session";
 import { requireTenant } from "@/lib/tenant";
 import { otlpEndpoints } from "@/lib/telemetry-module";
 import {
@@ -142,7 +142,9 @@ export default async function TelemetryPage({
         {tab === "logs" && <LogsTab tenantId={tenant.id} service={sp.service} />}
         {tab === "traces" && <TracesTab tenantId={tenant.id} open={sp.trace} />}
         {tab === "metrics" && <MetricsTab tenantId={tenant.id} open={sp.metric} />}
-        {tab === "exceptions" && <ExceptionsTab tenantId={tenant.id} open={sp.fp} />}
+        {tab === "exceptions" && (
+          <ExceptionsTab tenantId={tenant.id} open={sp.fp} mayEdit={canRespond(member)} />
+        )}
         {tab === "map" && <MapTab tenantId={tenant.id} sinceMinutes={windowOf(sp.since)} />}
         {tab === "connect" && (
           <ConnectTab tenantId={tenant.id} admin={admin} issued={sp.issued} http={endpoints.http} />

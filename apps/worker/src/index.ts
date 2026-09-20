@@ -23,6 +23,7 @@ import {
   sweepEscalations,
   sweepHeartbeats,
   sweepMonitors,
+  sweepExceptionRegressions,
   sweepServiceEdges,
   sweepTelemetryMonitors,
   sweepShiftReminders,
@@ -209,6 +210,14 @@ const processors: Record<QueueName, Processor> = {
     if (r.minutes || r.failed)
       console.log(`[service-map] ${r.minutes} minute(s), ${r.edges} edge(s), ${r.failed} failed`);
   },
+  "exception-regressions": async () => {
+    const tenants = (await listLiveTenants()).map((t) => t.id);
+    const r = await sweepExceptionRegressions(tenants);
+    if (r.raised || r.failed)
+      console.log(
+        `[exception-regressions] ${r.checked} group(s), ${r.raised} alert(s), ${r.failed} failed`,
+      );
+  },
   "tracker-sync": async () => {
     // Issue trackers: a closed issue marks its follow-up done. Per tenant, failures isolated.
     let completed = 0;
@@ -359,6 +368,7 @@ async function registerSchedulers() {
     ["monitor-sweep", 30_000],
     ["telemetry-monitors", 60_000],
     ["service-map", 60_000],
+    ["exception-regressions", 300_000],
     ["coverage-sweep", 6 * 3_600_000],
     ["runbook-sync", 6 * 3_600_000],
     ["housekeeping", DAY_MS],

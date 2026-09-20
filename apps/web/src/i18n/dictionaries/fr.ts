@@ -551,6 +551,44 @@ export const fr: Dictionary = {
   "settings.ai.source.telemetry": "Télémétrie — logs, traces et exceptions du service concerné",
   "ai.investigation.check.telemetry": "Télémétrie",
   "ai.investigation.check.dependencies": "Dépendances",
+  "exceptions.status.open": "Ouvert",
+  "exceptions.status.resolved": "Résolu",
+  "exceptions.status.ignored": "Ignoré",
+  "exceptions.status.snoozed": "En veille",
+  "exceptions.snoozedUntil": "jusqu’au {when}",
+  "exceptions.reopen": "Rouvrir",
+  "exceptions.resolve": "Résoudre",
+  "exceptions.snooze": "Mettre en veille un jour",
+  "exceptions.ignore": "Ignorer",
+  "settings.telemetry.regressions":
+    "Alerter quand un bug est nouveau, revient, ou se met à tomber bien plus souvent",
+  "settings.telemetry.regressionsHint":
+    "Une alerte par groupe d’exceptions, sur le groupe lui-même — pas un moniteur que quelqu’un aurait dû penser à écrire. Un groupe ignoré ou en veille ne déclenche rien.",
+  "settings.telemetry.regressionSeverity": "Sévérité d’une régression",
+  "settings.nav.observability": "Observabilité",
+  "settings.telemetry.intro":
+    "Combien de temps ce workspace garde ce que ses services envoient, ce qui est caviardé avant que quoi que ce soit ne soit écrit, et si un bug qui apparaît déclenche une alerte de lui-même.",
+  "settings.telemetry.notInstalled":
+    "Cette instance n’a pas de base colonne : rien n’est encore conservé. Ces réglages sont ce qu’elle fera une fois ClickHouse démarré — l’écran Télémétrie donne la commande.",
+  "settings.telemetry.saved": "Enregistré.",
+  "settings.telemetry.invalid": "Une des valeurs était hors bornes : rien n’a été enregistré.",
+  "settings.telemetry.badRegex":
+    "« {rule} » n’est pas une expression régulière valide : rien n’a été enregistré. Une règle qui ne compile pas est écartée à l’ingestion, ce qui vous aurait laissé croire que quelque chose était caviardé alors que non.",
+  "settings.telemetry.retention": "COMBIEN DE TEMPS C’EST GARDÉ",
+  "settings.telemetry.logs": "Logs",
+  "settings.telemetry.traces": "Traces",
+  "settings.telemetry.metrics": "Métriques",
+  "settings.telemetry.retentionHint":
+    "En jours. Tout ce qui est plus ancien est supprimé par la base elle-même, pas archivé — il n’y a pas de stockage froid à réhydrater. Les métriques ont un défaut plus long : elles coûtent moins par ligne et disent davantage dans la durée.",
+  "settings.telemetry.scrub": "CE QUI EST CAVIARDÉ",
+  "settings.telemetry.scrubHint":
+    "Une expression régulière par ligne, remplacée par [redacted] à l’ingestion — avant toute écriture, car une règle appliquée à la lecture aurait déjà stocké le secret. Elles s’ajoutent aux détecteurs de secrets, qui ne sont jamais optionnels.",
+  "settings.telemetry.budget": "BUDGET DE CARDINALITÉ",
+  "settings.telemetry.series": "Séries distinctes",
+  "settings.telemetry.budgetHint":
+    "Un compteur mal étiqueté — un identifiant d’utilisateur dans un label — transforme une série en un million et ralentit la base pour tout le monde. Au-delà de ce plafond, les nouvelles séries sont refusées et comptées tandis que les existantes continuent de passer : les dashboards qui marchaient continuent de marcher pendant qu’on cherche l’erreur. Vide : le défaut de l’instance, 50 000.",
+  "settings.telemetry.regressionsTitle": "QUAND UN BUG EST UNE NOUVELLE",
+  "settings.telemetry.seeExceptions": "Voir les groupes d’exceptions →",
   "monitors.on.packet_loss_pct": "perte de paquets (%)",
   "monitors.routeName": "Moniteur — {name}",
   "monitors.routeDesc":

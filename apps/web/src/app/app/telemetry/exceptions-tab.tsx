@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getT } from "@/i18n/server";
 import { exceptionDetail, exceptionGroups } from "@/lib/telemetry";
+import { ExceptionActions } from "./exception-actions";
 
 const CARD: React.CSSProperties = {
   background: "var(--panel)",
@@ -19,7 +20,15 @@ const MONO: React.CSSProperties = { fontFamily: "var(--mono)", fontSize: 12 };
  * occurrence, with the frames that are ours picked out — a stack where every
  * line looks equally important is a stack nobody reads.
  */
-export async function ExceptionsTab({ tenantId, open }: { tenantId: string; open?: string }) {
+export async function ExceptionsTab({
+  tenantId,
+  open,
+  mayEdit,
+}: {
+  tenantId: string;
+  open?: string;
+  mayEdit: boolean;
+}) {
   const t = await getT();
   const groups = await exceptionGroups(tenantId);
   if (groups.length === 0) {
@@ -166,6 +175,8 @@ export async function ExceptionsTab({ tenantId, open }: { tenantId: string; open
               {detail.stacktrace}
             </pre>
           </details>
+
+          <ExceptionActions tenantId={tenantId} fingerprint={open} mayEdit={mayEdit} />
         </div>
       )}
     </div>

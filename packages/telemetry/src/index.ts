@@ -87,9 +87,11 @@ export {
   type EdgeRow,
 } from "./service-map";
 export {
+  groupRates,
   neighbours,
   newExceptions,
   serviceWindow,
+  type GroupRate,
   type Neighbour,
   type NewException,
   type ServiceWindow,

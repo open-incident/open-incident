@@ -281,6 +281,13 @@
       "when": 1789900480402,
       "tag": "0039_telemetry_monitors",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789903137232,
+      "tag": "0040_exception_groups",
+      "breakpoints": true
     }
   ]
 }

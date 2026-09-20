@@ -2966,6 +2966,49 @@ export const memberNotifications = app.table(
  */
 
 /** One row per workspace, created on first use. Absent means "the defaults". */
+/**
+ * What a workspace has decided about one exception group.
+ *
+ * ClickHouse holds the occurrences and computes the groups; this holds the
+ * human part — resolved, ignored, snoozed — and the fact that we have already
+ * paged about it. Both are Postgres questions: they are edited by people, they
+ * are read inside transactions with everything else, and they must survive the
+ * retention window that eventually erases the occurrences themselves.
+ */
+export const exceptionGroups = app.table(
+  "exception_groups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    /** The fingerprint computed at ingestion; the join key to the column store. */
+    fingerprint: text("fingerprint").notNull(),
+    status: text("status").$type<ExceptionGroupStatus>().notNull().default("open"),
+    /** Set while snoozed; the sweep treats a past date as no longer snoozed. */
+    snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
+    /** So a group that comes back after being resolved can be recognised. */
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedByMemberId: uuid("resolved_by_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    /** What the sweep has already raised, so it does not raise it every minute. */
+    lastAlertedAt: timestamp("last_alerted_at", { withTimezone: true }),
+    lastAlertKind: text("last_alert_kind").$type<ExceptionRegression | null>(),
+    /** First time this workspace's sweep saw the group at all. */
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("exception_groups_once").on(t.tenantId, t.fingerprint),
+    index("exception_groups_status").on(t.tenantId, t.status),
+  ],
+);
+
+export type ExceptionGroupStatus = "open" | "resolved" | "ignored" | "snoozed";
+
+/** The three things that count as a regression (§15.8). */
+export type ExceptionRegression = "new" | "reopened" | "surge";
+
 export const telemetrySettings = app.table(
   "telemetry_settings",
   {
@@ -2997,6 +3040,21 @@ export const telemetrySettings = app.table(
     scrubRules: jsonb("scrub_rules").$type<string[]>().notNull().default([]),
     /** Cloud: past it, a notice and forced sampling — never a silent cut. */
     dailySoftCapGb: integer("daily_soft_cap_gb"),
+    /**
+     * Whether a bug appearing, coming back, or suddenly firing far more often
+     * raises an alert on its own (§15.8).
+     *
+     * On by default, because the alternative is that the one thing everybody
+     * says they want from an exception tracker — "tell me when something new
+     * breaks" — has to be discovered and switched on. A workspace drowning in
+     * a noisy dependency can turn it off.
+     */
+    exceptionRegressions: boolean("exception_regressions").notNull().default(true),
+    /** What a regression is worth. P3 by default: new, not necessarily urgent. */
+    exceptionRegressionSeverity: text("exception_regression_severity")
+      .$type<"P1" | "P2" | "P3" | "P4">()
+      .notNull()
+      .default("P3"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

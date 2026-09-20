@@ -228,3 +228,94 @@ function finite(n: number | undefined): number {
 function ch(d: Date): string {
   return d.toISOString().replace("T", " ").replace("Z", "");
 }
+
+export type GroupRate = {
+  fingerprint: string;
+  type: string;
+  message: string;
+  firstSeen: string;
+  lastSeen: string;
+  /** Occurrences in the hour that just closed. */
+  lastHour: number;
+  /** The usual hour for this group: the median over the past week. */
+  usualHour: number;
+  hoursOfHistory: number;
+};
+
+/**
+ * Every exception group's recent rate, against what is usual for it.
+ *
+ * The comparison is a **median of hourly counts over the past week**, not an
+ * average and not the previous hour. A median because a group's history
+ * contains its own past incidents, and one bad afternoon in an average is
+ * enough to hide the next one. Over a week rather than a day because most
+ * services are quiet at night, and an hour compared to the hour before it
+ * calls every morning a surge.
+ */
+export async function groupRates(tenantId: string, at: Date = new Date()): Promise<GroupRate[]> {
+  const hourEnd = new Date(Math.floor(at.getTime() / 3_600_000) * 3_600_000);
+  const hourStart = new Date(hourEnd.getTime() - 3_600_000);
+  const weekStart = new Date(hourStart.getTime() - 7 * DAY_MS);
+
+  const rows = await read<{
+    fingerprint: string;
+    type: string;
+    message: string;
+    first_seen: string;
+    last_seen: string;
+    last_hour: string;
+    usual_hour: number;
+    hours: string;
+  }>(
+    tenantId,
+    // The per-hour rows are merged once, then split by window with a condition:
+    // two passes over an AggregatingMergeTree cost twice what one does.
+    `SELECT fingerprint,
+            any(g_type) AS type,
+            any(g_message) AS message,
+            toString(min(g_first)) AS first_seen,
+            toString(max(g_last)) AS last_seen,
+            toUInt32(sumIf(n, recent)) AS last_hour,
+            quantileIf(0.5)(n, NOT recent) AS usual_hour,
+            toString(countIf(NOT recent)) AS hours
+       FROM (
+         SELECT g.fingerprint AS fingerprint,
+                any(g.type) AS g_type,
+                any(g.message) AS g_message,
+                min(g.first_seen) AS g_first,
+                max(g.last_seen) AS g_last,
+                g.hour AS hour,
+                countMerge(g.count) AS n,
+                (g.hour >= {hourStart:DateTime} AND g.hour < {hourEnd:DateTime}) AS recent
+           FROM exception_groups_1h_t(tenant = {tenant:UUID}) AS g
+          WHERE g.hour >= {weekStart:DateTime} AND g.hour < {hourEnd:DateTime}
+          GROUP BY fingerprint, hour, recent
+       )
+      GROUP BY fingerprint
+      ORDER BY last_hour DESC
+      LIMIT 500`,
+    {
+      params: {
+        hourStart: chHour(hourStart),
+        hourEnd: chHour(hourEnd),
+        weekStart: chHour(weekStart),
+      },
+      maxRows: 500,
+    },
+  );
+
+  return rows.map((r) => ({
+    fingerprint: r.fingerprint,
+    type: r.type,
+    message: r.message,
+    firstSeen: r.first_seen,
+    lastSeen: r.last_seen,
+    lastHour: Number(r.last_hour),
+    usualHour: Number.isFinite(r.usual_hour) ? Number(r.usual_hour) : 0,
+    hoursOfHistory: Number(r.hours),
+  }));
+}
+
+function chHour(d: Date): string {
+  return d.toISOString().replace("T", " ").slice(0, 19);
+}

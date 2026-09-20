@@ -91,6 +91,38 @@ of your own code — so the same failure at ten thousand occurrences is one line
 with a count and a first-seen, and two callers of the same library failure are
 two lines.
 
+## When a bug is news
+
+Three things about an exception group raise an alert on their own, without
+anybody having written a monitor for them (§15.8):
+
+- **new** — a fingerprint this workspace has never seen;
+- **reopened** — one somebody marked resolved, firing again;
+- **surge** — one that has been around, now firing at least five times its
+  usual hour.
+
+The "usual hour" is the **median** of that group's hourly counts over the past
+week. A median because a group's history contains its own past incidents, and
+one bad afternoon in an average is enough to hide the next one; a week rather
+than a day because most services are quiet at night, and an hour compared to
+the hour before it calls every Monday morning a surge.
+
+A multiple alone is not enough, so a floor applies: below ten occurrences in
+the hour, five times a usual of one is still five occurrences, which is not an
+incident. And the same group does not page twice in a row — a surge lasting
+four hours is one problem, and the alert it already raised is still open.
+
+Each group can be **resolved**, **ignored** or **snoozed** from its own panel
+on the Exceptions screen. Those are the escape hatch: a workspace with a noisy
+dependency must be able to quieten that one group without switching off the
+feature that tells it when something new breaks. Resolving is also what makes
+the group coming back afterwards into news rather than one more line in a list.
+
+The rule is on by default and can be turned off per workspace, with its own
+severity, under Settings → Observability. On by default because the
+alternative is that the one thing everybody wants from an exception tracker has
+to be discovered and switched on.
+
 ## The service map
 
 **Service map** draws who calls whom, from the traces themselves. A dependency

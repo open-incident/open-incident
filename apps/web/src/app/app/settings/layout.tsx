@@ -173,6 +173,14 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           label: t("settings.nav.aiGovernance"),
           permission: "settings.platform",
         },
+        // Retention, redaction and the exception-regression rule. The
+        // ingestion keys and the usage stay on the Telemetry screen, where the
+        // reader is when they need them.
+        {
+          href: "/app/settings/observability",
+          label: t("settings.nav.observability"),
+          permission: "settings.platform",
+        },
         { href: "/app/settings/audit", label: t("settings.nav.audit"), permission: "audit.view" },
         // The instance's own test suites — diagnostics, owner-only in the screen.
         { href: "/app/settings/qa", label: t("settings.nav.qa"), permission: "settings.platform" },

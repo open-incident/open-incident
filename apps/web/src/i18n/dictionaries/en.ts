@@ -551,6 +551,44 @@ export const en = {
   "settings.ai.source.telemetry": "Telemetry — logs, traces and exceptions of the affected service",
   "ai.investigation.check.telemetry": "Telemetry",
   "ai.investigation.check.dependencies": "Dependencies",
+  "exceptions.status.open": "Open",
+  "exceptions.status.resolved": "Resolved",
+  "exceptions.status.ignored": "Ignored",
+  "exceptions.status.snoozed": "Snoozed",
+  "exceptions.snoozedUntil": "until {when}",
+  "exceptions.reopen": "Reopen",
+  "exceptions.resolve": "Resolve",
+  "exceptions.snooze": "Snooze a day",
+  "exceptions.ignore": "Ignore",
+  "settings.telemetry.regressions":
+    "Alert when a bug is new, comes back, or suddenly fires far more often",
+  "settings.telemetry.regressionsHint":
+    "One alert per exception group, on the group itself — not a monitor somebody had to think of writing. A group you ignore or snooze raises nothing.",
+  "settings.telemetry.regressionSeverity": "Severity of a regression",
+  "settings.nav.observability": "Observability",
+  "settings.telemetry.intro":
+    "How long this workspace keeps what its services send, what is redacted before any of it is written, and whether a bug appearing raises an alert on its own.",
+  "settings.telemetry.notInstalled":
+    "This instance has no column store, so nothing is being kept yet. These settings are what it will do once ClickHouse is started — the Telemetry screen has the command.",
+  "settings.telemetry.saved": "Saved.",
+  "settings.telemetry.invalid": "One of the values was out of range and nothing was saved.",
+  "settings.telemetry.badRegex":
+    "“{rule}” is not a valid regular expression, so nothing was saved. A rule that does not compile is dropped at ingestion, which would have left you believing something was redacted when it was not.",
+  "settings.telemetry.retention": "HOW LONG IT IS KEPT",
+  "settings.telemetry.logs": "Logs",
+  "settings.telemetry.traces": "Traces",
+  "settings.telemetry.metrics": "Metrics",
+  "settings.telemetry.retentionHint":
+    "In days. Everything older is deleted by the column store itself, not archived — there is no cold storage to rehydrate from. Metrics default to longer because they cost less per row and say more over time.",
+  "settings.telemetry.scrub": "WHAT IS REDACTED",
+  "settings.telemetry.scrubHint":
+    "One regular expression per line, replaced by [redacted] at ingestion — before anything is written, because a rule applied at read time would already have stored the secret. These are on top of the secret detectors, which are never optional.",
+  "settings.telemetry.budget": "CARDINALITY BUDGET",
+  "settings.telemetry.series": "Distinct series",
+  "settings.telemetry.budgetHint":
+    "One mislabelled counter — a user id in a label — turns a single series into a million and slows the store for everyone. Past this ceiling new series are refused and counted while existing ones keep flowing, so the dashboards that were working keep working while the mistake is found. Empty means the instance default of 50 000.",
+  "settings.telemetry.regressionsTitle": "WHEN A BUG IS NEWS",
+  "settings.telemetry.seeExceptions": "See the exception groups →",
   "monitors.on.packet_loss_pct": "packet loss (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":
