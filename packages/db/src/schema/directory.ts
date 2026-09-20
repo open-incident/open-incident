@@ -69,7 +69,7 @@ export const telemetryKeyLookup = directory.table("telemetry_key_lookup", {
     .references(() => tenants.id, { onDelete: "cascade" }),
   keyId: uuid("key_id").notNull(),
   /** Duplicated from `app.telemetry_ingestion_keys` so one read answers everything. */
-  signals: jsonb("signals").$type<string[]>().notNull().default(["logs", "traces"]),
+  signals: jsonb("signals").$type<string[]>().notNull().default(["logs", "traces", "metrics"]),
   pinnedServiceName: text("pinned_service_name"),
   revoked: boolean("revoked").notNull().default(false),
   expiresAt: timestamp("expires_at", { withTimezone: true }),

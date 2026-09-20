@@ -80,6 +80,14 @@ export const en = {
   "telemetry.tab.logs": "Logs",
   "telemetry.tab.traces": "Traces",
   "telemetry.tab.connect": "Connect",
+  "telemetry.tab.metrics": "Metrics",
+  "telemetry.noMetrics":
+    "No metric has arrived yet. A service exporting OpenTelemetry metrics shows its series here.",
+  "telemetry.seriesCount": "{n} series",
+  "telemetry.lastHours": "Last {n} hours, one point per minute",
+  "telemetry.noPoints": "This metric has no point in the window.",
+  "telemetry.noLabels": "no labels",
+  "telemetry.lastValue": "last: {v}",
   "telemetry.todayRows": "Today",
   "telemetry.noLogs":
     "No log has arrived yet. Point a collector at this workspace and the first line shows up here.",

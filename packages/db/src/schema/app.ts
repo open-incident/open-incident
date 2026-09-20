@@ -2827,9 +2827,18 @@ export const telemetrySettings = app.table(
     enabledSignals: jsonb("enabled_signals")
       .$type<string[]>()
       .notNull()
-      .default(["logs", "traces"]),
+      .default(["logs", "traces", "metrics"]),
     retentionLogsDays: integer("retention_logs_days").notNull().default(15),
     retentionTracesDays: integer("retention_traces_days").notNull().default(15),
+    /** Metrics are cheaper per row and more useful over time, hence the longer default. */
+    retentionMetricsDays: integer("retention_metrics_days").notNull().default(30),
+    /**
+     * How many distinct series the workspace keeps. Past it, new series are
+     * refused and counted while existing ones keep flowing — the order that
+     * leaves working dashboards working while a mislabelled counter is found.
+     * Null: the instance default.
+     */
+    cardinalityBudget: integer("cardinality_budget"),
     /**
      * Extra redaction, on top of the secret detectors that are never optional.
      * Each rule is a regular expression replaced by `[redacted]` at ingestion,
@@ -2859,7 +2868,7 @@ export const telemetryIngestionKeys = app.table(
     tenantId: tenantId(),
     keyHash: text("key_hash").notNull(),
     label: text("label").notNull(),
-    signals: jsonb("signals").$type<string[]>().notNull().default(["logs", "traces"]),
+    signals: jsonb("signals").$type<string[]>().notNull().default(["logs", "traces", "metrics"]),
     /** Forces `service.name`, for a collector that cannot be trusted to set it. */
     pinnedServiceName: text("pinned_service_name"),
     rateLimitRpm: integer("rate_limit_rpm"),

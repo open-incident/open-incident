@@ -16,6 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import protobuf from "protobufjs";
 import { nanosToClickhouse, type DecodedLog, type DecodedSpan } from "./otlp";
+import type { MetricDecode } from "./metrics";
 
 const PROTO = join(dirname(fileURLToPath(import.meta.url)), "..", "proto", "otlp.proto");
 
@@ -181,4 +182,112 @@ export function encodeTraceResponse(rejected: number, message = ""): Buffer {
     ? { partial_success: { rejected_spans: rejected, error_message: message } }
     : {};
   return Buffer.from(TraceResponse.encode(TraceResponse.create(payload)).finish());
+}
+
+/* ---------- metrics ---------- */
+
+const MetricsRequest = root.lookupType("opentelemetry.proto.ExportMetricsServiceRequest");
+const MetricsResponse = root.lookupType("opentelemetry.proto.ExportMetricsServiceResponse");
+
+const TEMPORALITY = ["unspecified", "delta", "cumulative"] as const;
+
+/**
+ * A number point's value is a oneof between a double and a signed integer.
+ * With `defaults: true`, protobufjs materialises both — so the presence of the
+ * field is not the test; which one the encoder actually set is, and that is
+ * what `oneofs` reports.
+ */
+function pointValue(p: Record<string, unknown>): number {
+  const which = (p as { data?: string }).data;
+  if (which === "as_int") return Number(p.as_int ?? 0);
+  if (which === "as_double") return Number(p.as_double ?? 0);
+  // No oneof marker (a hand-rolled sender): prefer whichever is non-zero.
+  return Number(p.as_double ?? 0) || Number(p.as_int ?? 0);
+}
+
+export function decodeMetricsProto(body: Buffer): MetricDecode {
+  const msg = MetricsRequest.toObject(MetricsRequest.decode(body), {
+    bytes: Buffer,
+    defaults: true,
+    oneofs: true,
+  });
+  const out: MetricDecode = { points: [], unsupported: [] };
+  for (const rm of (msg.resource_metrics ?? []) as Array<Record<string, unknown>>) {
+    const { serviceName, environment } = resourceOf(rm.resource as { attributes?: unknown });
+    for (const sm of (rm.scope_metrics ?? []) as Array<Record<string, unknown>>) {
+      for (const m of (sm.metrics ?? []) as Array<Record<string, unknown>>) {
+        const which = (m as { data?: string }).data;
+        const base = {
+          serviceName,
+          environment,
+          metricName: String(m.name ?? ""),
+          description: String(m.description ?? ""),
+          unit: String(m.unit ?? ""),
+        };
+        if (which === "exponential_histogram" || which === "summary") {
+          out.unsupported.push(base.metricName);
+          continue;
+        }
+        if (which === "gauge") {
+          const g = m.gauge as { data_points?: Array<Record<string, unknown>> };
+          for (const p of g?.data_points ?? []) {
+            out.points.push({
+              ...base,
+              kind: "gauge",
+              ts: nanosToClickhouse(nanos(p.time_unix_nano)),
+              attributes: attrs(p.attributes),
+              value: pointValue(p),
+            });
+          }
+        } else if (which === "sum") {
+          const s = m.sum as {
+            data_points?: Array<Record<string, unknown>>;
+            is_monotonic?: boolean;
+            aggregation_temporality?: number;
+          };
+          for (const p of s?.data_points ?? []) {
+            out.points.push({
+              ...base,
+              kind: "sum",
+              ts: nanosToClickhouse(nanos(p.time_unix_nano)),
+              attributes: attrs(p.attributes),
+              value: pointValue(p),
+              isMonotonic: Boolean(s?.is_monotonic),
+              temporality: TEMPORALITY[Number(s?.aggregation_temporality ?? 0)] ?? "unspecified",
+            });
+          }
+        } else if (which === "histogram") {
+          const h = m.histogram as {
+            data_points?: Array<Record<string, unknown>>;
+            aggregation_temporality?: number;
+          };
+          for (const p of h?.data_points ?? []) {
+            out.points.push({
+              ...base,
+              kind: "histogram",
+              ts: nanosToClickhouse(nanos(p.time_unix_nano)),
+              attributes: attrs(p.attributes),
+              count: Number(nanos(p.count) ?? 0),
+              sum: Number(p.sum ?? 0),
+              min: Number(p.min ?? 0),
+              max: Number(p.max ?? 0),
+              bucketCounts: ((p.bucket_counts ?? []) as unknown[]).map((x) =>
+                Number(nanos(x) ?? 0),
+              ),
+              explicitBounds: ((p.explicit_bounds ?? []) as unknown[]).map(Number),
+              temporality: TEMPORALITY[Number(h?.aggregation_temporality ?? 0)] ?? "unspecified",
+            });
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+export function encodeMetricsResponse(rejected: number, message = ""): Buffer {
+  const payload = rejected
+    ? { partial_success: { rejected_data_points: rejected, error_message: message } }
+    : {};
+  return Buffer.from(MetricsResponse.encode(MetricsResponse.create(payload)).finish());
 }

@@ -14,6 +14,7 @@ import {
 } from "@/lib/telemetry";
 import { createIngestionKey, revokeIngestionKey } from "./actions";
 import { NotInstalled } from "./not-installed";
+import { MetricsTab } from "./metrics-tab";
 import { Waterfall } from "./waterfall";
 
 /**
@@ -26,7 +27,7 @@ import { Waterfall } from "./waterfall";
  * and the screen says that instead.
  */
 
-const TABS = ["logs", "traces", "connect"] as const;
+const TABS = ["logs", "traces", "metrics", "connect"] as const;
 type Tab = (typeof TABS)[number];
 
 const CARD: React.CSSProperties = {
@@ -56,7 +57,13 @@ function ms(ns: string): string {
 export default async function TelemetryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; trace?: string; service?: string; issued?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    trace?: string;
+    metric?: string;
+    service?: string;
+    issued?: string;
+  }>;
 }) {
   const { member } = await requireMember();
   const tenant = await requireTenant();
@@ -124,6 +131,7 @@ export default async function TelemetryPage({
       <div style={{ marginTop: 18 }}>
         {tab === "logs" && <LogsTab tenantId={tenant.id} service={sp.service} />}
         {tab === "traces" && <TracesTab tenantId={tenant.id} open={sp.trace} />}
+        {tab === "metrics" && <MetricsTab tenantId={tenant.id} open={sp.metric} />}
         {tab === "connect" && (
           <ConnectTab tenantId={tenant.id} admin={admin} issued={sp.issued} http={endpoints.http} />
         )}

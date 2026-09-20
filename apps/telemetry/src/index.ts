@@ -25,10 +25,14 @@ import { ingestLogs, ingestSpans, settingsFor, type Outcome } from "./ingest";
 import { decodeLogs, decodeSpans } from "./otlp";
 import {
   decodeLogsProto,
+  decodeMetricsProto,
   decodeSpansProto,
   encodeLogsResponse,
+  encodeMetricsResponse,
   encodeTraceResponse,
 } from "./protobuf";
+import { decodeMetricsJson } from "./metrics";
+import { ingestMetrics } from "./metrics-ingest";
 
 const PORT = Number(process.env.TELEMETRY_PORT ?? 4318);
 /** OTLP's own limit, and the one §15.4 names. */
@@ -70,7 +74,7 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
  * 200 should not also wait on our bookkeeping. Neither may throw into the
  * request path — a full rejections table is not a reason to lose a span.
  */
-async function record(caller: Caller, signal: string, outcome: Outcome, bytes: number) {
+async function record(caller: Caller, signal: Signal, outcome: Outcome, bytes: number) {
   try {
     await withTenant(caller.tenantId, async (tx) => {
       if (outcome.rejected.length) {
@@ -108,10 +112,20 @@ async function record(caller: Caller, signal: string, outcome: Outcome, bytes: n
   }
 }
 
-const ROUTES: Record<string, "logs" | "traces"> = {
+type Signal = "logs" | "traces" | "metrics";
+
+const ROUTES: Record<string, Signal> = {
   "/v1/logs": "logs",
   "/v1/traces": "traces",
+  "/v1/metrics": "metrics",
 };
+
+/** Each signal answers a protobuf sender in its own response message. */
+function protoResponse(signal: Signal, rejected: number, message: string): Buffer {
+  if (signal === "logs") return encodeLogsResponse(rejected, message);
+  if (signal === "metrics") return encodeMetricsResponse(rejected, message);
+  return encodeTraceResponse(rejected, message);
+}
 
 async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const path = (req.url ?? "").split("?")[0] ?? "";
@@ -148,13 +162,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   const proto = type.includes("protobuf") || type.includes("octet-stream");
   const fail = (status: number, code: string, message?: string) =>
     proto
-      ? sendProto(
-          res,
-          status,
-          signal === "logs"
-            ? encodeLogsResponse(0, message ?? code)
-            : encodeTraceResponse(0, message ?? code),
-        )
+      ? sendProto(res, status, protoResponse(signal, 0, message ?? code))
       : send(res, status, { error: { code, ...(message ? { message } : {}) } });
 
   if (!proto && !type.includes("json")) {
@@ -182,6 +190,11 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (signal === "logs") {
       const decoded = proto ? decodeLogsProto(body) : decodeLogs(JSON.parse(body.toString("utf8")));
       outcome = await ingestLogs(caller, settings, decoded);
+    } else if (signal === "metrics") {
+      const decoded = proto
+        ? decodeMetricsProto(body)
+        : decodeMetricsJson(JSON.parse(body.toString("utf8")));
+      outcome = await ingestMetrics(caller, settings, decoded);
     } else {
       const decoded = proto
         ? decodeSpansProto(body)
@@ -199,14 +212,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   const rejected = outcome.rejected.length;
   if (proto) {
-    const reason = outcome.rejected[0]?.reason ?? "";
-    sendProto(
-      res,
-      200,
-      signal === "logs"
-        ? encodeLogsResponse(rejected, reason)
-        : encodeTraceResponse(rejected, reason),
-    );
+    sendProto(res, 200, protoResponse(signal, rejected, outcome.rejected[0]?.reason ?? ""));
   } else {
     send(res, outcome.accepted > 0 || rejected === 0 ? 200 : 422, {
       accepted: outcome.accepted,
@@ -224,7 +230,7 @@ createServer((req, res) => {
 }).listen(PORT, () => {
   console.log(
     telemetryInstalled()
-      ? `Open Incident telemetry ingestion on :${PORT} — OTLP logs and traces, protobuf and JSON`
+      ? `Open Incident telemetry ingestion on :${PORT} — OTLP logs, traces and metrics, protobuf and JSON`
       : `Open Incident telemetry ingestion on :${PORT} — no storage configured, answering 503`,
   );
 });

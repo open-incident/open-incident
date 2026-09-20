@@ -72,6 +72,14 @@ export const de: Dictionary = {
   "telemetry.tab.logs": "Logs",
   "telemetry.tab.traces": "Traces",
   "telemetry.tab.connect": "Verbinden",
+  "telemetry.tab.metrics": "Metriken",
+  "telemetry.noMetrics":
+    "Noch keine Metrik eingegangen. Ein Dienst, der OpenTelemetry-Metriken exportiert, zeigt hier seine Serien.",
+  "telemetry.seriesCount": "{n} Serien",
+  "telemetry.lastHours": "Letzte {n} Stunden, ein Punkt pro Minute",
+  "telemetry.noPoints": "Diese Metrik hat im Zeitfenster keinen Punkt.",
+  "telemetry.noLabels": "ohne Labels",
+  "telemetry.lastValue": "zuletzt: {v}",
   "telemetry.todayRows": "Heute",
   "telemetry.noLogs":
     "Noch kein Log eingegangen. Richten Sie einen Collector auf diesen Workspace, und die erste Zeile erscheint hier.",

@@ -26,13 +26,17 @@ export type Settings = {
   enabledSignals: string[];
   retentionLogsDays: number;
   retentionTracesDays: number;
+  retentionMetricsDays: number;
+  cardinalityBudget: number | null;
   scrubRules: RegExp[];
 };
 
 const DEFAULTS: Settings = {
-  enabledSignals: ["logs", "traces"],
+  enabledSignals: ["logs", "traces", "metrics"],
   retentionLogsDays: 15,
   retentionTracesDays: 15,
+  retentionMetricsDays: 30,
+  cardinalityBudget: null,
   scrubRules: [],
 };
 
@@ -47,6 +51,8 @@ export async function settingsFor(tenantId: string): Promise<Settings> {
       enabledSignals: row.enabledSignals,
       retentionLogsDays: row.retentionLogsDays,
       retentionTracesDays: row.retentionTracesDays,
+      retentionMetricsDays: row.retentionMetricsDays,
+      cardinalityBudget: row.cardinalityBudget,
       // A workspace's own rule is data, and a bad regular expression is a
       // configuration mistake, not an outage: it is dropped, not thrown.
       scrubRules: row.scrubRules.flatMap((r) => {
@@ -69,7 +75,10 @@ export function scrub(text: string, rules: RegExp[]): string {
 /** Hashed rather than redacted: correlation survives, identity does not. */
 const HASHED_ATTRS = ["enduser.id", "user.email", "user.id", "client.address"];
 
-function scrubAttributes(a: Record<string, string>, rules: RegExp[]): Record<string, string> {
+export function scrubAttributes(
+  a: Record<string, string>,
+  rules: RegExp[],
+): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(a)) {
     out[k] = HASHED_ATTRS.includes(k) ? `sha256:${shortHash(v)}` : scrub(v, rules);
@@ -89,7 +98,7 @@ function shortHash(v: string): string {
   return (h1.toString(16) + h2.toString(16)).padStart(12, "0").slice(0, 12);
 }
 
-function retentionAt(days: number): string {
+export function retentionAt(days: number): string {
   const d = new Date(Date.now() + days * 86_400_000);
   return d.toISOString().slice(0, 19).replace("T", " ");
 }
@@ -268,7 +277,7 @@ export async function ingestSpans(
 }
 
 /** One upsert per distinct service in the batch, not one per row. */
-async function resolveServices(
+export async function resolveServices(
   caller: Caller,
   refs: Array<{ name: string; ra: Record<string, string> }>,
 ): Promise<Map<string, string>> {

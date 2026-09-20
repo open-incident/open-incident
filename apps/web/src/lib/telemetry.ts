@@ -21,8 +21,11 @@ import {
   withTenant,
 } from "@openincident/db";
 import {
+  metricNames,
+  metricSeries,
   recentLogs,
   recentTraces,
+  seriesLabels,
   spansOfTrace,
   telemetryInstalled,
   type LogRow,
@@ -70,7 +73,7 @@ export async function listKeys(tenantId: string): Promise<IngestionKey[]> {
 export async function issueKey(tenantId: string, label: string): Promise<string> {
   const key = `oi_otel_${randomBytes(16).toString("hex")}`;
   const keyHash = createHash("sha256").update(key).digest("hex");
-  const signals = ["logs", "traces"];
+  const signals = ["logs", "traces", "metrics"];
   const keyId = await withTenant(tenantId, async (tx) => {
     const [row] = await tx
       .insert(telemetryIngestionKeys)
@@ -143,4 +146,40 @@ export async function traces(tenantId: string, limit = 60): Promise<TraceRow[]> 
 export async function trace(tenantId: string, traceId: string): Promise<SpanRow[]> {
   if (!telemetryInstalled()) return [];
   return spansOfTrace(tenantId, traceId);
+}
+
+export type { MetricName } from "@openincident/telemetry";
+
+/** The metric catalogue: one line per name, with how many series it carries. */
+export async function metricCatalogue(tenantId: string) {
+  if (!telemetryInstalled()) return [];
+  return metricNames(tenantId);
+}
+
+/**
+ * One metric, its series and their per-minute values.
+ *
+ * The labels come from the catalogue rather than from the points: a series
+ * that stopped reporting an hour ago still has a name, and a chart that drops
+ * it silently is a chart that hides an outage.
+ */
+export async function metricChart(tenantId: string, metricName: string) {
+  if (!telemetryInstalled()) return { series: [] };
+  const [rows, labels] = await Promise.all([
+    metricSeries(tenantId, metricName, { hours: 24 }),
+    seriesLabels(tenantId, metricName),
+  ]);
+  const byHash = new Map<string, number[]>();
+  for (const r of rows) {
+    const list = byHash.get(r.attributes_hash) ?? [];
+    list.push(Number(r.value));
+    byHash.set(r.attributes_hash, list);
+  }
+  return {
+    series: labels.map((l) => ({
+      hash: l.attributes_hash,
+      labels: l.attributes,
+      values: byHash.get(l.attributes_hash) ?? [],
+    })),
+  };
 }

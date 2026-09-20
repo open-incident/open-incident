@@ -31,7 +31,8 @@ export const TRACES = "otel_traces_t(tenant = {tenant:UUID})";
 export const TENANT_VIEWS = [LOGS, SPANS, TRACES] as const;
 export type TenantView = (typeof TENANT_VIEWS)[number];
 
-const RAW_TABLES = /\b(otel_logs|otel_spans|otel_traces_index)\b(?!_t\s*\()/;
+const RAW_TABLES =
+  /\b(otel_logs|otel_spans|otel_traces_index|otel_metrics_\w+|metric_series|metric_1m)\b(?!_t\s*\()/;
 
 export type ReadOptions = {
   /** Extra bound parameters. `tenant` is reserved and set by this function. */
@@ -192,4 +193,78 @@ export async function purgeTenant(tenantId: string): Promise<number | null> {
     left += Number(row?.n ?? 0);
   }
   return left;
+}
+
+export const SERIES = "metric_series_t(tenant = {tenant:UUID})";
+export const MINUTES = "metric_1m_t(tenant = {tenant:UUID})";
+
+export type MetricName = {
+  metric_name: string;
+  type: string;
+  unit: string;
+  series: string;
+  last_seen: string;
+};
+
+/**
+ * The catalogue, one line per metric name.
+ *
+ * `series` is the number of distinct label sets, and it is the number worth
+ * looking at first: a metric with four series is a metric, a metric with forty
+ * thousand is a mistake somebody has not noticed yet.
+ */
+export async function metricNames(tenantId: string, limit = 200): Promise<MetricName[]> {
+  return read<MetricName>(
+    tenantId,
+    `SELECT metric_name, any(type) AS type, any(unit) AS unit,
+            toString(count()) AS series, toString(max(last_seen)) AS last_seen
+       FROM ${SERIES}
+      GROUP BY metric_name
+      ORDER BY metric_name
+      LIMIT {limit:UInt32}`,
+    { params: { limit } },
+  );
+}
+
+export type MetricPointRow = { minute: string; value: number; attributes_hash: string };
+
+/**
+ * One metric over a window, per minute and per series.
+ *
+ * Read from the rollup, never from the points: a month of a busy counter is
+ * millions of rows and forty thousand minutes, and the second number is the
+ * one a chart can draw.
+ */
+export async function metricSeries(
+  tenantId: string,
+  metricName: string,
+  opts: { hours?: number } = {},
+): Promise<MetricPointRow[]> {
+  return read<MetricPointRow>(
+    tenantId,
+    // Aliased through `m` for the third time in this file, and for the same
+    // reason each time: `toString(minute) AS minute` shadows the column, and
+    // the WHERE then compares a String to a DateTime. ClickHouse resolves an
+    // output alias before the source column, so any name reused as an alias
+    // has to be qualified.
+    `SELECT toString(m.minute) AS minute, m.last AS value, toString(m.attributes_hash) AS attributes_hash
+       FROM ${MINUTES} AS m
+      WHERE m.metric_name = {name:String}
+        AND m.minute >= now() - INTERVAL {hours:UInt32} HOUR
+      ORDER BY m.minute`,
+    { params: { name: metricName, hours: opts.hours ?? 24 } },
+  );
+}
+
+export type SeriesLabels = { attributes_hash: string; attributes: Record<string, string> };
+
+export async function seriesLabels(tenantId: string, metricName: string): Promise<SeriesLabels[]> {
+  return read<SeriesLabels>(
+    tenantId,
+    `SELECT toString(attributes_hash) AS attributes_hash, attributes
+       FROM ${SERIES}
+      WHERE metric_name = {name:String}
+      ORDER BY attributes_hash`,
+    { params: { name: metricName } },
+  );
 }
