@@ -118,6 +118,18 @@ export const de: Dictionary = {
     "Noch keine Trace eingegangen. Sobald ein Dienst instrumentiert ist, erscheinen seine Anfragen hier.",
   "telemetry.openTrace": "Trace →",
   "telemetry.spans": "Spans",
+  "trace.span": "SPAN",
+  "trace.depth": "Tiefe",
+  "trace.criticalPath": "Kritischer Pfad",
+  "trace.start": "START",
+  "trace.duration": "DAUER",
+  "trace.ofTrace": "DES TRACE",
+  "trace.events": "EREIGNISSE",
+  "trace.attributes": "ATTRIBUTE",
+  "trace.timeByService": "ZEIT PRO DIENST",
+  "trace.selfTime": "Eigenzeit — ohne Wartezeit auf Kinder",
+  "trace.selectHint":
+    "Wählen Sie einen Span, um Fehler, Ereignisse in Reihenfolge und Attribute zu sehen.",
   "telemetry.logsOfTrace": "Logs dieser Trace",
   "telemetry.noLogsHere": "Kein Log trägt diese Trace-ID.",
   "telemetry.keyOnce":

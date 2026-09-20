@@ -91,8 +91,22 @@ export type DecodedSpan = {
   peerService: string;
   attributes: Record<string, string>;
   resourceAttributes: Record<string, string>;
+  /**
+   * What the SDK recorded *during* the span — a retry, a cache miss, the
+   * moment a pool gave up. Decoded and then thrown away until now, which left
+   * the span detail with an events section that could never have anything in
+   * it. They are the only record of the order things happened inside one span,
+   * and the reason a waterfall can say "waiting for a connection · 41 in
+   * queue" rather than just "3 s".
+   */
+  events: SpanEvent[];
   hasException: boolean;
 };
+
+export type SpanEvent = { ts: string; name: string; attributes: Record<string, string> };
+
+/** Per span. An SDK in a loop can attach thousands; the panel shows a timeline. */
+export const MAX_SPAN_EVENTS = 64;
 
 const KINDS = ["unspecified", "internal", "server", "client", "producer", "consumer"] as const;
 const STATUSES = ["unset", "ok", "error"] as const;
@@ -151,7 +165,11 @@ export function decodeSpans(payload: unknown): DecodedSpan[] {
         const a = attrs(s.attributes as KeyValue[] | undefined);
         const start = BigInt((s.startTimeUnixNano as string) ?? "0");
         const end = BigInt((s.endTimeUnixNano as string) ?? "0");
-        const events = (s.events ?? []) as Array<{ name?: string }>;
+        const events = (s.events ?? []) as Array<{
+          name?: string;
+          timeUnixNano?: string;
+          attributes?: KeyValue[];
+        }>;
         out.push({
           serviceName,
           environment,
@@ -177,6 +195,13 @@ export function decodeSpans(payload: unknown): DecodedSpan[] {
           peerService: a["peer.service"] ?? a["server.address"] ?? "",
           attributes: a,
           resourceAttributes: ra,
+          // Capped: an SDK in a loop can attach thousands to one span, and the
+          // detail panel shows a timeline a person reads, not a log.
+          events: events.slice(0, MAX_SPAN_EVENTS).map((e) => ({
+            ts: nanosToClickhouse(e.timeUnixNano),
+            name: String(e.name ?? ""),
+            attributes: attrs(e.attributes),
+          })),
           hasException: events.some((e) => e.name === "exception"),
         });
       }

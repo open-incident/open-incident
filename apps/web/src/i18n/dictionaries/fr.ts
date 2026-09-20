@@ -119,6 +119,18 @@ export const fr: Dictionary = {
     "Aucune trace n’est encore arrivée. Dès qu’un service est instrumenté, ses requêtes apparaissent ici.",
   "telemetry.openTrace": "trace →",
   "telemetry.spans": "spans",
+  "trace.span": "SPAN",
+  "trace.depth": "profondeur",
+  "trace.criticalPath": "Chemin critique",
+  "trace.start": "DÉBUT",
+  "trace.duration": "DURÉE",
+  "trace.ofTrace": "DE LA TRACE",
+  "trace.events": "ÉVÉNEMENTS",
+  "trace.attributes": "ATTRIBUTS",
+  "trace.timeByService": "TEMPS PAR SERVICE",
+  "trace.selfTime": "temps propre — hors attente des enfants",
+  "trace.selectHint":
+    "Sélectionnez un span pour voir son erreur, ses événements dans l’ordre et ses attributs.",
   "telemetry.logsOfTrace": "Logs de cette trace",
   "telemetry.noLogsHere": "Aucun log ne porte cet identifiant de trace.",
   "telemetry.keyOnce":

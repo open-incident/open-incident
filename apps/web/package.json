@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start --port 3100",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "bench:ingest": "tsx bench/ingest.ts"
   },
   "dependencies": {
@@ -49,6 +50,7 @@
     "@types/react-dom": "^19.0.0",
     "esbuild": "0.28.2",
     "tailwindcss": "^4.1.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.7"
   }
 }

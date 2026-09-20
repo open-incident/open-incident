@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import protobuf from "protobufjs";
-import { nanosToClickhouse, type DecodedLog, type DecodedSpan } from "./otlp";
+import { nanosToClickhouse, type DecodedLog, type DecodedSpan, MAX_SPAN_EVENTS } from "./otlp";
 import type { MetricDecode } from "./metrics";
 
 const PROTO = join(dirname(fileURLToPath(import.meta.url)), "..", "proto", "otlp.proto");
@@ -131,7 +131,11 @@ export function decodeSpansProto(body: Buffer): DecodedSpan[] {
         const start = BigInt(nanos(s.start_time_unix_nano) ?? "0");
         const end = BigInt(nanos(s.end_time_unix_nano) ?? "0");
         const status = s.status as { code?: number; message?: string } | undefined;
-        const events = (s.events ?? []) as Array<{ name?: string }>;
+        const events = (s.events ?? []) as Array<{
+          name?: string;
+          time_unix_nano?: unknown;
+          attributes?: unknown;
+        }>;
         out.push({
           serviceName,
           environment,
@@ -154,6 +158,15 @@ export function decodeSpansProto(body: Buffer): DecodedSpan[] {
           peerService: a["peer.service"] ?? a["server.address"] ?? "",
           attributes: a,
           resourceAttributes: ra,
+          // `time_unix_nano` here, `timeUnixNano` in the JSON path: protobufjs
+          // is decoded with the field names the .proto declares, and OTLP/JSON
+          // uses lowerCamelCase. Two spellings of one field, and getting it
+          // wrong gives every event the epoch rather than an error.
+          events: events.slice(0, MAX_SPAN_EVENTS).map((e) => ({
+            ts: nanosToClickhouse(nanos(e.time_unix_nano)),
+            name: String(e.name ?? ""),
+            attributes: attrs(e.attributes),
+          })),
           hasException: events.some((e) => e.name === "exception"),
         });
       }

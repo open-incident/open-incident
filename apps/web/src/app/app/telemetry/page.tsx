@@ -673,10 +673,65 @@ async function TracesTab({
         {open && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ ...CARD, padding: "14px 16px" }}>
-              <div style={{ ...MONO, fontSize: 11, color: "var(--ink-3)", marginBottom: 10 }}>
-                {open}
-              </div>
-              <Waterfall spans={spans} />
+              {/*
+               * The header names the request rather than its id. A trace id is
+               * what you paste into a search box; "POST /checkout/confirm ·
+               * 500" is what tells you, in one line, whether this is the one
+               * you are looking for.
+               */}
+              {(() => {
+                const root = spans.find((sp) => !sp.parent_span_id) ?? spans[0];
+                if (!root) return null;
+                const status = root.http_status_code;
+                return (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "baseline",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      marginBottom: 12,
+                    }}
+                  >
+                    <span style={{ fontSize: 15, fontWeight: 600 }}>{root.name}</span>
+                    {status > 0 && (
+                      <span
+                        style={{
+                          ...MONO,
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          padding: "1px 7px",
+                          borderRadius: 6,
+                          background: status >= 400 ? "var(--dang-t)" : "var(--ok-t)",
+                          color: status >= 400 ? "var(--dang)" : "var(--ok)",
+                        }}
+                      >
+                        {status}
+                      </span>
+                    )}
+                    <span style={{ ...MONO, fontSize: 11, color: "var(--ink-3)" }}>
+                      {open.slice(0, 8)} · {root.start_ts.slice(11, 23)}
+                    </span>
+                  </div>
+                );
+              })()}
+              <Waterfall
+                spans={spans}
+                labels={{
+                  span: t("trace.span"),
+                  depth: t("trace.depth"),
+                  criticalPath: t("trace.criticalPath"),
+                  start: t("trace.start"),
+                  duration: t("trace.duration"),
+                  ofTrace: t("trace.ofTrace"),
+                  events: t("trace.events"),
+                  attributes: t("trace.attributes"),
+                  timeByService: t("trace.timeByService"),
+                  selfTime: t("trace.selfTime"),
+                  selectHint: t("trace.selectHint"),
+                  close: t("common.close"),
+                }}
+              />
             </div>
             <div style={{ ...CARD, padding: "12px 16px" }}>
               <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>

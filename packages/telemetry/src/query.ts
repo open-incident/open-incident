@@ -220,6 +220,8 @@ export async function recentTraces(
   );
 }
 
+export type SpanEventRow = { ts: string; name: string; attributes: Record<string, string> };
+
 export type SpanRow = {
   span_id: string;
   parent_span_id: string;
@@ -227,17 +229,32 @@ export type SpanRow = {
   name: string;
   kind: string;
   status_code: string;
+  status_message: string;
   start_ts: string;
   duration_ns: string;
   http_status_code: number;
+  attributes: Record<string, string>;
+  events: SpanEventRow[];
 };
 
-/** One trace, every span, ordered so the waterfall draws itself. */
+/**
+ * One trace, every span, with what the detail panel needs.
+ *
+ * The attributes, the status message and the events come back with the span
+ * rather than in a second call, because a waterfall is read by clicking
+ * through it: a request per click would make the panel feel slower than the
+ * system it is describing, and a trace is bounded — it is one request's worth
+ * of spans, not a table scan.
+ */
 export async function spansOfTrace(tenantId: string, traceId: string): Promise<SpanRow[]> {
   return read<SpanRow>(
     tenantId,
     `SELECT span_id, parent_span_id, service_name, name, kind, status_code,
-            start_ts, duration_ns, http_status_code
+            status_message, start_ts, duration_ns, http_status_code, attributes,
+            -- Selected as-is: a named tuple serialises to a JSON object with
+            -- its field names, where wrapping it in arrayMap loses them and
+            -- yields a positional array the reader has to decode by index.
+            events
        FROM ${SPANS}
       WHERE trace_id = {traceId:String}
       ORDER BY start_ts ASC`,

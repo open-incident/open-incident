@@ -227,7 +227,15 @@ export async function ingestSpans(
         peer_service: s.peerService,
         attributes: scrubAttributes(s.attributes, settings.scrubRules),
         resource_attributes: scrubAttributes(s.resourceAttributes, settings.scrubRules),
-        events: [],
+        // Written at last. They were decoded and dropped here, which left the
+        // span detail with an events section that could never have anything in
+        // it — and events are the only record of the order things happened
+        // *inside* one span.
+        events: s.events.map((e) => ({
+          ts: e.ts,
+          name: e.name,
+          attributes: scrubAttributes(e.attributes, settings.scrubRules),
+        })),
         links: [],
         has_exception: s.hasException,
         sampled_ratio: drawn.ratioFor(s),
