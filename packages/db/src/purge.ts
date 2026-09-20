@@ -15,6 +15,8 @@ export type PurgeReport = {
   tablesChecked: number;
   rowsDeleted: number;
   accountsRemoved: number;
+  /** Better Auth SSO providers removed — one per connection the workspace had. */
+  ssoProvidersRemoved: number;
   objectsDeleted: number | null;
   /** Rows left in ClickHouse after the purge, or null when the module is absent. */
   telemetryLeft: number | null;
@@ -47,6 +49,24 @@ export async function purgeWorkspace(
         where m.tenant_id = ${tenantId}
           and not exists (select 1 from app.members o where o.email = m.email and o.tenant_id <> ${tenantId})`)
     ).map((r) => r.email);
+
+    /*
+     * The SSO providers to remove, read **before** the app rows go.
+     *
+     * `auth.sso_provider` is Better Auth's half of an SSO connection and
+     * carries no tenant column — the only link is `provider_id`, which lives
+     * in `app.sso_connections`. Delete the app row first and the auth row is
+     * unreachable for ever.
+     *
+     * It was, until this was written: a purged workspace left one provider
+     * behind per connection, and the command still printed "Verified: nothing
+     * remains" because the check only counted `app`, `directory` and storage.
+     * Twenty of them had accumulated on one development instance.
+     */
+    const ssoProviderIds = (
+      await db.execute<{ provider_id: string }>(sql`
+        select provider_id from app.sso_connections where tenant_id = ${tenantId}`)
+    ).map((r) => r.provider_id);
 
     let rowsDeleted = 0;
     let tablesTouched = 0;
@@ -102,8 +122,16 @@ export async function purgeWorkspace(
         .returning({ id: authUsers.id });
       accountsRemoved += gone.length;
     }
+    let ssoProvidersRemoved = 0;
+    for (const providerId of ssoProviderIds) {
+      const gone = await db.execute<{ id: string }>(sql`
+        delete from auth.sso_provider where provider_id = ${providerId} returning id`);
+      ssoProvidersRemoved += gone.length;
+    }
+    rowsDeleted += ssoProvidersRemoved;
     log(
-      `  auth: ${accountsRemoved} account(s) removed (${emails.length} email(s) only in this workspace)`,
+      `  auth: ${accountsRemoved} account(s) removed (${emails.length} email(s) only in this workspace), ` +
+        `${ssoProvidersRemoved} SSO provider(s)`,
     );
 
     let objectsDeleted: number | null = null;
@@ -137,6 +165,12 @@ export async function purgeWorkspace(
       );
       if (row && Number(row.n) > 0) remaining.push(`app.${table}: ${row.n} row(s)`);
     }
+    for (const providerId of ssoProviderIds) {
+      const [sp] = await db.execute<{ n: number }>(
+        sql`select count(*)::int as n from auth.sso_provider where provider_id = ${providerId}`,
+      );
+      if (sp && Number(sp.n) > 0) remaining.push(`auth.sso_provider ${providerId}: ${sp.n}`);
+    }
     const [lk] = await db.execute<{ n: number }>(
       sql`select count(*)::int as n from directory.api_key_lookup where tenant_id = ${tenantId}`,
     );
@@ -162,6 +196,7 @@ export async function purgeWorkspace(
       tablesChecked: tables.length,
       rowsDeleted,
       accountsRemoved,
+      ssoProvidersRemoved,
       objectsDeleted,
       telemetryLeft,
       remaining,

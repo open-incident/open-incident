@@ -7,6 +7,7 @@
     "smoke": "playwright test",
     "smoke:ui": "playwright test --ui",
     "smoke:report": "playwright show-report",
+    "mock:idp": "tsx src/mock-idp.ts",
     "typecheck": "tsc --noEmit",
     "screenshots": "SMOKE_TENANT=skylark tsx src/screenshots.ts",
     "guide-shots": "SMOKE_TENANT=skylark tsx src/guide-shots.ts"
