@@ -6,6 +6,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "./client";
 import {
   apiKeyLookup,
+  dashboardShare,
   statusSnapshots,
   telemetryKeyLookup,
   tenants,
@@ -174,4 +175,25 @@ export async function forgetTelemetryKey(
   on: Pick<typeof db, "delete"> = db,
 ): Promise<void> {
   await on.delete(telemetryKeyLookup).where(eq(telemetryKeyLookup.keyHash, keyHash));
+}
+
+/** The workspace behind a public dashboard link, before any session exists. */
+export async function resolveDashboardShare(
+  token: string,
+): Promise<{ tenantId: string; dashboardId: string } | null> {
+  const [row] = await db.select().from(dashboardShare).where(eq(dashboardShare.token, token));
+  return row ? { tenantId: row.tenantId, dashboardId: row.dashboardId } : null;
+}
+
+export async function registerDashboardShare(
+  token: string,
+  tenantId: string,
+  dashboardId: string,
+): Promise<void> {
+  await db.delete(dashboardShare).where(eq(dashboardShare.dashboardId, dashboardId));
+  await db.insert(dashboardShare).values({ token, tenantId, dashboardId });
+}
+
+export async function forgetDashboardShare(dashboardId: string): Promise<void> {
+  await db.delete(dashboardShare).where(eq(dashboardShare.dashboardId, dashboardId));
 }

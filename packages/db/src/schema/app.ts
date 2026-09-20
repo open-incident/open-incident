@@ -2906,6 +2906,76 @@ export const telemetryRejections = app.table(
   (t) => [index("telemetry_rejections_tenant").on(t.tenantId, t.createdAt)],
 );
 
+/**
+ * A dashboard: a grid of PromQL panels, and the variables that fill them.
+ *
+ * `layout` and `variables` are jsonb rather than tables because a dashboard is
+ * edited as a whole — nobody reorders one panel in isolation — and because the
+ * Grafana import writes an entire document at once. The shape is validated on
+ * the way in; the database keeps the document.
+ */
+export const dashboards = app.table(
+  "dashboards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    /** `{ panels: [{ id, title, query, type, unit, w, h, x, y }] }` */
+    layout: jsonb("layout").$type<DashboardLayout>().notNull().default({ panels: [] }),
+    /** `[{ name, label, query, value }]` — substituted as `$name` in a panel's query. */
+    variables: jsonb("variables").$type<DashboardVariable[]>().notNull().default([]),
+    /**
+     * Sharing, with the three gates §15.7 asks for.
+     *
+     * `isPublic` is the switch; the token is the address, because a wall
+     * display should not expose the workspace's metric catalogue to anyone who
+     * guesses "checkout"; `passwordHash` and `ipAllowlist` are the two extra
+     * gates the spec names, both optional and both off by default. Turning
+     * sharing off destroys the token rather than hiding it, so a link that
+     * leaked stops working.
+     */
+    isPublic: boolean("is_public").notNull().default(false),
+    publicToken: text("public_token"),
+    passwordHash: text("password_hash"),
+    ipAllowlist: jsonb("ip_allowlist").$type<string[]>().notNull().default([]),
+    importedFrom: text("imported_from"),
+    /** What the import could and could not translate — shown, never hidden. */
+    importReport: jsonb("import_report").$type<ImportReport | null>(),
+    createdByMemberId: uuid("created_by_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("dashboards_slug").on(t.tenantId, t.slug),
+    uniqueIndex("dashboards_public_token").on(t.publicToken),
+  ],
+);
+
+export type DashboardPanel = {
+  id: string;
+  title: string;
+  query: string;
+  type: "line" | "area" | "stat";
+  unit: string;
+  w: number;
+  h: number;
+};
+
+export type DashboardLayout = { panels: DashboardPanel[] };
+
+export type DashboardVariable = { name: string; label: string; query: string; value: string };
+
+export type ImportReport = {
+  source: string;
+  panels: number;
+  translated: number;
+  skipped: Array<{ title: string; reason: string }>;
+};
+
 /** What was ingested, per day and per signal — the number the screen shows and the cloud bills. */
 export const telemetryUsage = app.table(
   "telemetry_usage",

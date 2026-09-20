@@ -253,6 +253,27 @@
       "when": 1789896553852,
       "tag": "0035_telemetry_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1789898019477,
+      "tag": "0036_dashboards",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1789898176662,
+      "tag": "0037_dashboard_sharing",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1789898239104,
+      "tag": "0038_dashboard_share",
+      "breakpoints": true
     }
   ]
 }

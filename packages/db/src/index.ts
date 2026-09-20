@@ -6,3 +6,9 @@ export { installDefaults, type InstalledDefaults } from "./seed/defaults";
 export { DEMO_MEMBERS, DEMO_PASSWORD, DEMO_SLUG } from "./seed/demo-data";
 export { provisionWorkspace, type ProvisionInput } from "./provision";
 export { purgeWorkspace, type PurgeReport } from "./purge";
+export type {
+  DashboardLayout,
+  DashboardPanel,
+  DashboardVariable,
+  ImportReport,
+} from "./schema/app";

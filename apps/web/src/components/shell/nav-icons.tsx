@@ -16,6 +16,7 @@ export type NavIconId =
   | "services"
   | "insights"
   | "telemetry"
+  | "dashboards"
   | "guide"
   | "settings"
   | "search"
@@ -48,6 +49,14 @@ const PATHS: Record<NavIconId, React.ReactNode> = {
   ),
   insights: <path d="M6 20v-5M12 20V9M18 20V4" />,
   telemetry: <circle cx="12" cy="12" r="8" />,
+  dashboards: (
+    <>
+      <rect x="3" y="3" width="7" height="9" rx="1" />
+      <rect x="14" y="3" width="7" height="5" rx="1" />
+      <rect x="3" y="16" width="7" height="5" rx="1" />
+      <rect x="14" y="12" width="7" height="9" rx="1" />
+    </>
+  ),
   guide: (
     <>
       <path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" />

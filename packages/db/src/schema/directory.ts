@@ -53,6 +53,23 @@ export const apiKeyLookup = directory.table("api_key_lookup", {
 });
 
 /**
+ * A shared dashboard's address, resolvable without a session.
+ *
+ * The third table of this shape, and by now clearly an idiom rather than a
+ * workaround: anything reachable before a tenant context exists — an API key,
+ * an ingestion key, a public dashboard link — needs one row outside the
+ * policies that says whose it is. The dashboard itself stays in `app` under
+ * row-level security, read normally once the workspace is known.
+ */
+export const dashboardShare = directory.table("dashboard_share", {
+  token: text("token").primaryKey(),
+  tenantId: uuid("tenant_id")
+    .notNull()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  dashboardId: uuid("dashboard_id").notNull(),
+});
+
+/**
  * The same trick for telemetry ingestion keys, and for the same reason.
  *
  * A collector authenticates before any tenant context exists, so the row it is

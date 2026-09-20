@@ -56,6 +56,7 @@ try {
     -- before a tenant context exists, so its lookup row lives outside the
     -- policies and the product is allowed to maintain it.
     grant insert, update, delete on directory.telemetry_key_lookup to ${appRole};
+    grant insert, delete on directory.dashboard_share to ${appRole};
     grant select, insert, update, delete on directory.status_snapshots to ${appRole};
     grant select, insert, update, delete on all tables in schema auth, app to ${appRole};
     grant usage, select on all sequences in schema auth, app to ${appRole};

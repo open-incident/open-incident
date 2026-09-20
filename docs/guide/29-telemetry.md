@@ -113,6 +113,32 @@ a negative rate.
 Queries shorter than seven days read the raw points; longer ones read the
 per-minute rollup, where a point is a minute.
 
+## Dashboards
+
+**Dashboards** holds grids of PromQL panels. Every panel is a query against the
+same subset the Prometheus API answers — a panel cannot show something PromQL
+cannot express, so a dashboard never becomes a second, quieter query language
+with its own rules. A panel whose query fails says why, in its own tile, and
+leaves the others alone.
+
+A window selector covers one hour to three days, and TV mode drops the chrome
+for a wall display. Sharing a dashboard publicly issues an unguessable token
+rather than exposing the slug, and turning sharing off destroys that token, so
+a link that leaked stops working.
+
+### Importing from Grafana
+
+Paste a Grafana dashboard JSON and the panels that can be translated are, with
+a **report** stored alongside the dashboard and shown above it. A panel is
+skipped when it is not a graph of a Prometheus query, or when its expression
+uses a construction outside the subset — and the report names which.
+
+That second rule is the point. A panel whose expression we cannot evaluate
+exactly would draw a different line here from the one it drew in Grafana, and a
+migrated dashboard that quietly changes its numbers is worse than a missing
+panel. Skipped panels are listed with their reason so the gap is visible the
+day of the migration, not a week later.
+
 ## Isolation and deletion
 
 Every ClickHouse table is shared, with `tenant_id` first in its sort key, and
