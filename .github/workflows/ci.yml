@@ -24,9 +24,26 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      # Telemetry storage. The module is optional in the product but not in the
+      # pipeline: the tenant guard of spec 15 is a claim, and a claim nobody
+      # runs is a comment.
+      clickhouse:
+        image: clickhouse/clickhouse-server:25.3-alpine
+        env:
+          CLICKHOUSE_DB: openincident
+          CLICKHOUSE_USER: openincident
+          CLICKHOUSE_PASSWORD: openincident
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+        ports: ["8143:8123"]
+        options: >-
+          --health-cmd "wget --spider -q http://127.0.0.1:8123/ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     env:
       DATABASE_URL: postgres://openincident_app:openincident_app@localhost:5441/openincident
       DATABASE_ADMIN_URL: postgres://openincident:openincident@localhost:5441/openincident
+      CLICKHOUSE_URL: http://localhost:8143
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6 # version resolved from packageManager
@@ -39,4 +56,5 @@ jobs:
       - run: pnpm format
       - run: pnpm db:migrate
       - run: pnpm db:rls
+      - run: pnpm ch:migrate
       - run: pnpm turbo run typecheck build test
