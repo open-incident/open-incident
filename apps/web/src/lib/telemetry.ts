@@ -140,9 +140,12 @@ export async function logs(
   return recentLogs(tenantId, opts);
 }
 
-export async function traces(tenantId: string, limit = 60): Promise<TraceRow[]> {
+export async function traces(
+  tenantId: string,
+  opts: { limit?: number; service?: string } = {},
+): Promise<TraceRow[]> {
   if (!telemetryInstalled()) return [];
-  return recentTraces(tenantId, { limit });
+  return recentTraces(tenantId, { limit: opts.limit ?? 60, ...opts });
 }
 
 export async function trace(tenantId: string, traceId: string): Promise<SpanRow[]> {
@@ -189,9 +192,12 @@ export async function metricChart(tenantId: string, metricName: string) {
 export type { ExceptionGroup, ExceptionOccurrence } from "@openincident/telemetry";
 
 /** The exception groups a workspace carries, newest activity first. */
-export async function exceptionGroups(tenantId: string) {
+export async function exceptionGroups(
+  tenantId: string,
+  opts: { limit?: number; service?: string } = {},
+) {
   if (!telemetryInstalled()) return [];
-  return groupsOf(tenantId);
+  return groupsOf(tenantId, opts);
 }
 
 export async function exceptionDetail(tenantId: string, fingerprint: string) {
@@ -199,4 +205,12 @@ export async function exceptionDetail(tenantId: string, fingerprint: string) {
   return detailOf(tenantId, fingerprint);
 }
 
-export { layoutByDepth, serviceEdges, servicesSeen, type EdgeRow } from "@openincident/telemetry";
+export {
+  layoutByDepth,
+  neighbours,
+  serviceWindow,
+  serviceEdges,
+  servicesSeen,
+  type EdgeRow,
+  type Neighbour,
+} from "@openincident/telemetry";

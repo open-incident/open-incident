@@ -259,6 +259,29 @@ migrated dashboard that quietly changes its numbers is worse than a missing
 panel. Skipped panels are listed with their reason so the gap is visible the
 day of the migration, not a week later.
 
+## From a service
+
+A service's own page carries two cards the traces fill in.
+
+**Telemetry** is four numbers over the last day — error logs, spans, the share
+of them failing, and p95 — each against the same window the day before, and
+three links into the explorers already narrowed to that service. Four numbers
+and four links rather than four embedded explorers: the explorers exist and
+they filter by service, and copying them here would be two screens to keep in
+step for no new answer. What the card adds is "is anything wrong right now",
+which is a glance rather than a console.
+
+**Dependencies** lists what this service calls and what calls it, over the same
+day. Upstream and downstream are separated because during an incident what a
+service calls is where to look for a cause and what calls it is who is about to
+notice.
+
+Every explorer keeps the service filter as you move between its tabs, and says
+so with a chip you can click to remove — a filtered list that does not say it
+is filtered is a list somebody reads as "there is nothing else". The map does
+not filter: arriving from a service picks that service out and leaves the rest
+drawn, because hiding everything else removes the only thing a map is for.
+
 ## What Atlas reads
 
 An investigation gathers two more checks when the module is installed:

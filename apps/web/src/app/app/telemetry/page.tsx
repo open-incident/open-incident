@@ -115,7 +115,7 @@ export default async function TelemetryPage({
             <Link
               key={x}
               data-testid={`telemetry-tab-${x}`}
-              href={`/app/telemetry?tab=${x}`}
+              href={`/app/telemetry?tab=${x}${sp.service && x !== "connect" ? `&service=${encodeURIComponent(sp.service)}` : ""}`}
               style={{
                 height: 28,
                 padding: "0 12px",
@@ -134,18 +134,58 @@ export default async function TelemetryPage({
             </Link>
           ))}
         </div>
+        {/*
+          A filtered list that does not say it is filtered is a list somebody
+          will read as "there is nothing else". The chip says which service,
+          and removing it is one click.
+        */}
+        {sp.service && tab !== "connect" && (
+          <Link
+            href={`/app/telemetry?tab=${tab}`}
+            data-testid="telemetry-service-filter"
+            title={t("telemetry.clearService")}
+            aria-label={t("telemetry.clearService")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              height: 26,
+              padding: "0 10px",
+              borderRadius: 8,
+              border: "1px solid var(--line)",
+              background: "var(--sunk)",
+              fontSize: 12,
+              color: "var(--ink)",
+              textDecoration: "none",
+            }}
+          >
+            <span style={{ fontFamily: "var(--mono)" }}>{sp.service}</span>
+            <span style={{ color: "var(--ink-3)" }} aria-hidden>
+              ✕
+            </span>
+          </Link>
+        )}
         <span style={{ flex: 1 }} />
         <Usage tenantId={tenant.id} label={t("telemetry.todayRows")} />
       </div>
 
       <div style={{ marginTop: 18 }}>
         {tab === "logs" && <LogsTab tenantId={tenant.id} service={sp.service} />}
-        {tab === "traces" && <TracesTab tenantId={tenant.id} open={sp.trace} />}
+        {tab === "traces" && (
+          <TracesTab tenantId={tenant.id} open={sp.trace} service={sp.service} />
+        )}
         {tab === "metrics" && <MetricsTab tenantId={tenant.id} open={sp.metric} />}
         {tab === "exceptions" && (
-          <ExceptionsTab tenantId={tenant.id} open={sp.fp} mayEdit={canRespond(member)} />
+          <ExceptionsTab
+            tenantId={tenant.id}
+            open={sp.fp}
+            mayEdit={canRespond(member)}
+            service={sp.service}
+          />
         )}
-        {tab === "map" && <MapTab tenantId={tenant.id} sinceMinutes={windowOf(sp.since)} />}
+        {tab === "map" && (
+          <MapTab tenantId={tenant.id} sinceMinutes={windowOf(sp.since)} highlight={sp.service} />
+        )}
         {tab === "connect" && (
           <ConnectTab tenantId={tenant.id} admin={admin} issued={sp.issued} http={endpoints.http} />
         )}
@@ -245,9 +285,17 @@ async function LogsTab({ tenantId, service }: { tenantId: string; service?: stri
   );
 }
 
-async function TracesTab({ tenantId, open }: { tenantId: string; open?: string }) {
+async function TracesTab({
+  tenantId,
+  open,
+  service,
+}: {
+  tenantId: string;
+  open?: string;
+  service?: string;
+}) {
   const t = await getT();
-  const rows = await traces(tenantId);
+  const rows = await traces(tenantId, { service });
   if (rows.length === 0) return <Empty message={t("telemetry.noTraces")} />;
   const spans = open ? await trace(tenantId, open) : [];
   const correlated = open ? await logs(tenantId, { traceId: open, limit: 50 }) : [];

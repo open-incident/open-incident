@@ -127,16 +127,23 @@ export type TraceRow = {
 /** The Traces screen: one line per trace, newest first. */
 export async function recentTraces(
   tenantId: string,
-  opts: { limit?: number } = {},
+  opts: { limit?: number; service?: string } = {},
 ): Promise<TraceRow[]> {
+  // Any trace the service took part in, not only the ones it started: during
+  // an incident the interesting trace is usually one this service was called
+  // from, and filtering on the root would hide every one of them.
+  const where = opts.service ? "WHERE has(services, {service:String})" : "";
   return read<TraceRow>(
     tenantId,
     `SELECT trace_id, start_ts, duration_ns, root_service, root_name,
             span_count, error_count, services, has_exception
        FROM ${TRACES}
+      ${where}
       ORDER BY start_ts DESC
       LIMIT {limit:UInt32}`,
-    { params: { limit: opts.limit ?? 100 } },
+    {
+      params: { limit: opts.limit ?? 100, ...(opts.service ? { service: opts.service } : {}) },
+    },
   );
 }
 
@@ -352,16 +359,25 @@ export type ExceptionGroup = {
 };
 
 /** The groups list, worst first — most recent activity, then volume. */
-export async function exceptionGroups(tenantId: string, limit = 100): Promise<ExceptionGroup[]> {
+export async function exceptionGroups(
+  tenantId: string,
+  opts: { limit?: number; service?: string } = {},
+): Promise<ExceptionGroup[]> {
+  // `services` is the set a group was seen in, so narrowing to one service is
+  // membership rather than equality: the same bug can fire in two of them.
+  const where = opts.service ? "WHERE has(services, {service:String})" : "";
   return read<ExceptionGroup>(
     tenantId,
     `SELECT fingerprint, type, message, toString(occurrences) AS occurrences,
             toString(first_seen) AS first_seen, toString(last_seen) AS last_seen,
             releases, services
        FROM ${EXCEPTION_GROUPS}
+      ${where}
       ORDER BY last_seen DESC, occurrences DESC
       LIMIT {limit:UInt32}`,
-    { params: { limit } },
+    {
+      params: { limit: opts.limit ?? 100, ...(opts.service ? { service: opts.service } : {}) },
+    },
   );
 }
 

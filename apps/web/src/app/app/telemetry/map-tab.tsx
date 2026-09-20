@@ -31,9 +31,12 @@ const WINDOWS = [60, 360, 1440] as const;
 export async function MapTab({
   tenantId,
   sinceMinutes = 60,
+  highlight,
 }: {
   tenantId: string;
   sinceMinutes?: number;
+  /** The service the reader arrived from, picked out rather than filtered to. */
+  highlight?: string;
 }) {
   const t = await getT();
   const [edges, seen] = await Promise.all([
@@ -46,7 +49,7 @@ export async function MapTab({
       {WINDOWS.map((w) => (
         <Link
           key={w}
-          href={`/app/telemetry?tab=map&since=${w}`}
+          href={`/app/telemetry?tab=map&since=${w}${highlight ? `&service=${encodeURIComponent(highlight)}` : ""}`}
           style={{
             fontSize: 12,
             padding: "4px 10px",
@@ -135,16 +138,23 @@ export async function MapTab({
                 const rate = errorRate.get(service) ?? 0;
                 const tone = rate > 0.05 ? "var(--dang)" : rate > 0 ? "var(--wait)" : "var(--line)";
                 const calls = outgoing.get(service) ?? [];
+                /*
+                  Picked out, not filtered to. Somebody arriving from a service
+                  page wants to see where that service sits, and hiding
+                  everything else would remove the only thing a map is for.
+                */
+                const here = service === highlight;
                 return (
                   <div
                     key={service}
-                    data-testid="map-node"
+                    data-testid={here ? "map-node-current" : "map-node"}
                     style={{
-                      border: `1px solid ${tone}`,
+                      border: `1px solid ${here ? "var(--brand)" : tone}`,
                       borderLeft: `3px solid ${tone}`,
                       borderRadius: 10,
                       padding: "9px 11px",
-                      background: "var(--sunk)",
+                      background: here ? "var(--brand-t)" : "var(--sunk)",
+                      boxShadow: here ? "var(--shadow-card)" : "none",
                       display: "flex",
                       flexDirection: "column",
                       gap: 5,

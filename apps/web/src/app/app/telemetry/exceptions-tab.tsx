@@ -24,13 +24,15 @@ export async function ExceptionsTab({
   tenantId,
   open,
   mayEdit,
+  service,
 }: {
   tenantId: string;
   open?: string;
   mayEdit: boolean;
+  service?: string;
 }) {
   const t = await getT();
-  const groups = await exceptionGroups(tenantId);
+  const groups = await exceptionGroups(tenantId, { service });
   if (groups.length === 0) {
     return (
       <div

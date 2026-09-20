@@ -4,6 +4,8 @@ import { asc, eq } from "drizzle-orm";
 import { escalationPaths, withTenant } from "@openincident/db";
 import { aiConfigured, runbooksForService } from "@openincident/ai";
 import { getT } from "@/i18n/server";
+import { Dependencies } from "./dependencies";
+import { ServiceTelemetry } from "./telemetry-card";
 import { canRespond, isManager, requireMember } from "@/lib/session";
 import { getService, listTeams } from "@/lib/services";
 import { telemetryInstalled } from "@/lib/telemetry-module";
@@ -318,15 +320,20 @@ export default async function ServiceDetailPage({
             </div>
           </div>
 
+          {telemetryInstalled() && (
+            <div style={{ ...CARD, padding: "14px 16px", gap: 10 }} data-testid="service-telemetry">
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t("svcTelemetry.title")}</span>
+              </div>
+              <ServiceTelemetry tenantId={tenant.id} service={svc.key} />
+            </div>
+          )}
+
           <div style={{ ...CARD, padding: "14px 16px", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center" }}>
               <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t("services.dependencies")}</span>
             </div>
-            <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55 }}>
-              {telemetryInstalled()
-                ? t("services.dependenciesEmpty")
-                : t("services.dependenciesNoTelemetry")}
-            </div>
+            <Dependencies tenantId={tenant.id} service={svc.key} />
           </div>
 
           <div style={{ ...CARD, padding: "14px 16px" }} data-testid="runbooks">
