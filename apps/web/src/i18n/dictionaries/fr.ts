@@ -110,6 +110,9 @@ export const fr: Dictionary = {
   "telemetry.noLabels": "sans étiquette",
   "telemetry.lastValue": "dernière : {v}",
   "telemetry.todayRows": "Aujourd’hui",
+  "telemetry.sampled": "{share} % échantillonné",
+  "telemetry.sampledWhy":
+    "Au-delà du quota quotidien de {cap} Go : {dropped} lignes ont été échantillonnées aujourd’hui plutôt que stockées. Les erreurs ne le sont jamais, et une trace est conservée entière ou pas du tout.",
   "telemetry.noLogs":
     "Aucun log n’est encore arrivé. Pointez un collecteur sur cet espace et la première ligne s’affichera ici.",
   "telemetry.noTraces":
@@ -588,6 +591,9 @@ export const fr: Dictionary = {
   "settings.telemetry.series": "Séries distinctes",
   "settings.telemetry.budgetHint":
     "Un compteur mal étiqueté — un identifiant d’utilisateur dans un label — transforme une série en un million et ralentit la base pour tout le monde. Au-delà de ce plafond, les nouvelles séries sont refusées et comptées tandis que les existantes continuent de passer : les dashboards qui marchaient continuent de marcher pendant qu’on cherche l’erreur. Vide : le défaut de l’instance, 50 000.",
+  "settings.telemetry.softCap": "Quota quotidien (Go)",
+  "settings.telemetry.softCapHint":
+    "Un quota souple, et c’est tout le principe : au-delà, les logs et les traces sont éclaircis plutôt que coupés, donc les écrans continuent de répondre pendant qu’on décide quoi faire. Les erreurs ne sont jamais éclaircies, et une trace est gardée entière ou pas du tout — une cascade trouée se lit comme une preuve et n’en est pas une. La part conservée baisse à mesure que la journée avance : un espace qui envoie dix fois ce quota en stocke environ trois fois, pas dix. Vide : pas de quota.",
   "settings.telemetry.regressionsTitle": "QUAND UN BUG EST UNE NOUVELLE",
   "settings.telemetry.seeExceptions": "Voir les groupes d’exceptions →",
   "services.calls": "Appelle",

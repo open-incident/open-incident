@@ -18,6 +18,8 @@ import { createSocket } from "node:dgram";
 import type { Caller } from "./auth";
 import { callerFor } from "./auth";
 import { ingestLogs, type Outcome } from "./ingest";
+import { keepRateFor } from "./budget";
+import { record } from "./usage";
 import { settingsFor } from "./shared";
 import type { DecodedLog } from "./otlp";
 import { frameSyslog, parseSyslog, type SyslogMessage } from "./syslog";
@@ -96,12 +98,16 @@ export function toDecodedLog(m: SyslogMessage, fallbackService: string): Decoded
 export function startSyslog(config: SyslogConfig): { close: () => Promise<void> } | null {
   let caller: Caller | null = null;
   let pending: SyslogMessage[] = [];
+  /** Wire bytes, carried alongside: the cap divides raw volume, not rows. */
+  let pendingBytes = 0;
   let timer: NodeJS.Timeout | null = null;
 
   const flush = async (): Promise<void> => {
     if (pending.length === 0) return;
     const batch = pending;
+    const bytes = pendingBytes;
     pending = [];
+    pendingBytes = 0;
     try {
       caller ??= await callerFor(config.key);
       if (!caller) {
@@ -110,16 +116,24 @@ export function startSyslog(config: SyslogConfig): { close: () => Promise<void> 
       }
       const settings = await settingsFor(caller.tenantId);
       if (!settings.enabledSignals.includes("logs")) return;
+      const keep = await keepRateFor(caller.tenantId, settings.dailySoftCapGb);
       const outcome: Outcome = await ingestLogs(
         caller,
         settings,
         batch.map((m) => toDecodedLog(m, config.fallbackService)),
+        keep,
       );
       if (outcome.rejected.length) {
         console.warn(
           `[syslog] ${outcome.rejected.length} line(s) refused: ${outcome.rejected[0]?.reason}`,
         );
       }
+      if (outcome.dropped) {
+        // The sender cannot be answered — syslog has no response — so the
+        // notice goes where a syslog operator actually looks.
+        console.warn(`[syslog] ${outcome.dropped} line(s) sampled out: over the daily soft cap`);
+      }
+      void record(caller, "logs", outcome, bytes);
     } catch (err) {
       // Lines are not put back. A syslog sender does not retry and cannot be
       // asked to, so holding them would grow a queue for ever against a store
@@ -131,6 +145,7 @@ export function startSyslog(config: SyslogConfig): { close: () => Promise<void> 
   const take = (line: string): void => {
     try {
       pending.push(parseSyslog(line));
+      pendingBytes += Buffer.byteLength(line);
     } catch {
       // A line that is not syslog at all. Counted by its absence rather than
       // logged: a malformed sender would otherwise fill our own log with a

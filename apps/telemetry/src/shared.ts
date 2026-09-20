@@ -20,6 +20,8 @@ export type Settings = {
   retentionProfilesDays: number;
   retentionRumDays: number;
   cardinalityBudget: number | null;
+  /** Null: no cap. Past it, logs and traces are sampled — see sampling.ts. */
+  dailySoftCapGb: number | null;
   scrubRules: RegExp[];
 };
 
@@ -31,6 +33,7 @@ const DEFAULTS: Settings = {
   retentionProfilesDays: 7,
   retentionRumDays: 7,
   cardinalityBudget: null,
+  dailySoftCapGb: null,
   scrubRules: [],
 };
 
@@ -49,6 +52,7 @@ export async function settingsFor(tenantId: string): Promise<Settings> {
       retentionProfilesDays: row.retentionProfilesDays,
       retentionRumDays: row.retentionRumDays,
       cardinalityBudget: row.cardinalityBudget,
+      dailySoftCapGb: row.dailySoftCapGb,
       // A workspace's own rule is data, and a bad regular expression is a
       // configuration mistake, not an outage: it is dropped, not thrown.
       scrubRules: row.scrubRules.flatMap((r) => {

@@ -19,8 +19,10 @@ import { and, eq, sql } from "drizzle-orm";
 import { services, withTenant, type Tx } from "@openincident/db";
 import { clickhouse } from "@openincident/telemetry";
 import type { Caller } from "./auth";
+import { exceptionFromAttributes } from "./exceptions";
 import { fromLogs, fromSpans, writeExceptions } from "./exceptions-ingest";
 import type { DecodedLog, DecodedSpan } from "./otlp";
+import { sampleLogs, sampleSpans } from "./sampling";
 import { retentionAt, scrub, scrubAttributes, settingsFor, type Settings } from "./shared";
 
 export { retentionAt, scrub, scrubAttributes, settingsFor, type Settings };
@@ -69,15 +71,22 @@ async function serviceIdFor(tx: Tx, tenantId: string, name: string, stack: strin
   return existing!.id;
 }
 
-export type Outcome = { accepted: number; rejected: Array<{ reason: string; excerpt: string }> };
+export type Outcome = {
+  accepted: number;
+  rejected: Array<{ reason: string; excerpt: string }>;
+  /** Sampled out for being over the daily soft cap. Valid data, not stored. */
+  dropped?: number;
+};
 
 export async function ingestLogs(
   caller: Caller,
   settings: Settings,
   decoded: DecodedLog[],
+  /** The share of ordinary rows to keep; 1 unless the workspace is over cap. */
+  keep = 1,
 ): Promise<Outcome> {
   const out: Outcome = { accepted: 0, rejected: [] };
-  const usable = decoded.filter((l) => {
+  const valid = decoded.filter((l) => {
     const name = caller.pinnedServiceName ?? l.serviceName;
     if (name) return true;
     out.rejected.push({
@@ -86,6 +95,20 @@ export async function ingestLogs(
     });
     return false;
   });
+  // Sampled after validation, never before: a row refused for a missing
+  // service name is a rejection somebody must see, and hiding it behind the
+  // draw would make the same mistake report itself intermittently.
+  // The same detector `fromLogs` uses below, so a line that is about to become
+  // an exception is never the line the draw removes.
+  const drawn = sampleLogs(
+    valid,
+    keep,
+    (l) =>
+      l.severityNumber >= 17 ||
+      exceptionFromAttributes(l.attributes, l.body, { traceId: "", spanId: "" }) !== null,
+  );
+  const usable = drawn.kept;
+  out.dropped = drawn.dropped;
   if (usable.length === 0) return out;
 
   const until = retentionAt(settings.retentionLogsDays);
@@ -137,9 +160,10 @@ export async function ingestSpans(
   caller: Caller,
   settings: Settings,
   decoded: DecodedSpan[],
+  keep = 1,
 ): Promise<Outcome> {
   const out: Outcome = { accepted: 0, rejected: [] };
-  const usable = decoded.filter((s) => {
+  const valid = decoded.filter((s) => {
     const name = caller.pinnedServiceName ?? s.serviceName;
     if (!name) {
       out.rejected.push({ reason: "missing service.name", excerpt: s.name.slice(0, 200) });
@@ -154,6 +178,9 @@ export async function ingestSpans(
     }
     return true;
   });
+  const drawn = sampleSpans(valid, keep);
+  const usable = drawn.kept;
+  out.dropped = drawn.dropped;
   if (usable.length === 0) return out;
 
   const until = retentionAt(settings.retentionTracesDays);
@@ -203,7 +230,7 @@ export async function ingestSpans(
         events: [],
         links: [],
         has_exception: s.hasException,
-        sampled_ratio: 1,
+        sampled_ratio: drawn.ratioFor(s),
         retention_at: until,
       };
     }),

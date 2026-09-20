@@ -109,6 +109,9 @@ export const de: Dictionary = {
   "telemetry.noLabels": "ohne Labels",
   "telemetry.lastValue": "zuletzt: {v}",
   "telemetry.todayRows": "Heute",
+  "telemetry.sampled": "{share} % gesampelt",
+  "telemetry.sampledWhy":
+    "Über dem Tageslimit von {cap} GB: {dropped} Zeilen wurden heute gesampelt statt gespeichert. Fehler nie, und ein Trace wird ganz oder gar nicht behalten.",
   "telemetry.noLogs":
     "Noch kein Log eingegangen. Richten Sie einen Collector auf diesen Workspace, und die erste Zeile erscheint hier.",
   "telemetry.noTraces":
@@ -592,6 +595,9 @@ export const de: Dictionary = {
   "settings.telemetry.series": "Verschiedene Reihen",
   "settings.telemetry.budgetHint":
     "Ein falsch beschrifteter Zähler — eine Benutzer-ID in einem Label — macht aus einer Reihe eine Million und bremst den Speicher für alle. Oberhalb dieser Grenze werden neue Reihen abgelehnt und gezählt, während bestehende weiterlaufen: funktionierende Dashboards funktionieren weiter, während der Fehler gesucht wird. Leer bedeutet der Instanzwert von 50 000.",
+  "settings.telemetry.softCap": "Tageslimit (GB)",
+  "settings.telemetry.softCapHint":
+    "Ein weiches Limit, und weich ist der ganze Entwurf: darüber werden Logs und Traces ausgedünnt statt abgeschnitten, damit die Ansichten weiter antworten, während jemand entscheidet. Fehler werden nie ausgedünnt, und ein Trace wird ganz oder gar nicht behalten — ein Wasserfall mit Lücken liest sich als Beweis und ist keiner. Der behaltene Anteil sinkt im Lauf des Tages: wer das Zehnfache sendet, speichert etwa das Dreifache, nicht das Zehnfache. Leer bedeutet kein Limit.",
   "settings.telemetry.regressionsTitle": "WANN EIN FEHLER EINE NACHRICHT IST",
   "settings.telemetry.seeExceptions": "Ausnahmegruppen ansehen →",
   "services.calls": "Ruft auf",

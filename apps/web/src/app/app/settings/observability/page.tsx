@@ -223,6 +223,22 @@ export default async function ObservabilitySettingsPage({
             />
           </label>
           <span style={HINT}>{t("settings.telemetry.budgetHint")}</span>
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 5, maxWidth: 240 }}>
+            <span style={LABEL}>{t("settings.telemetry.softCap")}</span>
+            <input
+              name="dailySoftCapGb"
+              type="number"
+              min={1}
+              max={10_000}
+              step={1}
+              defaultValue={row?.dailySoftCapGb ?? ""}
+              placeholder="—"
+              disabled={!manages}
+              style={{ ...CONTROL, fontFamily: "var(--mono)" }}
+            />
+          </label>
+          <span style={HINT}>{t("settings.telemetry.softCapHint")}</span>
         </div>
 
         <div style={CARD}>

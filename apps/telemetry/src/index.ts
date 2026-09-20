@@ -12,17 +12,13 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { gunzipSync } from "node:zlib";
-import { eq, sql } from "drizzle-orm";
-import {
-  resolveRumApp,
-  telemetryIngestionKeys,
-  telemetryRejections,
-  telemetryUsage,
-  withTenant,
-} from "@openincident/db";
+import { resolveRumApp } from "@openincident/db";
 import { telemetryInstalled } from "@openincident/telemetry";
-import { callerFor, keyFromHeaders, type Caller } from "./auth";
+import { callerFor, keyFromHeaders } from "./auth";
 import { ingestLogs, ingestSpans, settingsFor, type Outcome } from "./ingest";
+import { keepRateFor } from "./budget";
+import { samplingNotice } from "./sampling";
+import { record, type Signal } from "./usage";
 import { decodeLogs, decodeSpans } from "./otlp";
 import {
   decodeLogsProto,
@@ -88,53 +84,6 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
   const raw = Buffer.concat(chunks);
   return req.headers["content-encoding"] === "gzip" ? gunzipSync(raw) : raw;
 }
-
-/**
- * What the refusals and the volume become, once the request is answered.
- *
- * Both are written after the response on purpose: a collector waiting on its
- * 200 should not also wait on our bookkeeping. Neither may throw into the
- * request path — a full rejections table is not a reason to lose a span.
- */
-async function record(caller: Caller, signal: Signal, outcome: Outcome, bytes: number) {
-  try {
-    await withTenant(caller.tenantId, async (tx) => {
-      if (outcome.rejected.length) {
-        await tx.insert(telemetryRejections).values(
-          outcome.rejected.slice(0, 20).map((r) => ({
-            tenantId: caller.tenantId,
-            keyId: caller.keyId,
-            signal,
-            reason: r.reason,
-            excerpt: r.excerpt,
-          })),
-        );
-      }
-      if (outcome.accepted > 0) {
-        const day = new Date().toISOString().slice(0, 10);
-        await tx
-          .insert(telemetryUsage)
-          .values({ tenantId: caller.tenantId, day, signal, rows: outcome.accepted, bytes })
-          .onConflictDoUpdate({
-            target: [telemetryUsage.tenantId, telemetryUsage.day, telemetryUsage.signal],
-            set: {
-              rows: sql`${telemetryUsage.rows} + ${outcome.accepted}`,
-              bytes: sql`${telemetryUsage.bytes} + ${bytes}`,
-              updatedAt: new Date(),
-            },
-          });
-      }
-      await tx
-        .update(telemetryIngestionKeys)
-        .set({ lastUsedAt: new Date() })
-        .where(eq(telemetryIngestionKeys.id, caller.keyId));
-    });
-  } catch (err) {
-    console.error("[telemetry] bookkeeping failed:", err);
-  }
-}
-
-type Signal = "logs" | "traces" | "metrics" | "profiles" | "rum";
 
 /** An application id is a UUID; anything else is refused before a query runs. */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -261,11 +210,17 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (!settings.enabledSignals.includes(signal))
     return fail(403, "signal_disabled", `${signal} is turned off for this workspace`);
 
+  // Logs and traces bend when the workspace is over its daily cap; metrics do
+  // not, because a chart with holes in it lies where a thinner log stream only
+  // says less.
+  const keep =
+    signal === "metrics" ? 1 : await keepRateFor(caller.tenantId, settings.dailySoftCapGb);
+
   let outcome: Outcome;
   try {
     if (signal === "logs") {
       const decoded = proto ? decodeLogsProto(body) : decodeLogs(JSON.parse(body.toString("utf8")));
-      outcome = await ingestLogs(caller, settings, decoded);
+      outcome = await ingestLogs(caller, settings, decoded, keep);
     } else if (signal === "metrics") {
       const decoded = proto
         ? decodeMetricsProto(body)
@@ -275,7 +230,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       const decoded = proto
         ? decodeSpansProto(body)
         : decodeSpans(JSON.parse(body.toString("utf8")));
-      outcome = await ingestSpans(caller, settings, decoded);
+      outcome = await ingestSpans(caller, settings, decoded, keep);
     }
   } catch (err) {
     if (!proto && err instanceof SyntaxError)
@@ -287,12 +242,24 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   const rejected = outcome.rejected.length;
+  const dropped = outcome.dropped ?? 0;
+  // Sampled rows ride OTLP's partial-success field, which is the only channel
+  // the protocol has for "I did not store all of that". Calling them rejected
+  // is not quite what the word means, and silence is worse: the sender logs a
+  // warning carrying the reason, which is the notice the cap promises and the
+  // only one that reaches whoever configured the exporter.
+  const notice = dropped > 0 ? samplingNotice(dropped, keep) : "";
   if (proto) {
-    sendProto(res, 200, protoResponse(signal, rejected, outcome.rejected[0]?.reason ?? ""));
+    sendProto(
+      res,
+      200,
+      protoResponse(signal, rejected + dropped, outcome.rejected[0]?.reason || notice),
+    );
   } else {
     send(res, outcome.accepted > 0 || rejected === 0 ? 200 : 422, {
       accepted: outcome.accepted,
       rejected,
+      ...(dropped > 0 ? { sampled: dropped, keeping: Number(keep.toFixed(4)), notice } : {}),
     });
   }
   void record(caller, signal, outcome, body.byteLength);
@@ -590,7 +557,12 @@ async function fluent(req: IncomingMessage, res: ServerResponse): Promise<void> 
         },
       });
     }
-    outcome = await ingestLogs(caller, settings, decoded);
+    outcome = await ingestLogs(
+      caller,
+      settings,
+      decoded,
+      await keepRateFor(caller.tenantId, settings.dailySoftCapGb),
+    );
   } catch (err) {
     if (err instanceof SyntaxError) return send(res, 400, { error: { code: "invalid_json" } });
     console.error("[telemetry] fluent failed:", err);
@@ -600,6 +572,7 @@ async function fluent(req: IncomingMessage, res: ServerResponse): Promise<void> 
   send(res, outcome.accepted > 0 || outcome.rejected.length === 0 ? 200 : 422, {
     accepted: outcome.accepted,
     rejected: outcome.rejected.length,
+    ...(outcome.dropped ? { sampled: outcome.dropped } : {}),
   });
   void record(caller, "logs", outcome, body.byteLength);
 }

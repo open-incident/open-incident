@@ -13,17 +13,22 @@ Each pack takes the same two variables:
 | `OI_SERVICE_NAME` | What this collector's own metrics are filed under               |
 | `OI_ENVIRONMENT`  | `production`, `staging` — whatever you call them                |
 
-| Pack              | What it sends                                            | Run against a real one? |
-| ----------------- | -------------------------------------------------------- | ----------------------- |
-| `host.yaml`       | CPU, memory, load, disk, filesystem, network, paging     | Yes                     |
-| `postgres.yaml`   | Connections, commits, dead rows, index hits, table sizes | Yes, PostgreSQL 17      |
-| `docker.yaml`     | CPU, memory, network and block I/O per container         | Yes, Docker 29          |
-| `kubernetes.yaml` | Kubelet metrics, cluster objects, container logs         | **No** — see its header |
+| Pack                 | What it sends                                            | Run against a real one? |
+| -------------------- | -------------------------------------------------------- | ----------------------- |
+| `host.yaml`          | CPU, memory, load, disk, filesystem, network, paging     | Yes                     |
+| `postgres.yaml`      | Connections, commits, dead rows, index hits, table sizes | Yes, PostgreSQL 17      |
+| `docker.yaml`        | CPU, memory, network and block I/O per container         | Yes, Docker 29          |
+| `kubernetes.yaml`    | Kubelet metrics, cluster objects, container logs         | **No** — see its header |
+| `tail-sampling.yaml` | Nothing of its own: a gateway that thins traces          | Yes, all four policies  |
 
-The last column is the point of this table. Three of these were started against
-a real daemon and the metrics were read back out of the store; the fourth was
-not, and its header says so rather than letting you find out during an
-incident.
+The last column is the point of this table. Four of these were started against
+a real daemon and what they produced was read back out; the fifth was not, and
+its header says so rather than letting you find out during an incident.
+
+`tail-sampling.yaml` is the odd one — it is not a source, it is a gateway your
+services export to instead of exporting to us. It holds each trace until it has
+finished and then decides, which is why it can keep the ones that failed. See
+**What each pack is for** below.
 
 ## The collector version is pinned, and it matters
 
@@ -60,3 +65,18 @@ runs unprivileged and the socket is root's.
 **kubernetes** — one collector per node for the kubelet and the logs, plus
 exactly one cluster-wide for the objects. Running the second on every node
 multiplies every count in the product by the size of the cluster.
+
+**tail-sampling** — send a tenth of your traces and still have every one you
+would have looked at. It judges a trace after it has finished, so the decision
+can use what happened rather than a coin flipped at the first span: errors,
+slow traces and anything marked `sampling.priority` are kept, plus a tenth of
+the rest so the normal case still has a shape. One rule breaks it — every span
+of a trace must reach the same instance, so run one replica or put a
+`loadbalancing` exporter keyed on `traceID` in front of several.
+
+Measured against the shipped file: a failed trace arrived with all three of its
+spans, a 2.2 s trace arrived on latency alone, a fast trace marked
+`sampling.priority` arrived, and the baseline kept 35 of 400 against the 10 % it
+asks for. The same run found the gotcha now pinned in the file: a load generator
+emitting sequential trace ids makes the baseline policy look broken, because it
+decides by hashing the id — 0 of 50 kept with `00000000…0064`-style ids.

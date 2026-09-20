@@ -56,10 +56,10 @@ Then, on the instance:
 ## Collector packs
 
 `docker/collector/` holds ready-made OpenTelemetry Collector configurations:
-the host's own numbers, PostgreSQL, Docker containers, Kubernetes. Each takes
-the endpoint and a key and nothing else, and the services it finds appear in
-**Services** on their own. They are listed on **Telemetry → Connect**, beside
-the key they need.
+the host's own numbers, PostgreSQL, Docker containers, Kubernetes, and a tail
+sampler. Each takes the endpoint and a key and nothing else, and the services it
+finds appear in **Services** on their own. They are listed on
+**Telemetry → Connect**, beside the key they need.
 
 Its README says which of them have been started against a real daemon and
 which have not — three of the four, and the fourth says so in its own header.
@@ -73,6 +73,42 @@ Two things running them taught us, both pinned into the files:
 - The **Docker** receiver defaults to API version 1.25, which Docker 25 and
   later refuse; and the collector image runs unprivileged while the socket
   belongs to root, so it needs `--user 0` or the socket's group.
+
+## Keeping fewer traces without losing the ones you need
+
+Two different things thin a trace stream, they sit in different places, and
+only one of them is a choice you make about quality.
+
+**Tail sampling** is the one worth having. `docker/collector/tail-sampling.yaml`
+is a gateway your services export to instead of exporting to us. It holds each
+trace until it is finished and then decides, so the decision can use what
+happened: anything that failed is kept, anything slow is kept, anything a span
+marked `sampling.priority` is kept, and a tenth of the rest goes through so the
+normal case still has a shape to compare against. That is the opposite of
+`parentbased_traceidratio` in an SDK, which flips its coin at the first span
+and therefore throws away nine of every ten broken traces along with nine of
+every ten boring ones.
+
+One rule breaks it: every span of a trace must reach the same collector
+instance. Two replicas behind a round-robin balancer each see half of every
+trace and each decide on half the evidence. Run one, or put a `loadbalancing`
+exporter keyed on `traceID` in front of several. Measured on the shipped file:
+a failed trace arrived with all three of its spans, a 2.2 s trace arrived on
+latency alone, and the baseline policy kept 35 of 400 against the 10 % it is
+set to.
+
+**The daily cap** is the other one, and it is not a quality decision — it is a
+budget guard, set on **Settings → Observability**. Past it logs and traces are
+thinned rather than refused, and three rules make that survivable: errors are
+never thinned, a trace is kept whole or not at all, and the share kept falls as
+the day goes on rather than stopping at a cliff. Sending ten times the cap
+stores about three times it, not ten. Metrics are never thinned at all — a
+chart with holes lies, where a thinner log stream only says less.
+
+Nothing about it is silent. The sender is told in OTLP's own partial-success
+field, so the exporter logs the reason; the **Telemetry** screen carries the
+share alongside the day's count; and each kept row records what it stands for,
+so a count can be corrected rather than quietly under-reporting.
 
 ## Sending
 

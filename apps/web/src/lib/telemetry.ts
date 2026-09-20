@@ -17,6 +17,7 @@ import {
   registerTelemetryKey,
   telemetryIngestionKeys,
   telemetryRejections,
+  telemetrySettings,
   telemetryUsage,
   withTenant,
 } from "@openincident/db";
@@ -119,16 +120,41 @@ export async function recentRejections(tenantId: string, limit = 8): Promise<Rej
   );
 }
 
-export async function usageToday(
-  tenantId: string,
-): Promise<Array<{ signal: string; rows: number }>> {
+export type UsageToday = {
+  rows: number;
+  /** Rows sampled out for being over the soft cap. Valid data, not stored. */
+  dropped: number;
+  capGb: number | null;
+};
+
+/**
+ * The day so far, and whether it is being thinned.
+ *
+ * `dropped` is what actually happened rather than the rate the endpoint is
+ * applying. The two answer different questions and the measured one is the
+ * better answer: recomputing the formula here would be a second place for it
+ * to live, and a prediction shown beside real rows invites the reader to
+ * believe the prediction.
+ */
+export async function usageToday(tenantId: string): Promise<UsageToday> {
   const day = new Date().toISOString().slice(0, 10);
-  return withTenant(tenantId, async (tx) =>
-    tx
-      .select({ signal: telemetryUsage.signal, rows: telemetryUsage.rows })
-      .from(telemetryUsage)
-      .where(and(eq(telemetryUsage.tenantId, tenantId), eq(telemetryUsage.day, day))),
-  );
+  return withTenant(tenantId, async (tx) => {
+    const [used, settings] = await Promise.all([
+      tx
+        .select({ rows: telemetryUsage.rows, dropped: telemetryUsage.dropped })
+        .from(telemetryUsage)
+        .where(and(eq(telemetryUsage.tenantId, tenantId), eq(telemetryUsage.day, day))),
+      tx
+        .select({ capGb: telemetrySettings.dailySoftCapGb })
+        .from(telemetrySettings)
+        .where(eq(telemetrySettings.tenantId, tenantId)),
+    ]);
+    return {
+      rows: used.reduce((n, r) => n + r.rows, 0),
+      dropped: used.reduce((n, r) => n + r.dropped, 0),
+      capGb: settings[0]?.capGb ?? null,
+    };
+  });
 }
 
 /** The Logs screen. Empty when nothing has arrived — which is a fact, not an error. */

@@ -8,6 +8,7 @@
  */
 import {
   type AnyPgColumn,
+  bigint,
   boolean,
   doublePrecision,
   index,
@@ -3360,7 +3361,21 @@ export const telemetryUsage = app.table(
     day: text("day").notNull(),
     signal: text("signal").notNull(),
     rows: integer("rows").notNull().default(0),
-    bytes: integer("bytes").notNull().default(0),
+    /**
+     * Raw bytes received — before sampling, before rejection, before anything.
+     *
+     * `bigint`, and not for elegance: a cap expressed in gigabytes makes an
+     * int4 overflow a matter of when. 2 147 483 647 is 2 GB, which one busy
+     * day of logs passes, and postgres answers that with an error that aborts
+     * the whole bookkeeping transaction.
+     *
+     * Raw rather than stored, because this is what the sampler divides into
+     * the cap: counting what survived would mean sampling lowers the measured
+     * volume, which raises the rate, which raises the volume.
+     */
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+    /** Rows sampled out for being over the soft cap. Not rejections. */
+    dropped: integer("dropped").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

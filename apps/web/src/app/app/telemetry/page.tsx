@@ -268,13 +268,44 @@ function hostOf(tenant: { slug: string; customDomain: string | null }): string {
   return tenant.customDomain ?? `${tenant.slug}.${process.env.BASE_DOMAIN ?? "example"}`;
 }
 
+/**
+ * The day's volume, and — when there is one — the fact that it is being
+ * thinned.
+ *
+ * The share is stated rather than implied. A workspace over its cap otherwise
+ * reads a smaller number than yesterday's and concludes its traffic fell,
+ * which is the silent cut the cap is written not to be.
+ */
 async function Usage({ tenantId, label }: { tenantId: string; label: string }) {
-  const rows = await usageToday(tenantId);
-  const total = rows.reduce((n, r) => n + r.rows, 0);
-  if (total === 0) return null;
+  const t = await getT();
+  const { rows, dropped, capGb } = await usageToday(tenantId);
+  if (rows + dropped === 0) return null;
+  const share = Math.round((dropped / (rows + dropped)) * 100);
   return (
-    <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-      {label}: <strong style={{ color: "var(--ink-2)" }}>{total.toLocaleString("en-US")}</strong>
+    <span style={{ fontSize: 12, color: "var(--ink-3)", display: "flex", gap: 8 }}>
+      <span>
+        {label}: <strong style={{ color: "var(--ink-2)" }}>{rows.toLocaleString("en-US")}</strong>
+      </span>
+      {dropped > 0 && (
+        <span
+          data-testid="telemetry-sampling"
+          title={t("telemetry.sampledWhy", {
+            dropped: dropped.toLocaleString("en-US"),
+            cap: capGb ?? "—",
+          })}
+          style={{
+            padding: "1px 7px",
+            borderRadius: 999,
+            background: "var(--wait-t)",
+            border: "1px solid var(--wait)",
+            color: "var(--wait)",
+            fontWeight: 600,
+            whiteSpace: "nowrap",
+          }}
+        >
+          {t("telemetry.sampled", { share })}
+        </span>
+      )}
     </span>
   );
 }

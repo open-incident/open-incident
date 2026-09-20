@@ -118,6 +118,9 @@ export const en = {
   "telemetry.noLabels": "no labels",
   "telemetry.lastValue": "last: {v}",
   "telemetry.todayRows": "Today",
+  "telemetry.sampled": "{share}% sampled",
+  "telemetry.sampledWhy":
+    "Over the {cap} GB daily cap: {dropped} rows were sampled out today rather than stored. Errors are never sampled, and a trace is kept whole or not at all.",
   "telemetry.noLogs":
     "No log has arrived yet. Point a collector at this workspace and the first line shows up here.",
   "telemetry.noTraces":
@@ -588,6 +591,9 @@ export const en = {
   "settings.telemetry.series": "Distinct series",
   "settings.telemetry.budgetHint":
     "One mislabelled counter — a user id in a label — turns a single series into a million and slows the store for everyone. Past this ceiling new series are refused and counted while existing ones keep flowing, so the dashboards that were working keep working while the mistake is found. Empty means the instance default of 50 000.",
+  "settings.telemetry.softCap": "Daily cap (GB)",
+  "settings.telemetry.softCapHint":
+    "A soft cap, and soft is the whole design: past it logs and traces are thinned rather than cut off, so the screens keep answering while somebody decides what to do. Errors are never thinned, and a trace is kept whole or not at all — a waterfall with holes in it reads as evidence and is not. The share kept falls as the day goes on, so a workspace sending ten times this stores about three times it rather than ten. Empty means no cap.",
   "settings.telemetry.regressionsTitle": "WHEN A BUG IS NEWS",
   "settings.telemetry.seeExceptions": "See the exception groups →",
   "services.calls": "Calls",

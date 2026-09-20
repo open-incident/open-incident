@@ -1,0 +1,139 @@
+# Tail sampling — a gateway that keeps the traces worth keeping.
+#
+# What this pack is for: sending a tenth of your traces and still having every
+# one you would have looked at. A trace is judged **after** it has finished, so
+# the decision can use what happened — it failed, it was slow, it touched
+# checkout — rather than a coin flipped at the first span, before anything is
+# known.
+#
+# That is the whole difference between this and head sampling, and it is the
+# reason to run a gateway at all. `traces_sampler=parentbased_traceidratio` in
+# an SDK throws away 90 % of your traces including 90 % of the broken ones. This
+# throws away 90 % of the boring ones.
+#
+# Run it as one deployment your services export to, not as a sidecar:
+#   docker run -d --name oi-tail-sampler -p 4317:4317 -p 4318:4318 \
+#     -v $PWD/tail-sampling.yaml:/etc/otelcol/config.yaml \
+#     -e OI_ENDPOINT=https://otlp.<your workspace host> \
+#     -e OI_KEY=<the ingestion key> \
+#     otel/opentelemetry-collector-contrib:0.137.0 --config /etc/otelcol/config.yaml
+#
+# Then point your services at it instead of at us:
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://oi-tail-sampler:4318
+#
+# ---------------------------------------------------------------------------
+# The one rule that breaks this: every span of a trace must reach the same
+# collector instance.
+#
+# A tail sampler decides by holding a trace in memory until it is complete. Two
+# replicas behind a round-robin load balancer each see half of every trace,
+# each decide on half the evidence, and you get half-traces in the store — which
+# read as evidence and are not. If you run more than one replica, put a
+# `loadbalancing` exporter in front of them keyed on `traceID`. One replica
+# needs none of that, and one replica handles a lot: the memory below holds
+# roughly 200 000 concurrent traces.
+# ---------------------------------------------------------------------------
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # First in the pipeline and not negotiable: a tail sampler is a buffer, and a
+  # buffer with no limit in front of it is an out-of-memory kill during exactly
+  # the traffic spike you wanted the traces for.
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 1024
+    spike_limit_mib: 256
+
+  tail_sampling:
+    # How long to wait after the first span before judging. Must be longer than
+    # your slowest trace, or that trace is judged incomplete — and the slowest
+    # traces are the ones this exists to keep. 30 s is generous for HTTP; raise
+    # it if you have batch work under the same trace.
+    decision_wait: 30s
+    num_traces: 200000
+    expected_new_traces_per_sec: 2000
+    policies:
+      # Anything that failed, whole. First, and with no rate attached.
+      - name: errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+
+      # Anything slow. 1 s is a starting point, not a truth: set it to the
+      # number your users complain about.
+      - name: slow
+        type: latency
+        latency:
+          threshold_ms: 1000
+
+      # Anything an SDK explicitly marked. This is how a team keeps a trace the
+      # rules below would drop — set `sampling.priority` on a span and it
+      # survives.
+      - name: forced
+        type: numeric_attribute
+        numeric_attribute:
+          key: sampling.priority
+          min_value: 1
+
+      # And a tenth of everything else, so the normal case still has a shape to
+      # compare the broken one against. A store with only failures in it cannot
+      # answer "is this slow, or is it always like that".
+      #
+      # If you test this with a load generator that emits sequential trace ids,
+      # this policy will look broken — it decides by hashing the trace id, and
+      # ids that differ in their last byte land in the same bucket. Measured
+      # here: 0 of 50 kept with `00000000…0064`-style ids, 35 of 400 with real
+      # random ones. Real SDKs emit random ids; generators often do not.
+      - name: baseline
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+
+  # After the sampler, never before: batching ahead of it would hand the
+  # sampler pre-grouped spans and change nothing, while batching after it is
+  # what makes the surviving 10 % cheap to ship.
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+
+exporters:
+  otlphttp:
+    endpoint: ${env:OI_ENDPOINT}
+    headers:
+      x-oi-key: ${env:OI_KEY}
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 60s
+      max_elapsed_time: 600s
+    sending_queue:
+      enabled: true
+      queue_size: 1000
+
+service:
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, tail_sampling, batch]
+      exporters: [otlphttp]
+    # Logs and metrics pass straight through. Only traces are sampled: a
+    # thinned metric breaks every chart, and logs are already filtered at the
+    # source by severity.
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp]
