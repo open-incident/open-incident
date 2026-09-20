@@ -55,6 +55,7 @@ export {
   type Node,
 } from "./promql/parse";
 export { evalPromql, type EvalOptions, type Sample, type Series } from "./promql/eval";
+export { servicesOverview, type ServiceRow } from "./services";
 export {
   PACKS,
   allPackSignals,

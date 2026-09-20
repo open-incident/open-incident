@@ -114,6 +114,21 @@ export const en = {
   "telemetry.tab.connect": "Connect",
   "telemetry.tab.metrics": "Metrics",
   "telemetry.tab.slos": "Objectives",
+  "telemetry.tab.services": "Services",
+  "telemetry.servicesHint":
+    "Ordered by traffic. A service appears here as soon as it sends a span — nothing to declare first.",
+  "telemetry.servicesService": "Service",
+  "telemetry.servicesRps": "Requests /s",
+  "telemetry.servicesErrors": "Errors",
+  "telemetry.servicesLatency": "Latency",
+  "telemetry.servicesIncidents": "Incidents",
+  "telemetry.servicesNoOwner": "no owner",
+  "telemetry.servicesEmpty": "No span in this window. A service appears as soon as it sends one.",
+  "telemetry.servicesFrom":
+    "Services come from service.name. Two names for the same thing? Merge them in Services — the telemetry follows.",
+  "telemetry.servicesJump":
+    "is failing {to} of requests, against {from} earlier in this window — {errors} failures since.",
+  "telemetry.servicesAfterChange": "The change “{title}” landed in the same window.",
   "slo.tabHint":
     "An objective is a ratio of two PromQL expressions over the metrics next door. Sorted by how much budget is left.",
   "telemetry.noMetrics":
@@ -705,6 +720,21 @@ export const en = {
   "telemetry.packSilent": "no signal yet",
   "telemetry.packOpen": "Open its dashboard",
   "telemetry.packInstall": "Place its dashboard",
+  "telemetry.collectors": "Collectors seen",
+  "telemetry.collectorsNone":
+    "Nothing has reported yet. The first signal names its own service — there is nothing to declare first.",
+  "telemetry.retention": "Retention",
+  "telemetry.retentionLogs": "Logs",
+  "telemetry.retentionTraces": "Traces",
+  "telemetry.retentionMetrics": "Metrics",
+  "telemetry.retentionProfiles": "Profiles",
+  "telemetry.retentionRum": "Real users",
+  "telemetry.nDays": { one: "{count} day", other: "{count} days" },
+  "telemetry.softCap": "Daily ceiling",
+  "telemetry.softCapGb": "{gb} GB, then sampled",
+  "telemetry.softCapNone": "none",
+  "telemetry.retentionWhere": "A service can carry its own retention, on its page.",
+  "telemetry.retentionEdit": "Change these",
   "telemetry.packsWhere":
     "In docker/collector/ of the repository, with a README saying which of them have been run against a real daemon and which have not.",
   "telemetry.tab.profiles": "Profiles",

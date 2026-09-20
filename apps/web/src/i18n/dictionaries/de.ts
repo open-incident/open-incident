@@ -105,6 +105,22 @@ export const de: Dictionary = {
   "telemetry.tab.connect": "Verbinden",
   "telemetry.tab.metrics": "Metriken",
   "telemetry.tab.slos": "Ziele",
+  "telemetry.tab.services": "Dienste",
+  "telemetry.servicesHint":
+    "Nach Verkehr sortiert. Ein Dienst erscheint, sobald er einen Span sendet — nichts vorher anzumelden.",
+  "telemetry.servicesService": "Dienst",
+  "telemetry.servicesRps": "Anfragen /s",
+  "telemetry.servicesErrors": "Fehler",
+  "telemetry.servicesLatency": "Latenz",
+  "telemetry.servicesIncidents": "Vorfälle",
+  "telemetry.servicesNoOwner": "ohne Eigentümer",
+  "telemetry.servicesEmpty":
+    "Kein Span in diesem Zeitraum. Ein Dienst erscheint, sobald er einen sendet.",
+  "telemetry.servicesFrom":
+    "Dienste kommen aus service.name. Zwei Namen für dasselbe? In Dienste zusammenführen — die Telemetrie folgt.",
+  "telemetry.servicesJump":
+    "scheitert bei {to} der Anfragen, gegenüber {from} früher im Zeitraum — {errors} Fehler seither.",
+  "telemetry.servicesAfterChange": "Die Änderung „{title}“ fiel in denselben Zeitraum.",
   "slo.tabHint":
     "Ein Ziel ist ein Verhältnis zweier PromQL-Ausdrücke über die Metriken nebenan. Nach verbleibendem Budget sortiert.",
   "telemetry.noMetrics":
@@ -712,6 +728,21 @@ export const de: Dictionary = {
   "telemetry.packSilent": "noch kein Signal",
   "telemetry.packOpen": "Dashboard öffnen",
   "telemetry.packInstall": "Dashboard anlegen",
+  "telemetry.collectors": "Gesehene Collectors",
+  "telemetry.collectorsNone":
+    "Noch hat nichts gemeldet. Das erste Signal benennt seinen Dienst selbst — nichts vorher anzumelden.",
+  "telemetry.retention": "Aufbewahrung",
+  "telemetry.retentionLogs": "Logs",
+  "telemetry.retentionTraces": "Traces",
+  "telemetry.retentionMetrics": "Metriken",
+  "telemetry.retentionProfiles": "Profile",
+  "telemetry.retentionRum": "Echte Nutzer",
+  "telemetry.nDays": { one: "{count} Tag", other: "{count} Tage" },
+  "telemetry.softCap": "Tagesobergrenze",
+  "telemetry.softCapGb": "{gb} GB, danach gesampelt",
+  "telemetry.softCapNone": "keine",
+  "telemetry.retentionWhere": "Ein Dienst kann auf seiner Seite eine eigene Aufbewahrung tragen.",
+  "telemetry.retentionEdit": "Ändern",
   "telemetry.packsWhere":
     "Unter docker/collector/ im Repository, mit einer README, die sagt, welche gegen einen echten Daemon gelaufen sind und welche nicht.",
   "telemetry.tab.profiles": "Profile",

@@ -106,6 +106,22 @@ export const fr: Dictionary = {
   "telemetry.tab.connect": "Brancher",
   "telemetry.tab.metrics": "Métriques",
   "telemetry.tab.slos": "Objectifs",
+  "telemetry.tab.services": "Services",
+  "telemetry.servicesHint":
+    "Classés par trafic. Un service apparaît dès qu’il envoie un span — rien à déclarer avant.",
+  "telemetry.servicesService": "Service",
+  "telemetry.servicesRps": "Requêtes /s",
+  "telemetry.servicesErrors": "Erreurs",
+  "telemetry.servicesLatency": "Latence",
+  "telemetry.servicesIncidents": "Incidents",
+  "telemetry.servicesNoOwner": "sans propriétaire",
+  "telemetry.servicesEmpty":
+    "Aucun span sur cette fenêtre. Un service apparaît dès qu’il en envoie un.",
+  "telemetry.servicesFrom":
+    "Les services viennent de service.name. Deux noms pour la même chose ? Fusionnez-les dans Services — la télémétrie suit.",
+  "telemetry.servicesJump":
+    "échoue sur {to} des requêtes, contre {from} plus tôt dans la fenêtre — {errors} échecs depuis.",
+  "telemetry.servicesAfterChange": "Le changement « {title} » a eu lieu dans la même fenêtre.",
   "slo.tabHint":
     "Un objectif est un rapport entre deux expressions PromQL sur les métriques d’à côté. Triés par budget restant.",
   "telemetry.noMetrics":
@@ -708,6 +724,21 @@ export const fr: Dictionary = {
   "telemetry.packSilent": "aucun signal",
   "telemetry.packOpen": "Ouvrir son tableau",
   "telemetry.packInstall": "Poser son tableau",
+  "telemetry.collectors": "Collecteurs vus",
+  "telemetry.collectorsNone":
+    "Rien n’a encore émis. Le premier signal nomme lui-même son service — rien à déclarer avant.",
+  "telemetry.retention": "Rétention",
+  "telemetry.retentionLogs": "Logs",
+  "telemetry.retentionTraces": "Traces",
+  "telemetry.retentionMetrics": "Métriques",
+  "telemetry.retentionProfiles": "Profils",
+  "telemetry.retentionRum": "Utilisateurs réels",
+  "telemetry.nDays": { one: "{count} jour", other: "{count} jours" },
+  "telemetry.softCap": "Plafond quotidien",
+  "telemetry.softCapGb": "{gb} Go, puis échantillonné",
+  "telemetry.softCapNone": "aucun",
+  "telemetry.retentionWhere": "Un service peut porter sa propre rétention, sur sa page.",
+  "telemetry.retentionEdit": "Modifier",
   "telemetry.packsWhere":
     "Dans docker/collector/ du dépôt, avec un README qui dit lesquels ont été exécutés contre un vrai démon et lesquels non.",
   "telemetry.tab.profiles": "Profils",

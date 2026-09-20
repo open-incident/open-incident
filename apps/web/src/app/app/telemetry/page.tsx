@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { services, telemetrySettings, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { canRespond, isManager, requireMember } from "@/lib/session";
 import { requireTenant } from "@/lib/tenant";
@@ -25,6 +27,7 @@ import { ProfilesTab } from "./profiles-tab";
 import { FilterError, QueryBar } from "./query-bar";
 import { RumTab } from "./rum-tab";
 import { SlosTab } from "./slos-tab";
+import { ServicesTab, serviceWindowOf } from "./services-tab";
 import { Waterfall } from "./waterfall";
 import { SERVICE_COLOURS } from "./trace-model";
 
@@ -39,6 +42,7 @@ import { SERVICE_COLOURS } from "./trace-model";
  */
 
 const TABS = [
+  "services",
   "logs",
   "traces",
   "metrics",
@@ -131,7 +135,11 @@ export default async function TelemetryPage({
     return <NotInstalled admin={admin} endpoint={otlpEndpoints(hostOf(tenant)).grpc} />;
   }
 
-  const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as Tab) : "logs";
+  // Services first, as the design has it: the screen opens on "which one is
+  // unhealthy", not on a log stream nobody has filtered yet.
+  const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? "")
+    ? (sp.tab as Tab)
+    : "services";
   const endpoints = otlpEndpoints(hostOf(tenant));
 
   return (
@@ -263,6 +271,9 @@ export default async function TelemetryPage({
             sinceHours={rumWindowOf(sp.since)}
             session={sp.session}
           />
+        )}
+        {tab === "services" && (
+          <ServicesTab tenantId={tenant.id} sinceMinutes={serviceWindowOf(sp.since)} />
         )}
         {tab === "slos" && (
           <SlosTab
@@ -901,6 +912,27 @@ async function ConnectTab({
     packsReporting(tenantId).catch(() => [] as PackId[]),
     packDashboardSlugs(tenantId),
   ]);
+  // Who has actually reported, and on what terms. Both from Postgres: the
+  // services table already records when telemetry last named a service, so
+  // this costs nothing on top of the page.
+  const setup = await withTenant(tenantId, async (tx) => {
+    const seen = await tx
+      .select({
+        key: services.key,
+        stack: services.techStack,
+        at: services.telemetryLastSeenAt,
+        override: services.retentionOverrideDays,
+      })
+      .from(services)
+      .where(and(eq(services.tenantId, tenantId), isNotNull(services.telemetryLastSeenAt)))
+      .orderBy(desc(services.telemetryLastSeenAt))
+      .limit(12);
+    const [settings] = await tx
+      .select()
+      .from(telemetrySettings)
+      .where(eq(telemetrySettings.tenantId, tenantId));
+    return { seen, settings: settings ?? null };
+  });
   const snippet = [
     `OTEL_EXPORTER_OTLP_ENDPOINT=${http}`,
     `OTEL_EXPORTER_OTLP_HEADERS=x-oi-key=${issued ?? "<your key>"}`,
@@ -1031,6 +1063,97 @@ async function ConnectTab({
         })}
         <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 10, lineHeight: 1.5 }}>
           {t("telemetry.packsWhere")}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-start" }}>
+        <div style={{ ...CARD, padding: "14px 16px", flex: "1 1 320px", minWidth: 280 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 8 }}>
+            {t("telemetry.collectors")}
+          </div>
+          {setup.seen.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
+              {t("telemetry.collectorsNone")}
+            </div>
+          ) : (
+            setup.seen.map((c) => (
+              <div
+                key={c.key}
+                data-testid="collector-seen"
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 8,
+                  padding: "5px 0",
+                  borderTop: "1px solid var(--line-2)",
+                  fontSize: 12.5,
+                }}
+              >
+                <span style={{ fontWeight: 600, minWidth: 0, flex: 1 }}>{c.key}</span>
+                {c.stack && (
+                  <span style={{ ...MONO, fontSize: 11, color: "var(--ink-3)" }}>{c.stack}</span>
+                )}
+                <span style={{ fontSize: 11, color: "var(--ink-3)", whiteSpace: "nowrap" }}>
+                  {c.at ? t.fmt.relativeCompact(c.at) : "—"}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div style={{ ...CARD, padding: "14px 16px", flex: "1 1 320px", minWidth: 280 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 8 }}>
+            {t("telemetry.retention")}
+          </div>
+          {(
+            [
+              ["telemetry.retentionLogs", setup.settings?.retentionLogsDays ?? 15],
+              ["telemetry.retentionTraces", setup.settings?.retentionTracesDays ?? 15],
+              ["telemetry.retentionMetrics", setup.settings?.retentionMetricsDays ?? 30],
+              ["telemetry.retentionProfiles", setup.settings?.retentionProfilesDays ?? 7],
+              ["telemetry.retentionRum", setup.settings?.retentionRumDays ?? 7],
+            ] as const
+          ).map(([label, days]) => (
+            <div
+              key={label}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 8,
+                padding: "5px 0",
+                borderTop: "1px solid var(--line-2)",
+                fontSize: 12.5,
+              }}
+            >
+              <span style={{ color: "var(--ink-2)" }}>{t(label)}</span>
+              <span style={{ ...MONO }}>{t("telemetry.nDays", { count: days })}</span>
+            </div>
+          ))}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 8,
+              padding: "5px 0",
+              borderTop: "1px solid var(--line-2)",
+              fontSize: 12.5,
+            }}
+          >
+            <span style={{ color: "var(--ink-2)" }}>{t("telemetry.softCap")}</span>
+            <span style={{ ...MONO }}>
+              {setup.settings?.dailySoftCapGb
+                ? t("telemetry.softCapGb", { gb: setup.settings.dailySoftCapGb })
+                : t("telemetry.softCapNone")}
+            </span>
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 8, lineHeight: 1.5 }}>
+            {t("telemetry.retentionWhere")}{" "}
+            {admin && (
+              <Link href="/app/settings/observability" style={{ color: "var(--brand)" }}>
+                {t("telemetry.retentionEdit")}
+              </Link>
+            )}
+          </div>
         </div>
       </div>
 
