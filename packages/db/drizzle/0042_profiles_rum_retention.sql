@@ -1,0 +1,2 @@
+ALTER TABLE "app"."telemetry_settings" ADD COLUMN "retention_profiles_days" integer DEFAULT 7 NOT NULL;--> statement-breakpoint
+ALTER TABLE "app"."telemetry_settings" ADD COLUMN "retention_rum_days" integer DEFAULT 7 NOT NULL;

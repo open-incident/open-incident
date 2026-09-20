@@ -34,6 +34,8 @@ import {
 import { decodeMetricsJson } from "./metrics";
 import { ingestMetrics } from "./metrics-ingest";
 import { decodeRemoteWrite, remoteWriteVersion, RemoteWriteError } from "./remote-write";
+import { decodePprof, PprofError } from "./pprof";
+import { ingestProfiles, parsePyroscopeName } from "./profiles-ingest";
 import { SnappyError } from "./snappy";
 
 const PORT = Number(process.env.TELEMETRY_PORT ?? 4318);
@@ -114,7 +116,7 @@ async function record(caller: Caller, signal: Signal, outcome: Outcome, bytes: n
   }
 }
 
-type Signal = "logs" | "traces" | "metrics";
+type Signal = "logs" | "traces" | "metrics" | "profiles";
 
 const ROUTES: Record<string, Signal> = {
   "/v1/logs": "logs",
@@ -132,6 +134,17 @@ const ROUTES: Record<string, Signal> = {
  * and a 204 rather than a 200.
  */
 const REMOTE_WRITE = "/api/v1/write";
+
+/*
+ * Profiles, on two paths.
+ *
+ * `/v1/profiles` is ours and takes a pprof body with the service in the query
+ * string. `/ingest` is Pyroscope's, and it is there because that is what the
+ * agents already speak: Grafana Alloy, the Pyroscope agent and the Java and
+ * Python SDKs all POST there, and accepting it means one line of their
+ * configuration changes rather than their whole profiling setup.
+ */
+const PROFILE_PATHS = new Set(["/v1/profiles", "/ingest", "/ingest/v1/profiles"]);
 
 /** Each signal answers a protobuf sender in its own response message. */
 function protoResponse(signal: Signal, rejected: number, message: string): Buffer {
@@ -152,6 +165,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   if (req.method === "POST" && path === REMOTE_WRITE) return remoteWrite(req, res);
+  if (req.method === "POST" && PROFILE_PATHS.has(path)) return profiles(req, res);
 
   const signal = ROUTES[path];
   if (!signal || req.method !== "POST") return send(res, 404, { error: { code: "not_found" } });
@@ -289,6 +303,77 @@ async function remoteWrite(req: IncomingMessage, res: ServerResponse): Promise<v
   void record(caller, "metrics", outcome, body.byteLength);
 }
 
+/**
+ * One profile upload, whichever path it arrived on.
+ *
+ * The service can be named three ways, and all three are read because all
+ * three are what somebody will send: our own `service` parameter, Pyroscope's
+ * `name` (which also carries the kind and a label set), and the key's pinned
+ * name for a collector that cannot be trusted to say.
+ */
+async function profiles(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!telemetryInstalled()) return send(res, 503, { error: { code: "module_not_installed" } });
+
+  const key = keyFromHeaders(req.headers);
+  if (!key) return send(res, 401, { error: { code: "missing_key", message: "send x-oi-key" } });
+  const caller = await callerFor(key);
+  if (!caller) return send(res, 401, { error: { code: "invalid_key" } });
+  if (!caller.signals.includes("profiles"))
+    return send(res, 403, {
+      error: { code: "signal_not_allowed", message: "this key may not send profiles" },
+    });
+
+  const query = new URL(req.url ?? "/", "http://localhost").searchParams;
+  const pyroscope = query.get("name") ? parsePyroscopeName(query.get("name")!) : null;
+  const serviceName = query.get("service") ?? pyroscope?.service ?? "";
+  const hint = query.get("type") ?? pyroscope?.type;
+
+  let body: Buffer;
+  try {
+    body = await readBody(req);
+  } catch {
+    return send(res, 413, { error: { code: "payload_too_large" } });
+  }
+
+  const settings = await settingsFor(caller.tenantId);
+  if (!settings.enabledSignals.includes("profiles"))
+    return send(res, 403, { error: { code: "signal_disabled" } });
+
+  let outcome: Outcome;
+  try {
+    const decoded = decodePprof(body, hint);
+    outcome = await ingestProfiles(
+      caller,
+      settings,
+      {
+        serviceName,
+        environment:
+          query.get("environment") ?? pyroscope?.labels.env ?? pyroscope?.labels.environment ?? "",
+        release: query.get("release") ?? pyroscope?.labels.version ?? "",
+        labels: pyroscope?.labels ?? {},
+      },
+      decoded,
+    );
+  } catch (err) {
+    if (err instanceof PprofError) {
+      console.warn(`[telemetry] profile refused: ${err.message}`);
+      return send(res, 400, { error: { code: "invalid_profile", message: err.message } });
+    }
+    console.error("[telemetry] profile failed:", err);
+    return send(res, 503, { error: { code: "storage_unavailable" } });
+  }
+
+  const rejected = outcome.rejected.length;
+  // A Pyroscope agent reads the status and nothing else. 200 with a body the
+  // others can read costs nothing and tells a person using curl what happened.
+  send(res, outcome.accepted > 0 || rejected === 0 ? 200 : 422, {
+    accepted: outcome.accepted,
+    rejected,
+    ...(rejected ? { reason: outcome.rejected[0]?.reason } : {}),
+  });
+  void record(caller, "profiles", outcome, body.byteLength);
+}
+
 createServer((req, res) => {
   handle(req, res).catch((err) => {
     console.error("[telemetry] unhandled:", err);
@@ -297,7 +382,7 @@ createServer((req, res) => {
 }).listen(PORT, () => {
   console.log(
     telemetryInstalled()
-      ? `Open Incident telemetry ingestion on :${PORT} — OTLP logs, traces and metrics (protobuf and JSON), Prometheus remote write`
+      ? `Open Incident telemetry ingestion on :${PORT} — OTLP logs, traces, metrics and profiles, Prometheus remote write`
       : `Open Incident telemetry ingestion on :${PORT} — no storage configured, answering 503`,
   );
 });

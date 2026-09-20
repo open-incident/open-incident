@@ -679,6 +679,43 @@ export const en = {
   "telemetry.packKubernetes": "Kubelet metrics, cluster objects and container logs",
   "telemetry.packsWhere":
     "In docker/collector/ of the repository, with a README saying which of them have been run against a real daemon and which have not.",
+  "telemetry.tab.profiles": "Profiles",
+  "profiles.search": "Highlight a function…",
+  "profiles.matched": "{pct} % of what is shown",
+  "profiles.resetZoom": "Whole profile",
+  "profiles.totalIs": "{value}",
+  "profiles.flameHint":
+    "Width is cost. Click a block to make it the whole width — the frame worth reading is always three levels down and one per cent wide. Colour only tells two neighbours apart; it does not mean anything.",
+  "profiles.emptyTitle": "No profile yet",
+  "profiles.emptyBody":
+    "Send a pprof and a flamegraph appears. Every Go, Java, Python and Rust profiler already writes this format, and the Pyroscope path (/ingest?name=…) is accepted too, so an agent you already run needs one line changed.",
+  "profiles.noneInWindow": "No profile in this window.",
+  "profiles.service": "SERVICE",
+  "profiles.type": "KIND",
+  "profiles.window": "OVER",
+  "profiles.compare": "Compare with the window before",
+  "profiles.function": "FUNCTION",
+  "profiles.self": "SELF",
+  "profiles.total": "TOTAL",
+  "profiles.change": "CHANGE",
+  "profiles.nowWas": "NOW ← BEFORE",
+  "profiles.noBefore":
+    "Nothing was profiled in the window before this one, so there is nothing to compare against.",
+  "profiles.diffHint":
+    "Compared as shares of each window's total, not as raw values: two windows never carry the same load, and reading twice the traffic as a regression is the commonest mistake made with a profile diff. A point is one per cent of the profile. Both columns matter — a change that moves work between callers leaves every self time exactly where it was and shows only in the total.",
+  "profiles.pruned":
+    "{pct} % folded away as too narrow to draw, out of {stacks} distinct call paths.",
+  "profiles.kind.cpu": "CPU",
+  "profiles.kind.wall": "Wall clock",
+  "profiles.kind.alloc_space": "Allocated bytes",
+  "profiles.kind.alloc_objects": "Allocated objects",
+  "profiles.kind.inuse_space": "Live bytes",
+  "profiles.kind.inuse_objects": "Live objects",
+  "profiles.kind.goroutines": "Goroutines",
+  "profiles.kind.mutex": "Lock contention",
+  "profiles.kind.block": "Blocking",
+  "profiles.totalChange": "TOTAL CHANGE",
+  "profiles.selfChange": "SELF CHANGE",
   "monitors.on.packet_loss_pct": "packet loss (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

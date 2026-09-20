@@ -41,7 +41,7 @@ export type TenantView = (typeof TENANT_VIEWS)[number];
  * explicitly rather than matched by prefix.
  */
 const RAW_TABLES =
-  /\b(otel_logs|otel_spans|otel_traces_index|otel_metrics_gauge|otel_metrics_sum|otel_metrics_histogram|metric_series|metric_1m|otel_exceptions|exception_groups_1h)(?!_t\s*\()\b/;
+  /\b(otel_logs|otel_spans|otel_traces_index|otel_metrics_gauge|otel_metrics_sum|otel_metrics_histogram|metric_series|metric_1m|otel_exceptions|exception_groups_1h|otel_profiles|profile_stacks)(?!_t\s*\()\b/;
 
 export type ReadOptions = {
   /** Extra bound parameters. `tenant` is reserved and set by this function. */

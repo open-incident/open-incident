@@ -18,6 +18,7 @@ import { ExceptionsTab } from "./exceptions-tab";
 import { MetricsTab } from "./metrics-tab";
 import { MapTab } from "./map-tab";
 import { SqlTab } from "./sql-tab";
+import { ProfilesTab } from "./profiles-tab";
 import { Waterfall } from "./waterfall";
 
 /**
@@ -30,7 +31,16 @@ import { Waterfall } from "./waterfall";
  * and the screen says that instead.
  */
 
-const TABS = ["logs", "traces", "metrics", "exceptions", "map", "sql", "connect"] as const;
+const TABS = [
+  "logs",
+  "traces",
+  "metrics",
+  "exceptions",
+  "profiles",
+  "map",
+  "sql",
+  "connect",
+] as const;
 type Tab = (typeof TABS)[number];
 
 const CARD: React.CSSProperties = {
@@ -57,6 +67,12 @@ function windowOf(raw: string | undefined): number {
   return [60, 360, 1440].includes(n) ? n : 60;
 }
 
+/** The profile window, from the list the screen offers rather than the caller. */
+function profileWindowOf(raw: string | undefined): number {
+  const n = Number(raw);
+  return [15, 60, 360, 1440].includes(n) ? n : 60;
+}
+
 function ms(ns: string): string {
   const n = Number(ns);
   if (!Number.isFinite(n) || n <= 0) return "—";
@@ -75,6 +91,8 @@ export default async function TelemetryPage({
     issued?: string;
     since?: string;
     q?: string;
+    type?: string;
+    compare?: string;
   }>;
 }) {
   const { member } = await requireMember();
@@ -187,6 +205,15 @@ export default async function TelemetryPage({
         )}
         {tab === "map" && (
           <MapTab tenantId={tenant.id} sinceMinutes={windowOf(sp.since)} highlight={sp.service} />
+        )}
+        {tab === "profiles" && (
+          <ProfilesTab
+            tenantId={tenant.id}
+            service={sp.service}
+            type={sp.type}
+            sinceMinutes={profileWindowOf(sp.since)}
+            compare={sp.compare === "1"}
+          />
         )}
         {tab === "sql" && <SqlTab tenantId={tenant.id} query={sp.q} />}
         {tab === "connect" && (

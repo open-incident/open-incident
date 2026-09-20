@@ -17,15 +17,19 @@ export type Settings = {
   retentionLogsDays: number;
   retentionTracesDays: number;
   retentionMetricsDays: number;
+  retentionProfilesDays: number;
+  retentionRumDays: number;
   cardinalityBudget: number | null;
   scrubRules: RegExp[];
 };
 
 const DEFAULTS: Settings = {
-  enabledSignals: ["logs", "traces", "metrics"],
+  enabledSignals: ["logs", "traces", "metrics", "profiles"],
   retentionLogsDays: 15,
   retentionTracesDays: 15,
   retentionMetricsDays: 30,
+  retentionProfilesDays: 7,
+  retentionRumDays: 7,
   cardinalityBudget: null,
   scrubRules: [],
 };
@@ -42,6 +46,8 @@ export async function settingsFor(tenantId: string): Promise<Settings> {
       retentionLogsDays: row.retentionLogsDays,
       retentionTracesDays: row.retentionTracesDays,
       retentionMetricsDays: row.retentionMetricsDays,
+      retentionProfilesDays: row.retentionProfilesDays,
+      retentionRumDays: row.retentionRumDays,
       cardinalityBudget: row.cardinalityBudget,
       // A workspace's own rule is data, and a bad regular expression is a
       // configuration mistake, not an outage: it is dropped, not thrown.

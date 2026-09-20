@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+// pprof, condensed to what a flamegraph needs.
+//
+// The format is Google's and every Go, Java, Python and Rust profiler emits
+// it, which is why it is the one this endpoint speaks rather than a shape of
+// our own. Its defining trick is the string table: every name, filename and
+// unit appears once in `string_table` and everything else holds an index into
+// it. A profile of a large binary is mostly that table.
+//
+// Field numbers are the contract. Anything not read is left out rather than
+// decoded and discarded — a field that is parsed and thrown away is a field
+// somebody will later assume is stored.
+
+package perftools.profiles;
+
+message ValueType {
+  int64 type = 1;  // index into string_table: "cpu", "alloc_space"…
+  int64 unit = 2;  // index into string_table: "nanoseconds", "bytes"…
+}
+
+message Label {
+  int64 key = 1;
+  int64 str = 2;
+  int64 num = 3;
+  int64 num_unit = 4;
+}
+
+message Sample {
+  // Location ids, **leaf first**. This is the call stack, and its order is the
+  // one thing a flamegraph cannot get wrong.
+  repeated uint64 location_id = 1;
+  // One value per entry in Profile.sample_type. A Go CPU profile carries two:
+  // the sample count and the nanoseconds.
+  repeated int64 value = 2;
+  repeated Label label = 3;
+}
+
+message Line {
+  uint64 function_id = 1;
+  int64 line = 2;
+}
+
+message Location {
+  uint64 id = 1;
+  uint64 mapping_id = 2;
+  uint64 address = 3;
+  // Several when the compiler inlined: one location can be four frames of
+  // source. Dropping the extra ones is how a flamegraph loses the function
+  // that is actually slow.
+  repeated Line line = 4;
+}
+
+message Function {
+  uint64 id = 1;
+  int64 name = 2;
+  int64 system_name = 3;
+  int64 filename = 4;
+  int64 start_line = 5;
+}
+
+message Profile {
+  repeated ValueType sample_type = 1;
+  repeated Sample sample = 2;
+  repeated Location location = 4;
+  repeated Function function = 5;
+  repeated string string_table = 6;
+  int64 time_nanos = 9;
+  int64 duration_nanos = 10;
+  ValueType period_type = 11;
+  int64 period = 12;
+  int64 default_sample_type = 14;
+}

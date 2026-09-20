@@ -3099,11 +3099,21 @@ export const telemetrySettings = app.table(
     enabledSignals: jsonb("enabled_signals")
       .$type<string[]>()
       .notNull()
-      .default(["logs", "traces", "metrics"]),
+      .default(["logs", "traces", "metrics", "profiles"]),
     retentionLogsDays: integer("retention_logs_days").notNull().default(15),
     retentionTracesDays: integer("retention_traces_days").notNull().default(15),
     /** Metrics are cheaper per row and more useful over time, hence the longer default. */
     retentionMetricsDays: integer("retention_metrics_days").notNull().default(30),
+    /**
+     * Profiles and real user monitoring, both a week by default.
+     *
+     * Shorter than the rest because both are read while they are fresh: a
+     * flamegraph answers "why is it slow right now", and a browser session is
+     * looked at in the hours after somebody complained. A month of either is a
+     * disk bill for data nobody opens.
+     */
+    retentionProfilesDays: integer("retention_profiles_days").notNull().default(7),
+    retentionRumDays: integer("retention_rum_days").notNull().default(7),
     /**
      * How many distinct series the workspace keeps. Past it, new series are
      * refused and counted while existing ones keep flowing — the order that
@@ -3155,7 +3165,10 @@ export const telemetryIngestionKeys = app.table(
     tenantId: tenantId(),
     keyHash: text("key_hash").notNull(),
     label: text("label").notNull(),
-    signals: jsonb("signals").$type<string[]>().notNull().default(["logs", "traces", "metrics"]),
+    signals: jsonb("signals")
+      .$type<string[]>()
+      .notNull()
+      .default(["logs", "traces", "metrics", "profiles"]),
     /** Forces `service.name`, for a collector that cannot be trusted to set it. */
     pinnedServiceName: text("pinned_service_name"),
     rateLimitRpm: integer("rate_limit_rpm"),

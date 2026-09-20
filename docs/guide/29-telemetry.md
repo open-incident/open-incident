@@ -339,6 +339,57 @@ migrated dashboard that quietly changes its numbers is worse than a missing
 panel. Skipped panels are listed with their reason so the gap is visible the
 day of the migration, not a week later.
 
+## Profiles
+
+Send a pprof and a flamegraph appears. Every Go, Java, Python and Rust
+profiler already writes that format, which is why it is the one this accepts
+rather than a shape of our own:
+
+```
+go tool pprof -proto http://localhost:6060/debug/pprof/profile?seconds=30 > cpu.pprof
+curl -X POST '<endpoint>/v1/profiles?service=checkout-api' \
+  -H 'x-oi-key: <your key>' --data-binary @cpu.pprof
+```
+
+Pyroscope's path works too — `POST /ingest?name=checkout-api.cpu{env=prod}` —
+so an agent you already run needs one line changed rather than a new one
+installed.
+
+**A pprof is not one profile.** A Go heap profile carries four kinds and a CPU
+profile two, and every one of them is stored under its own type: picking one
+made a heap upload draw an empty flamegraph, because the last column is
+`inuse_space` and a service that frees what it allocates has nothing there
+while the two beside it hold everything. Columns that are zero all the way down
+are dropped, and a column counting samples loses to the one measuring a
+quantity.
+
+Frames keep their `file:line` — it is what tells you _where_ in a function the
+time went — but the graph and the table fold by **function**. A hot loop spread
+over four lines of assembly was four rows of ten per cent each, and the one
+fact anybody wanted, that the routine is a third of the profile, was nowhere on
+the screen.
+
+The table gives **self** and **total** because they answer different questions:
+self finds the function burning the time, total finds the one that _causes_ it
+— often three frames up, and the only one anybody can change. A function
+appearing twice in one stack counts once towards its total, or recursion would
+give it a total larger than the profile.
+
+### The diff
+
+The flamegraph answers "where is the time going", which a person can usually
+guess. The diff answers "what changed", which nobody can.
+
+Two things make it honest. It compares **shares** of each window's total rather
+than raw values, because two windows never carry the same load and reading
+twice the traffic as a regression is the commonest mistake made with these. And
+it reports **both** self and total, because a change that moves work between
+callers leaves every self time exactly where it was: making a health check call
+the same expensive hash forty times more often shifts nothing in the hash
+itself. In a real run of exactly that change, the caller moved sixty points of
+total while its self time did not move at all — and the first version of this
+diff, ranked on self alone, showed nothing.
+
 ## Service level objectives
 
 An SLO turns "is it slow?" into a decision. You name what counts as a good

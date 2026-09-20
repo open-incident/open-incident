@@ -119,3 +119,17 @@ export {
   type SloDefinition,
   type SloReading,
 } from "./slo";
+export {
+  PROFILES,
+  PROFILE_STACKS,
+  PRUNE_BELOW,
+  flamegraph,
+  profileDiff,
+  profileFunctions,
+  profileKinds,
+  type DiffRow,
+  type FlameNode,
+  type Flamegraph,
+  type FunctionRow,
+  type ProfileWindow,
+} from "./profiles";

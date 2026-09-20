@@ -295,6 +295,20 @@
       "when": 1789904713817,
       "tag": "0041_slos",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1789915562277,
+      "tag": "0042_profiles_rum_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1789915646011,
+      "tag": "0043_profiles_signal",
+      "breakpoints": true
     }
   ]
 }

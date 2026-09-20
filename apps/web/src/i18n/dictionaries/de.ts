@@ -684,6 +684,43 @@ export const de: Dictionary = {
   "telemetry.packKubernetes": "Kubelet-Metriken, Cluster-Objekte und Container-Logs",
   "telemetry.packsWhere":
     "Unter docker/collector/ im Repository, mit einer README, die sagt, welche gegen einen echten Daemon gelaufen sind und welche nicht.",
+  "telemetry.tab.profiles": "Profile",
+  "profiles.search": "Funktion hervorheben…",
+  "profiles.matched": "{pct} % des Gezeigten",
+  "profiles.resetZoom": "Ganzes Profil",
+  "profiles.totalIs": "{value}",
+  "profiles.flameHint":
+    "Die Breite ist der Aufwand. Ein Klick macht einen Block zur vollen Breite — der interessante Rahmen liegt immer drei Ebenen tiefer und ist ein Prozent breit. Farbe unterscheidet nur Nachbarn; sie bedeutet nichts.",
+  "profiles.emptyTitle": "Noch kein Profil",
+  "profiles.emptyBody":
+    "Senden Sie ein pprof, und ein Flamegraph erscheint. Jeder Go-, Java-, Python- und Rust-Profiler schreibt dieses Format bereits, und der Pyroscope-Pfad (/ingest?name=…) wird auch angenommen — ein Agent, den Sie schon betreiben, braucht eine geänderte Zeile.",
+  "profiles.noneInWindow": "Kein Profil in diesem Zeitraum.",
+  "profiles.service": "DIENST",
+  "profiles.type": "ART",
+  "profiles.window": "ÜBER",
+  "profiles.compare": "Mit dem vorherigen Zeitraum vergleichen",
+  "profiles.function": "FUNKTION",
+  "profiles.self": "EIGEN",
+  "profiles.total": "GESAMT",
+  "profiles.change": "ÄNDERUNG",
+  "profiles.nowWas": "JETZT ← VORHER",
+  "profiles.noBefore":
+    "Im vorherigen Zeitraum wurde nichts profiliert, es gibt nichts zu vergleichen.",
+  "profiles.diffHint":
+    "Verglichen werden Anteile am Gesamtwert jedes Zeitraums, nicht Rohwerte: zwei Zeiträume tragen nie dieselbe Last, und doppelten Verkehr als Regression zu lesen ist der häufigste Fehler bei einem Profil-Diff. Ein Punkt ist ein Prozent des Profils. Beide Spalten zählen — eine Änderung, die Arbeit zwischen Aufrufern verschiebt, lässt jede Eigenzeit unverändert und zeigt sich nur im Gesamtwert.",
+  "profiles.pruned":
+    "{pct} % zusammengefaltet, weil zu schmal zum Zeichnen, von {stacks} verschiedenen Aufrufpfaden.",
+  "profiles.kind.cpu": "CPU",
+  "profiles.kind.wall": "Echtzeit",
+  "profiles.kind.alloc_space": "Allozierte Bytes",
+  "profiles.kind.alloc_objects": "Allozierte Objekte",
+  "profiles.kind.inuse_space": "Lebende Bytes",
+  "profiles.kind.inuse_objects": "Lebende Objekte",
+  "profiles.kind.goroutines": "Goroutinen",
+  "profiles.kind.mutex": "Lock-Contention",
+  "profiles.kind.block": "Blockierung",
+  "profiles.totalChange": "ÄNDERUNG GESAMT",
+  "profiles.selfChange": "ÄNDERUNG EIGEN",
   "monitors.on.packet_loss_pct": "Paketverlust (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

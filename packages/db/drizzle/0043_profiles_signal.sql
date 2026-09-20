@@ -1,0 +1,2 @@
+ALTER TABLE "app"."telemetry_ingestion_keys" ALTER COLUMN "signals" SET DEFAULT '["logs","traces","metrics","profiles"]'::jsonb;--> statement-breakpoint
+ALTER TABLE "app"."telemetry_settings" ALTER COLUMN "enabled_signals" SET DEFAULT '["logs","traces","metrics","profiles"]'::jsonb;
