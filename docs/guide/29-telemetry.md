@@ -83,6 +83,36 @@ arrival order — spans reach the store from several services and in no
 particular sequence. A span whose parent never arrived is drawn at the root
 rather than hidden.
 
+## Grafana, and the PromQL subset
+
+The instance answers the Prometheus HTTP API under `/prometheus/api/v1/`, with
+an API key as `Authorization: Bearer oi_live_…`. Point a Grafana Prometheus
+datasource at it and the label pickers, the metric browser and the graph panels
+work as they do against Prometheus itself.
+
+What is answered is a **published subset**, not a reimplementation of the
+language:
+
+| Supported                                                                  | Not yet                                           |
+| -------------------------------------------------------------------------- | ------------------------------------------------- |
+| Selectors with `=`, `!=`, `=~`, `!~`; range vectors; `offset`              | `histogram_quantile`, `label_replace`, `quantile` |
+| `rate`, `irate`, `increase`, `delta`, the `*_over_time` family             | `on`/`ignoring` vector matching, the `@` modifier |
+| `sum`, `avg`, `min`, `max`, `count`, `topk`, `bottomk` with `by`/`without` | arithmetic between two vectors                    |
+| `abs`, `clamp_min`, `clamp_max`, `round`; arithmetic against a scalar      |                                                   |
+
+A query using anything in the right-hand column comes back as an error
+**naming the construction** — "histogram_quantile is not supported yet" — and
+never as a partial result. A panel that says what it cannot do is worth more
+than one that quietly draws a different line from the one you asked for.
+
+Two behaviours worth knowing because they are Prometheus' own: a series with no
+point in the last five minutes is stale and disappears from an instant query,
+and a counter that goes backwards is treated as having restarted rather than as
+a negative rate.
+
+Queries shorter than seven days read the raw points; longer ones read the
+per-minute rollup, where a point is a minute.
+
 ## Isolation and deletion
 
 Every ClickHouse table is shared, with `tenant_id` first in its sort key, and

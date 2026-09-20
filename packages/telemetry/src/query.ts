@@ -31,8 +31,17 @@ export const TRACES = "otel_traces_t(tenant = {tenant:UUID})";
 export const TENANT_VIEWS = [LOGS, SPANS, TRACES] as const;
 export type TenantView = (typeof TENANT_VIEWS)[number];
 
+/*
+ * The tables the query layer may not name directly.
+ *
+ * The lookahead sits before the word boundary, and that order is the whole
+ * subtlety: written after it, `otel_metrics_\w+` swallows the `_t` of the
+ * parameterized view, the exemption never applies, and the guard refuses the
+ * one spelling it is supposed to bless. Each table is therefore listed
+ * explicitly rather than matched by prefix.
+ */
 const RAW_TABLES =
-  /\b(otel_logs|otel_spans|otel_traces_index|otel_metrics_\w+|metric_series|metric_1m)\b(?!_t\s*\()/;
+  /\b(otel_logs|otel_spans|otel_traces_index|otel_metrics_gauge|otel_metrics_sum|otel_metrics_histogram|metric_series|metric_1m)(?!_t\s*\()\b/;
 
 export type ReadOptions = {
   /** Extra bound parameters. `tenant` is reserved and set by this function. */
@@ -267,4 +276,63 @@ export async function seriesLabels(tenantId: string, metricName: string): Promis
       ORDER BY attributes_hash`,
     { params: { name: metricName } },
   );
+}
+
+/** Every label name a workspace's metrics carry, for `/api/v1/labels`. */
+export async function labelNames(tenantId: string): Promise<string[]> {
+  const rows = await read<{ k: string }>(
+    tenantId,
+    `SELECT DISTINCT arrayJoin(mapKeys(attributes)) AS k FROM ${SERIES} ORDER BY k`,
+  );
+  return ["__name__", ...rows.map((r) => r.k)];
+}
+
+/** The values one label takes, for `/api/v1/label/{name}/values`. */
+export async function labelValues(tenantId: string, name: string): Promise<string[]> {
+  if (name === "__name__") {
+    const rows = await read<{ v: string }>(
+      tenantId,
+      `SELECT DISTINCT metric_name AS v FROM ${SERIES} ORDER BY v`,
+    );
+    return rows.map((r) => r.v);
+  }
+  const rows = await read<{ v: string }>(
+    tenantId,
+    `SELECT DISTINCT attributes[{name:String}] AS v
+       FROM ${SERIES}
+      WHERE mapContains(attributes, {name:String})
+      ORDER BY v`,
+    { params: { name } },
+  );
+  return rows.map((r) => r.v);
+}
+
+/** Every series as a label set, for `/api/v1/series`. */
+export async function allSeries(
+  tenantId: string,
+  limit = 2000,
+): Promise<Array<Record<string, string>>> {
+  const rows = await read<{ n: string; a: Record<string, string> }>(
+    tenantId,
+    `SELECT metric_name AS n, attributes AS a FROM ${SERIES} ORDER BY n LIMIT {limit:UInt32}`,
+    { params: { limit } },
+  );
+  return rows.map((r) => ({ __name__: r.n, ...r.a }));
+}
+
+/** Names with their type and unit, for `/api/v1/metadata`. */
+export async function metricMetadata(
+  tenantId: string,
+): Promise<Record<string, Array<{ type: string; unit: string; help: string }>>> {
+  const rows = await read<{ n: string; t: string; u: string }>(
+    tenantId,
+    `SELECT metric_name AS n, any(type) AS t, any(unit) AS u FROM ${SERIES} GROUP BY metric_name`,
+  );
+  const out: Record<string, Array<{ type: string; unit: string; help: string }>> = {};
+  for (const r of rows) {
+    // Prometheus' own vocabulary, so Grafana renders the right hints.
+    const type = r.t === "sum" ? "counter" : r.t === "histogram" ? "histogram" : "gauge";
+    out[r.n] = [{ type, unit: r.u, help: "" }];
+  }
+  return out;
 }

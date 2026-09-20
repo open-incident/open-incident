@@ -13,6 +13,10 @@ export {
   spansOfTrace,
   LOGS,
   MINUTES,
+  allSeries,
+  labelNames,
+  labelValues,
+  metricMetadata,
   metricNames,
   metricSeries,
   SERIES,
@@ -31,3 +35,14 @@ export {
   type TenantView,
   type TraceRow,
 } from "./query";
+export {
+  AGGREGATIONS,
+  FUNCTIONS,
+  parseDuration,
+  parsePromql,
+  PLANNED,
+  PromqlError,
+  type Matcher,
+  type Node,
+} from "./promql/parse";
+export { evalPromql, type EvalOptions, type Sample, type Series } from "./promql/eval";
