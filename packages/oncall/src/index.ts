@@ -14,3 +14,4 @@ export * from "./coverage";
 export * from "./coverage-sweep";
 export * from "./pay";
 export * from "./telemetry-monitors";
+export * from "./service-map";

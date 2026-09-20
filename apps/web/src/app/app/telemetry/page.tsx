@@ -16,6 +16,7 @@ import { createIngestionKey, revokeIngestionKey } from "./actions";
 import { NotInstalled } from "./not-installed";
 import { ExceptionsTab } from "./exceptions-tab";
 import { MetricsTab } from "./metrics-tab";
+import { MapTab } from "./map-tab";
 import { Waterfall } from "./waterfall";
 
 /**
@@ -28,7 +29,7 @@ import { Waterfall } from "./waterfall";
  * and the screen says that instead.
  */
 
-const TABS = ["logs", "traces", "metrics", "exceptions", "connect"] as const;
+const TABS = ["logs", "traces", "metrics", "exceptions", "map", "connect"] as const;
 type Tab = (typeof TABS)[number];
 
 const CARD: React.CSSProperties = {
@@ -49,6 +50,12 @@ function severityTone(n: number): { label: string; color: string; bg: string } {
   return { label: "DEBUG", color: "var(--ink-3)", bg: "var(--sunk)" };
 }
 
+/** The window the map was asked for, from a list rather than from the caller. */
+function windowOf(raw: string | undefined): number {
+  const n = Number(raw);
+  return [60, 360, 1440].includes(n) ? n : 60;
+}
+
 function ms(ns: string): string {
   const n = Number(ns);
   if (!Number.isFinite(n) || n <= 0) return "—";
@@ -65,6 +72,7 @@ export default async function TelemetryPage({
     fp?: string;
     service?: string;
     issued?: string;
+    since?: string;
   }>;
 }) {
   const { member } = await requireMember();
@@ -135,6 +143,7 @@ export default async function TelemetryPage({
         {tab === "traces" && <TracesTab tenantId={tenant.id} open={sp.trace} />}
         {tab === "metrics" && <MetricsTab tenantId={tenant.id} open={sp.metric} />}
         {tab === "exceptions" && <ExceptionsTab tenantId={tenant.id} open={sp.fp} />}
+        {tab === "map" && <MapTab tenantId={tenant.id} sinceMinutes={windowOf(sp.since)} />}
         {tab === "connect" && (
           <ConnectTab tenantId={tenant.id} admin={admin} issued={sp.issued} http={endpoints.http} />
         )}

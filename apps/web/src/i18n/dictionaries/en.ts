@@ -532,6 +532,22 @@ export const en = {
   "telemetryMonitor.kpiEvaluated": "LAST RUN",
   "monitors.error.telemetry-eval": "The query did not run — the reason is on the monitor.",
   "telemetryMonitor.holding": "breaching · {n} of {of}",
+  "telemetry.tab.map": "Service map",
+  "map.last1h": "Last hour",
+  "map.last6h": "Last 6 hours",
+  "map.last24h": "Last 24 hours",
+  "map.noTraces": "No traces in this window, so there is no map to draw yet.",
+  "map.noEdges":
+    "Traces arrived, but none of them crossed from one service to another — so there is no dependency to show. A call between two services appears here once both of them send spans.",
+  "map.nServices": { one: "{count} service", other: "{count} services" },
+  "map.nEdges": { one: "{count} dependency", other: "{count} dependencies" },
+  "map.entry": "ENTRY POINTS",
+  "map.hop": "HOP {n}",
+  "map.spans": { one: "{count} span", other: "{count} spans" },
+  "map.edge": { one: "{count} call · p95 {p95} ms", other: "{count} calls · p95 {p95} ms" },
+  "map.edgeErrors": { one: "{count} failed", other: "{count} failed" },
+  "map.observedNote":
+    "Observed, not declared: every dependency here happened inside the window, and one that stops happening stops being shown. Depth is the longest path that reaches a service, so what everything ends up depending on sits on the right.",
   "monitors.on.packet_loss_pct": "packet loss (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

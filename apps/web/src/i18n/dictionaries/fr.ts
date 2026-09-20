@@ -532,6 +532,22 @@ export const fr: Dictionary = {
   "monitors.error.telemetry-eval":
     "La requête ne s’est pas exécutée — la raison est sur le monitor.",
   "telemetryMonitor.holding": "en dépassement · {n} sur {of}",
+  "telemetry.tab.map": "Carte des services",
+  "map.last1h": "Dernière heure",
+  "map.last6h": "6 dernières heures",
+  "map.last24h": "24 dernières heures",
+  "map.noTraces": "Aucune trace sur cette fenêtre : il n’y a pas encore de carte à dessiner.",
+  "map.noEdges":
+    "Des traces sont arrivées, mais aucune ne passe d’un service à un autre — il n’y a donc aucune dépendance à montrer. Un appel entre deux services apparaît ici dès que les deux envoient des spans.",
+  "map.nServices": { one: "{count} service", other: "{count} services" },
+  "map.nEdges": { one: "{count} dépendance", other: "{count} dépendances" },
+  "map.entry": "POINTS D’ENTRÉE",
+  "map.hop": "SAUT {n}",
+  "map.spans": { one: "{count} span", other: "{count} spans" },
+  "map.edge": { one: "{count} appel · p95 {p95} ms", other: "{count} appels · p95 {p95} ms" },
+  "map.edgeErrors": { one: "{count} en échec", other: "{count} en échec" },
+  "map.observedNote":
+    "Observé, et non déclaré : chaque dépendance ici a eu lieu dans la fenêtre, et celle qui cesse d’avoir lieu cesse d’être affichée. La profondeur est le plus long chemin qui atteint un service : ce dont tout finit par dépendre se trouve à droite.",
   "monitors.on.packet_loss_pct": "perte de paquets (%)",
   "monitors.routeName": "Moniteur — {name}",
   "monitors.routeDesc":

@@ -536,6 +536,22 @@ export const de: Dictionary = {
   "telemetryMonitor.kpiEvaluated": "LETZTER DURCHLAUF",
   "monitors.error.telemetry-eval": "Die Abfrage lief nicht — der Grund steht am Monitor.",
   "telemetryMonitor.holding": "überschritten · {n} von {of}",
+  "telemetry.tab.map": "Service-Karte",
+  "map.last1h": "Letzte Stunde",
+  "map.last6h": "Letzte 6 Stunden",
+  "map.last24h": "Letzte 24 Stunden",
+  "map.noTraces": "Keine Traces in diesem Zeitraum — es gibt noch keine Karte zu zeichnen.",
+  "map.noEdges":
+    "Traces sind eingetroffen, aber keiner davon führt von einem Dienst zu einem anderen — es gibt also keine Abhängigkeit zu zeigen. Ein Aufruf zwischen zwei Diensten erscheint hier, sobald beide Spans senden.",
+  "map.nServices": { one: "{count} Dienst", other: "{count} Dienste" },
+  "map.nEdges": { one: "{count} Abhängigkeit", other: "{count} Abhängigkeiten" },
+  "map.entry": "EINSTIEGSPUNKTE",
+  "map.hop": "SPRUNG {n}",
+  "map.spans": { one: "{count} Span", other: "{count} Spans" },
+  "map.edge": { one: "{count} Aufruf · p95 {p95} ms", other: "{count} Aufrufe · p95 {p95} ms" },
+  "map.edgeErrors": { one: "{count} fehlgeschlagen", other: "{count} fehlgeschlagen" },
+  "map.observedNote":
+    "Beobachtet, nicht deklariert: jede Abhängigkeit hier ist im Zeitraum tatsächlich vorgekommen, und eine, die aufhört vorzukommen, wird nicht mehr gezeigt. Die Tiefe ist der längste Pfad zu einem Dienst — wovon am Ende alles abhängt, steht rechts.",
   "monitors.on.packet_loss_pct": "Paketverlust (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

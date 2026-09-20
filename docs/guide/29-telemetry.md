@@ -91,6 +91,40 @@ of your own code — so the same failure at ten thousand occurrences is one line
 with a count and a first-seen, and two callers of the same library failure are
 two lines.
 
+## The service map
+
+**Service map** draws who calls whom, from the traces themselves. A dependency
+nobody wrote down is the one that breaks the incident — the service you had
+forgotten talks to the database you are about to restart — so the map is read
+out of what actually happened rather than out of a list somebody maintained.
+
+Every dependency shown is **observed**: it happened inside the window being
+looked at, and one that stops happening stops being shown. A map that
+remembered every call ever made would draw a topology that no longer exists.
+
+Services are laid out left to right by depth, not as a free-floating cloud.
+During an incident the question is "what is downstream of this", and columns
+answer it at a glance: entry points on the left, and what everything ends up
+depending on at the right. Depth is the **longest** path that reaches a
+service, so a database called both directly and through two hops sits at the
+far end where it belongs. A cycle stops the walk rather than looping.
+
+An edge is any parent span whose child belongs to another service, and
+deliberately not only a `client` span with a `server` child. That second shape
+is the semantic convention, and it is what a fully instrumented HTTP call looks
+like — but a database span is commonly attributed to the database rather than
+to its caller, a messaging consumer sometimes arrives as `internal`, and a
+library that sets no kind sets `unspecified`. Every one of those is a real
+dependency, and filtering on kind drops them without a word.
+
+The edges are rolled up a minute at a time by the worker, three minutes behind
+the clock. Being late is what makes the join possible: the caller's span and
+the callee's span come from two services and land at two different moments, so
+a rollup that ran the instant a minute closed would miss half its own edges. A
+worker that was stopped fills the minutes it missed, oldest first, rather than
+resuming at the present — a hole in a dependency map does not read as a gap, it
+reads as "these two services stopped talking".
+
 ## Monitors on telemetry
 
 Four monitor types watch what a service says about itself rather than whether
@@ -207,8 +241,15 @@ satisfy nobody.
 
 ## What is not here yet
 
-Profiles, real user monitoring and the service map are later milestones. They
-are absent from the screens rather than present and empty.
+Profiles and real user monitoring are later milestones. They are absent from
+the screens rather than present and empty.
+
+The map feeds no `DEPENDS_ON` facts yet, because the context graph they belong
+to is not built. The edges are there and queryable the day it is.
+
+An edge is drawn between two services that both send spans. A dependency on
+something that sends none — a managed database, a third-party API — is visible
+in the spans through `peer.service` but is not yet a node on the map.
 
 The query compiler's refusals are in English whatever the interface language:
 the filter language itself is English — its field names, its `AND`, its

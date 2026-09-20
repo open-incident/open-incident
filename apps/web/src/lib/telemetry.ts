@@ -198,3 +198,5 @@ export async function exceptionDetail(tenantId: string, fingerprint: string) {
   if (!telemetryInstalled()) return null;
   return detailOf(tenantId, fingerprint);
 }
+
+export { layoutByDepth, serviceEdges, servicesSeen, type EdgeRow } from "@openincident/telemetry";

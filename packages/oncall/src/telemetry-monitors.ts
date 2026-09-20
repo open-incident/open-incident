@@ -460,6 +460,16 @@ async function announce(
       monitor: monitor.name,
       monitor_id: monitor.id,
       monitor_type: monitor.type,
+      /*
+       * The query and the window travel with the alert (§15.8).
+       *
+       * Somebody woken at three in the morning should be able to see what was
+       * measured without opening the monitor and reconstructing it: the
+       * expression, over how long, and the number it produced.
+       */
+      telemetry_query: q.query.slice(0, 500),
+      telemetry_window: `${q.windowMinutes}m`,
+      ...(s.value !== null ? { telemetry_value: String(s.value) } : {}),
       ...s.labels,
     },
     url: `${origin}/app/monitors/${monitor.id}`,

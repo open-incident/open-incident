@@ -13,6 +13,7 @@
  * - investigation    : one root cause assessment of an incident (declaration, signal, request)
  * - monitor-sweep    : runs the checks whose turn it is, and publishes state changes
  * - telemetry-monitors: evaluates the log, trace, metric and exception monitors
+ * - service-map      : rolls traces up into the edges of the dependency map
  * - qa-run           : the repository's own test suites, on demand
  */
 import { QA_QUEUE } from "@openincident/qa";
@@ -31,6 +32,7 @@ export const QUEUE_NAMES = [
   "heartbeat-sweep",
   "monitor-sweep",
   "telemetry-monitors",
+  "service-map",
   "coverage-sweep",
   "runbook-sync",
   "investigation",
@@ -97,6 +99,10 @@ export const QUEUE_SHAPES: Record<WorkQueue, Shape> = {
   // Same reason, a different bottleneck: two evaluations at once would read
   // the same month of history from the column store twice.
   "telemetry-monitors": { group: "urgent", concurrency: 1 },
+  // Not urgent — the map is read by people looking at a screen, never by
+  // something deciding whether to wake somebody — but one at a time, because
+  // two ticks would roll up the same minute twice.
+  "service-map": { group: "bulk", concurrency: 1 },
   "status-sweep": { group: "urgent", concurrency: 1 },
   "update-reminders": { group: "urgent", concurrency: 1 },
   "coverage-sweep": { group: "bulk", concurrency: 1 },

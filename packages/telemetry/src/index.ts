@@ -74,3 +74,15 @@ export {
   type TelemetryMonitorQuery,
   type Verdict,
 } from "./monitor";
+export {
+  EDGES,
+  EDGE_RUNS,
+  ROLLUP_BACKFILL_MINUTES,
+  ROLLUP_LAG_MINUTES,
+  layoutByDepth,
+  pendingMinutes,
+  rollupServiceEdges,
+  serviceEdges,
+  servicesSeen,
+  type EdgeRow,
+} from "./service-map";
