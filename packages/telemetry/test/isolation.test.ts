@@ -10,9 +10,17 @@
  */
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { clickhouse, closeClickhouse } from "../src/client";
+import { clickhouse, closeClickhouse, telemetryInstalled } from "../src/client";
 import { migrateClickhouse } from "../src/migrate";
 import { LOGS, read, recentLogs, recentTraces, spansOfTrace } from "../src/query";
+
+/*
+ * The module is optional in the product, so it is optional here too: a
+ * developer who never starts the `telemetry` profile should not have a red
+ * suite. CI always sets CLICKHOUSE_URL, so the guarantee is still enforced on
+ * every commit — see the service in .github/workflows/ci.yml.
+ */
+const describeWithClickhouse = telemetryInstalled() ? describe : describe.skip;
 
 const A = randomUUID();
 const B = randomUUID();
@@ -78,6 +86,7 @@ function log(tenant: string, traceId: string, service: string, body: string) {
 }
 
 beforeAll(async () => {
+  if (!telemetryInstalled()) return;
   await migrateClickhouse();
   const ch = clickhouse();
   await ch.insert({
@@ -103,6 +112,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (!telemetryInstalled()) return;
   const ch = clickhouse();
   for (const t of ["otel_logs", "otel_spans", "otel_traces_index"]) {
     await ch.command({
@@ -113,7 +123,7 @@ afterAll(async () => {
   await closeClickhouse();
 });
 
-describe("a workspace reads its telemetry and only its telemetry", () => {
+describeWithClickhouse("a workspace reads its telemetry and only its telemetry", () => {
   it("sees its own logs, and not the other workspace's", async () => {
     const mine = await recentLogs(A);
     expect(mine.map((l) => l.body)).toContain("checkout completed for order 42");

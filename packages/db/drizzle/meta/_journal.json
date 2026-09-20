@@ -232,6 +232,13 @@
       "when": 1789838284011,
       "tag": "0032_source_choices",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1789893497321,
+      "tag": "0033_telemetry_config",
+      "breakpoints": true
     }
   ]
 }

@@ -2542,6 +2542,18 @@ export const services = app.table(
     seenIn: jsonb("seen_in").$type<string[]>().notNull().default([]),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    /**
+     * When telemetry first and last named this service. Separate from the two
+     * columns above on purpose: a service can be known from an alert label for
+     * months before a single span mentions it, and the onboarding screen needs
+     * to say which of the two happened.
+     */
+    telemetryFirstSeenAt: timestamp("telemetry_first_seen_at", { withTimezone: true }),
+    telemetryLastSeenAt: timestamp("telemetry_last_seen_at", { withTimezone: true }),
+    /** Read from `telemetry.sdk.*`: "node", "go", "python"… Shown, never inferred further. */
+    techStack: text("tech_stack"),
+    /** Overrides the workspace retention for this service alone, in days. */
+    retentionOverrideDays: integer("retention_override_days"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -2793,4 +2805,110 @@ export const memberNotifications = app.table(
     index("member_notifications_inbox").on(t.tenantId, t.memberId, t.createdAt),
     uniqueIndex("member_notifications_group").on(t.tenantId, t.memberId, t.groupKey),
   ],
+);
+
+/* ---------- Telemetry (spec 15) — configuration and state ----------
+ *
+ * The telemetry itself lives in ClickHouse; what a workspace decided about it
+ * lives here, under the same row-level security as everything else. The split
+ * is the rule of §15.2: PostgreSQL keeps configuration and state, ClickHouse
+ * keeps the signal, never the other way round — which is also why the product
+ * starts and pages people with no column store anywhere.
+ */
+
+/** One row per workspace, created on first use. Absent means "the defaults". */
+export const telemetrySettings = app.table(
+  "telemetry_settings",
+  {
+    tenantId: uuid("tenant_id")
+      .primaryKey()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    /** Which signals this workspace accepts. A signal off is a 403, not a silent drop. */
+    enabledSignals: jsonb("enabled_signals")
+      .$type<string[]>()
+      .notNull()
+      .default(["logs", "traces"]),
+    retentionLogsDays: integer("retention_logs_days").notNull().default(15),
+    retentionTracesDays: integer("retention_traces_days").notNull().default(15),
+    /**
+     * Extra redaction, on top of the secret detectors that are never optional.
+     * Each rule is a regular expression replaced by `[redacted]` at ingestion,
+     * before anything is written — a scrub applied at read time would already
+     * have stored the secret.
+     */
+    scrubRules: jsonb("scrub_rules").$type<string[]>().notNull().default([]),
+    /** Cloud: past it, a notice and forced sampling — never a silent cut. */
+    dailySoftCapGb: integer("daily_soft_cap_gb"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  () => [],
+);
+
+/**
+ * What a collector authenticates with.
+ *
+ * The key resolves its workspace BEFORE anything is decoded (§15.4): a payload
+ * is never parsed on behalf of a tenant we have not identified. Shown once,
+ * stored as a SHA-256 digest, compared in constant time.
+ */
+export const telemetryIngestionKeys = app.table(
+  "telemetry_ingestion_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    keyHash: text("key_hash").notNull(),
+    label: text("label").notNull(),
+    signals: jsonb("signals").$type<string[]>().notNull().default(["logs", "traces"]),
+    /** Forces `service.name`, for a collector that cannot be trusted to set it. */
+    pinnedServiceName: text("pinned_service_name"),
+    rateLimitRpm: integer("rate_limit_rpm"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("telemetry_keys_hash").on(t.keyHash),
+    index("telemetry_keys_tenant").on(t.tenantId),
+  ],
+);
+
+/**
+ * The last refusals, kept so onboarding can be honest.
+ *
+ * "Your collector is sending spans without service.name" is the sentence that
+ * saves an afternoon; it only exists if the refusal was written down. A
+ * hundred per workspace, oldest pruned by housekeeping.
+ */
+export const telemetryRejections = app.table(
+  "telemetry_rejections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    keyId: uuid("key_id").references(() => telemetryIngestionKeys.id, { onDelete: "set null" }),
+    signal: text("signal").notNull(),
+    reason: text("reason").notNull(),
+    /** Scrubbed before storage: a rejected payload is still a payload. */
+    excerpt: text("excerpt").notNull().default(""),
+    createdAt: createdAt(),
+  },
+  (t) => [index("telemetry_rejections_tenant").on(t.tenantId, t.createdAt)],
+);
+
+/** What was ingested, per day and per signal — the number the screen shows and the cloud bills. */
+export const telemetryUsage = app.table(
+  "telemetry_usage",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    day: text("day").notNull(),
+    signal: text("signal").notNull(),
+    rows: integer("rows").notNull().default(0),
+    bytes: integer("bytes").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("telemetry_usage_day").on(t.tenantId, t.day, t.signal)],
 );
