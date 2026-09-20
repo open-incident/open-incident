@@ -456,6 +456,9 @@ importers:
       '@openincident/storage':
         specifier: workspace:*
         version: link:../storage
+      '@openincident/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
       drizzle-orm:
         specifier: ^0.44.0
         version: 0.44.7(kysely@0.29.5)(postgres@3.4.9)

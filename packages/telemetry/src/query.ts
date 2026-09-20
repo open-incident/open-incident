@@ -13,7 +13,7 @@
  * filter is not a leak here, it is a failed query — which is the whole point
  * of the design.
  */
-import { clickhouse } from "./client";
+import { clickhouse, telemetryInstalled } from "./client";
 
 /**
  * The sources a query may name.
@@ -153,4 +153,43 @@ export async function spansOfTrace(tenantId: string, traceId: string): Promise<S
       ORDER BY start_ts ASC`,
     { params: { traceId } },
   );
+}
+
+/** The tables a workspace's telemetry lives in — the purge's list, and the seed's. */
+export const TENANT_TABLES = ["otel_logs", "otel_spans", "otel_traces_index"] as const;
+
+/**
+ * Erases a workspace's telemetry.
+ *
+ * Called by the product's purge, which verifies what it deleted rather than
+ * trusting it — so this waits for the mutation instead of queueing it.
+ * `mutations_sync = 2` means "when this returns, every replica has applied
+ * it", which is the only setting under which the count that follows means
+ * anything.
+ *
+ * Returns null when no column store is configured: an instance without the
+ * module has no telemetry to erase, and saying "0 rows" would suggest we
+ * looked.
+ */
+export async function purgeTenant(tenantId: string): Promise<number | null> {
+  if (!telemetryInstalled()) return null;
+  const ch = clickhouse();
+  for (const table of TENANT_TABLES) {
+    await ch.command({
+      query: `DELETE FROM ${table} WHERE tenant_id = {tenant:UUID}`,
+      query_params: { tenant: tenantId },
+      clickhouse_settings: { mutations_sync: "2" },
+    });
+  }
+  let left = 0;
+  for (const table of TENANT_TABLES) {
+    const rs = await ch.query({
+      query: `SELECT count() AS n FROM ${table} WHERE tenant_id = {tenant:UUID}`,
+      query_params: { tenant: tenantId },
+      format: "JSONEachRow",
+    });
+    const [row] = await rs.json<{ n: string }>();
+    left += Number(row?.n ?? 0);
+  }
+  return left;
 }

@@ -4,9 +4,10 @@
  */
 import { eq, sql } from "drizzle-orm";
 import { deletePrefix, listKeys, storageConfigured, tenantPrefix } from "@openincident/storage";
+import { purgeTenant, telemetryInstalled } from "@openincident/telemetry";
 import { adminClient } from "./provision";
 import { authUsers } from "./schema/auth";
-import { apiKeyLookup, statusSnapshots, tenants } from "./schema/directory";
+import { apiKeyLookup, statusSnapshots, telemetryKeyLookup, tenants } from "./schema/directory";
 
 export type PurgeReport = {
   tenantId: string;
@@ -15,6 +16,8 @@ export type PurgeReport = {
   rowsDeleted: number;
   accountsRemoved: number;
   objectsDeleted: number | null;
+  /** Rows left in ClickHouse after the purge, or null when the module is absent. */
+  telemetryLeft: number | null;
   remaining: string[];
 };
 
@@ -79,8 +82,17 @@ export async function purgeWorkspace(
       .delete(statusSnapshots)
       .where(eq(statusSnapshots.tenantId, tenantId))
       .returning({ pageId: statusSnapshots.pageId });
-    rowsDeleted += dir1.length + dir2.length;
-    log(`  directory: ${dir1.length} key lookup(s), ${dir2.length} status snapshot(s)`);
+    // The ingestion keys live outside the policies so a collector can be
+    // resolved before a tenant context exists; they have to be swept here for
+    // the same reason, or a purged workspace keeps accepting telemetry.
+    const dir3 = await db
+      .delete(telemetryKeyLookup)
+      .where(eq(telemetryKeyLookup.tenantId, tenantId))
+      .returning({ k: telemetryKeyLookup.keyHash });
+    rowsDeleted += dir1.length + dir2.length + dir3.length;
+    log(
+      `  directory: ${dir1.length} key lookup(s), ${dir2.length} status snapshot(s), ${dir3.length} telemetry key(s)`,
+    );
 
     let accountsRemoved = 0;
     for (const email of emails) {
@@ -100,6 +112,21 @@ export async function purgeWorkspace(
       log(`  storage: ${objectsDeleted} object(s) under ${tenantPrefix(tenantId)}`);
     } else {
       log("  storage: not configured on this instance — nothing to delete, nothing to list");
+    }
+
+    // ClickHouse is a second store with its own deletion semantics, so it gets
+    // its own step and its own count. A purge that erased Postgres and left a
+    // month of spans behind would satisfy nothing and no regulator.
+    let telemetryLeft: number | null = null;
+    if (telemetryInstalled()) {
+      telemetryLeft = await purgeTenant(tenantId);
+      log(
+        telemetryLeft === 0
+          ? "  clickhouse: telemetry erased"
+          : `  clickhouse: ${telemetryLeft} row(s) still present`,
+      );
+    } else {
+      log("  clickhouse: module not installed — nothing to delete, nothing to list");
     }
 
     // Verification — counted, listed, not assumed.
@@ -122,6 +149,7 @@ export async function purgeWorkspace(
       const left = await listKeys(tenantPrefix(tenantId));
       for (const k of left) remaining.push(`storage: ${k}`);
     }
+    if (telemetryLeft && telemetryLeft > 0) remaining.push(`clickhouse: ${telemetryLeft} row(s)`);
     if (remaining.length === 0) {
       await db.delete(tenants).where(eq(tenants.id, tenantId));
       log(`  directory.tenants: "${slug}" removed`);
@@ -135,6 +163,7 @@ export async function purgeWorkspace(
       rowsDeleted,
       accountsRemoved,
       objectsDeleted,
+      telemetryLeft,
       remaining,
     };
   } finally {

@@ -14,6 +14,8 @@ export {
   LOGS,
   SPANS,
   TRACES,
+  purgeTenant,
+  TENANT_TABLES,
   TENANT_VIEWS,
   type LogRow,
   type ReadOptions,

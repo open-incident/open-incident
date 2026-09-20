@@ -22,9 +22,10 @@
   "dependencies": {
     "@openincident/config": "workspace:*",
     "@openincident/crypto": "workspace:*",
+    "@openincident/storage": "workspace:*",
+    "@openincident/telemetry": "workspace:*",
     "drizzle-orm": "^0.44.0",
-    "postgres": "^3.4.5",
-    "@openincident/storage": "workspace:*"
+    "postgres": "^3.4.5"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

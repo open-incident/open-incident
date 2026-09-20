@@ -76,6 +76,7 @@ import { registerApiKeyLookup, upsertStatusSnapshot } from "../directory";
 import { encryptSecret } from "@openincident/crypto";
 import { apiKeyLookup } from "../schema/directory";
 import { installDemoHistory } from "./history";
+import { seedTelemetry } from "./telemetry";
 
 type Tx = Parameters<Parameters<ReturnType<typeof adminClient>["db"]["transaction"]>[0]>[0];
 
@@ -135,7 +136,16 @@ try {
     await ensureAiAndChanges(tx, ctx);
     await installDemoHistory(tx, tenantId, ctx);
   });
-  console.log(`Demo workspace "${SLUG}" ready — INC-217 and its history are in place.`);
+  // Outside the transaction: ClickHouse is a different store, and a failure
+  // there must not roll back a workspace that is otherwise complete.
+  const telemetryRows = await seedTelemetry(tenantId).catch((err) => {
+    console.warn(`  telemetry seed skipped: ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  });
+  console.log(
+    `Demo workspace "${SLUG}" ready — INC-217 and its history are in place.` +
+      (telemetryRows ? ` ${telemetryRows} telemetry rows too.` : ""),
+  );
 } finally {
   await end();
 }
