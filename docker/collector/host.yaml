@@ -7,6 +7,7 @@
 #
 # Run it beside your service:
 #   docker run -d --name oi-collector \
+#     --hostname "$(hostname)" \
 #     -v $PWD/host.yaml:/etc/otelcol/config.yaml \
 #     -v /:/hostfs:ro,rslave \
 #     -e OI_ENDPOINT=https://otlp.<your workspace host> \
@@ -16,6 +17,11 @@
 # The host's root is mounted read-only at /hostfs because a collector in a
 # container otherwise reports the container's filesystem: a disk that is always
 # 2 % full, which is worse than no metric at all.
+#
+# `--hostname` is there for the same reason one step further: the collector
+# detects the machine's name from the hostname it is given, and a container's
+# default hostname is its own id — a new machine in the charts on every
+# restart.
 
 receivers:
   hostmetrics:
@@ -45,6 +51,17 @@ receivers:
       paging:
 
 processors:
+  # Names the machine. hostmetrics reports numbers and no host at all, so
+  # without this every machine sending this pack reports into one series and
+  # the charts average them together. `system` reads the hostname the
+  # collector sees — inside a container that is the container's id, which is
+  # why the command below passes the host's own name; `env` lets
+  # OTEL_RESOURCE_ATTRIBUTES override it outright.
+  resourcedetection:
+    detectors: [env, system]
+    system:
+      hostname_sources: [os]
+
   # Names every series. Without it the metrics arrive with no service.name and
   # the ingestion refuses them — deliberately, because a metric that belongs to
   # nothing is a metric nobody can find again.
@@ -89,5 +106,5 @@ service:
   pipelines:
     metrics:
       receivers: [hostmetrics]
-      processors: [memory_limiter, resource, batch]
+      processors: [memory_limiter, resourcedetection, resource, batch]
       exporters: [otlphttp]

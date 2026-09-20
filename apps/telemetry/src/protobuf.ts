@@ -16,7 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import protobuf from "protobufjs";
 import { nanosToClickhouse, type DecodedLog, type DecodedSpan, MAX_SPAN_EVENTS } from "./otlp";
-import type { MetricDecode } from "./metrics";
+import { seriesLabels, type MetricDecode } from "./metrics";
 
 const PROTO = join(dirname(fileURLToPath(import.meta.url)), "..", "proto", "otlp.proto");
 
@@ -226,7 +226,8 @@ export function decodeMetricsProto(body: Buffer): MetricDecode {
   });
   const out: MetricDecode = { points: [], unsupported: [] };
   for (const rm of (msg.resource_metrics ?? []) as Array<Record<string, unknown>>) {
-    const { serviceName, environment } = resourceOf(rm.resource as { attributes?: unknown });
+    const { serviceName, environment, ra } = resourceOf(rm.resource as { attributes?: unknown });
+    const labels = seriesLabels(ra);
     for (const sm of (rm.scope_metrics ?? []) as Array<Record<string, unknown>>) {
       for (const m of (sm.metrics ?? []) as Array<Record<string, unknown>>) {
         const which = (m as { data?: string }).data;
@@ -248,7 +249,7 @@ export function decodeMetricsProto(body: Buffer): MetricDecode {
               ...base,
               kind: "gauge",
               ts: nanosToClickhouse(nanos(p.time_unix_nano)),
-              attributes: attrs(p.attributes),
+              attributes: { ...labels, ...attrs(p.attributes) },
               value: pointValue(p),
             });
           }
@@ -263,7 +264,7 @@ export function decodeMetricsProto(body: Buffer): MetricDecode {
               ...base,
               kind: "sum",
               ts: nanosToClickhouse(nanos(p.time_unix_nano)),
-              attributes: attrs(p.attributes),
+              attributes: { ...labels, ...attrs(p.attributes) },
               value: pointValue(p),
               isMonotonic: Boolean(s?.is_monotonic),
               temporality: TEMPORALITY[Number(s?.aggregation_temporality ?? 0)] ?? "unspecified",
@@ -279,7 +280,7 @@ export function decodeMetricsProto(body: Buffer): MetricDecode {
               ...base,
               kind: "histogram",
               ts: nanosToClickhouse(nanos(p.time_unix_nano)),
-              attributes: attrs(p.attributes),
+              attributes: { ...labels, ...attrs(p.attributes) },
               count: Number(nanos(p.count) ?? 0),
               sum: Number(p.sum ?? 0),
               min: Number(p.min ?? 0),
