@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { clickhouse, closeClickhouse, telemetryInstalled } from "../src/client";
 import { migrateClickhouse } from "../src/migrate";
 import { LOGS, read, recentLogs, recentTraces, spansOfTrace } from "../src/query";
+import { runUserSql } from "../src/sql";
 
 /*
  * The module is optional in the product, so it is optional here too: a
@@ -159,5 +160,69 @@ describeWithClickhouse("a workspace reads its telemetry and only its telemetry",
     await expect(read(A, `SELECT count() FROM ${LOGS}`, { params: { tenant: B } })).rejects.toThrow(
       /bound by the query layer/,
     );
+  });
+
+  /*
+   * The SQL console hands a person the query language, which is the one place
+   * the isolation could be handed over with it. These are the escapes somebody
+   * would actually try, and the last one is the control: a guard that refuses
+   * everything would pass the first four and be useless.
+   */
+  describe("the SQL console cannot be talked out of its workspace", () => {
+    it("refuses a raw table, another database, and the system tables", async () => {
+      await expect(runUserSql(A, "SELECT count() FROM otel_logs_raw")).rejects.toThrow(
+        /not a table you can read/,
+      );
+      await expect(runUserSql(A, "SELECT count() FROM default.otel_logs")).rejects.toThrow(
+        /names a database/,
+      );
+      await expect(runUserSql(A, "SELECT count() FROM system.tables")).rejects.toThrow(/"system"/);
+    });
+
+    it("refuses a clause that would lift the caps", async () => {
+      await expect(
+        runUserSql(A, "SELECT * FROM otel_logs SETTINGS max_result_rows = 0"),
+      ).rejects.toThrow(/"SETTINGS"/);
+    });
+
+    it("returns nothing when asked for the other workspace by its own id", async () => {
+      // The rewritten view has already filtered; naming B's id matches no row
+      // rather than reaching B's rows.
+      const asked = await runUserSql(
+        A,
+        `SELECT count() AS n FROM otel_logs WHERE tenant_id = '${B}'`,
+      );
+      expect(Number(asked.rows[0]!.n)).toBe(0);
+      const own = await runUserSql(
+        A,
+        `SELECT count() AS n FROM otel_logs WHERE tenant_id = '${A}'`,
+      );
+      expect(Number(own.rows[0]!.n)).toBeGreaterThan(0);
+    });
+
+    it("counts only its own rows across a union of two tables", async () => {
+      const out = await runUserSql(
+        A,
+        "SELECT count() AS n FROM otel_logs UNION ALL SELECT count() AS n FROM otel_spans",
+      );
+      const total = out.rows.reduce((sum, r) => sum + Number(r.n), 0);
+      const mine = await runUserSql(
+        A,
+        "SELECT count() AS n FROM otel_logs UNION ALL SELECT count() AS n FROM otel_spans",
+      );
+      expect(total).toBe(mine.rows.reduce((sum, r) => sum + Number(r.n), 0));
+      // B wrote rows into the same two tables; none of them are in the total.
+      const bs = await runUserSql(
+        B,
+        "SELECT count() AS n FROM otel_logs UNION ALL SELECT count() AS n FROM otel_spans",
+      );
+      expect(bs.rows.reduce((sum, r) => sum + Number(r.n), 0)).toBeGreaterThan(0);
+    });
+
+    it("still answers a legitimate query", async () => {
+      const out = await runUserSql(A, "SELECT count() AS n FROM otel_logs");
+      expect(Number(out.rows[0]!.n)).toBeGreaterThan(0);
+      expect(out.columns).toEqual(["n"]);
+    });
   });
 });

@@ -96,3 +96,11 @@ export {
   type NewException,
   type ServiceWindow,
 } from "./evidence";
+export {
+  MAX_ROWS as SQL_MAX_ROWS,
+  SQL_TABLES,
+  SqlError,
+  compileUserSql,
+  runUserSql,
+  type SqlResult,
+} from "./sql";

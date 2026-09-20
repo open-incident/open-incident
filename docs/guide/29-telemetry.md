@@ -259,6 +259,29 @@ migrated dashboard that quietly changes its numbers is worse than a missing
 panel. Skipped panels are listed with their reason so the gap is visible the
 day of the migration, not a week later.
 
+## The SQL console
+
+**SQL** is the honest end of the explorer: every question the filters do not
+cover is one you can answer yourself. A reader who knows SQL should not have to
+export their telemetry to ask it something.
+
+What you type never reaches ClickHouse unchanged. Each table name is rewritten
+to the parameterized view for that table — which does not compile without a
+workspace — and a name that is not one of ours is refused, by name, rather than
+passed on. That matters because the underlying tables hold every workspace's
+rows: `system.tables`, another database, or a table we do not know would all be
+a way out of your own data, and none of them get that far.
+
+`SELECT` only, one statement at a time, a thousand rows and twenty seconds.
+`SETTINGS` is refused too, and it is the subtle one: it is not a write, but
+`max_result_rows = 0` hands back everything the ceiling was there to withhold.
+When a result hits the ceiling the console says so — a reader who sees exactly
+a thousand rows and is not told why will believe that is how many there are.
+
+The readable tables are `otel_logs`, `otel_spans`, `otel_traces`,
+`otel_exceptions`, `exception_groups`, `metric_series`, `metric_1m` and
+`service_edges`. Subqueries and `WITH` clauses work as they do anywhere.
+
 ## From a service
 
 A service's own page carries two cards the traces fill in.
@@ -331,6 +354,11 @@ the screens rather than present and empty.
 
 The map feeds no `DEPENDS_ON` facts yet, because the context graph they belong
 to is not built. The edges are there and queryable the day it is.
+
+The read-only tools the specification lists for Ask and MCP are not here
+either, and for the same kind of reason: there is no Ask surface and no MCP
+server for them to be tools of. The reads they would wrap exist — they are what
+the investigation checks and the SQL console already use.
 
 An edge is drawn between two services that both send spans. A dependency on
 something that sends none — a managed database, a third-party API — is visible

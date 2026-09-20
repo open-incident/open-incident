@@ -610,6 +610,15 @@ export const de: Dictionary = {
   "svcTelemetry.p95": "P95",
   "svcTelemetry.was": "{value} am Vortag",
   "svcTelemetry.window": "Über die letzten {hours} Stunden, gegen denselben Zeitraum am Vortag.",
+  "telemetry.tab.sql": "SQL",
+  "sql.run": "Ausführen",
+  "sql.tables":
+    "Lesbare Tabellen: {tables}. Nur SELECT; der Workspace-Filter wird für Sie ergänzt und lässt sich nicht entfernen.",
+  "sql.noRows": "Die Abfrage lief und fand nichts.",
+  "sql.rows": { one: "{count} Zeile", other: "{count} Zeilen" },
+  "sql.capped":
+    "Die ersten {count} Zeilen — die Obergrenze dieser Konsole. Grenzen Sie die Abfrage ein oder aggregieren Sie.",
+  "sql.examples": "PROBIEREN SIE EINE DAVON",
   "monitors.on.packet_loss_pct": "Paketverlust (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

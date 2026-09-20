@@ -605,6 +605,15 @@ export const en = {
   "svcTelemetry.p95": "P95",
   "svcTelemetry.was": "{value} the day before",
   "svcTelemetry.window": "Over the last {hours} hours, against the same window the day before.",
+  "telemetry.tab.sql": "SQL",
+  "sql.run": "Run",
+  "sql.tables":
+    "Readable tables: {tables}. SELECT only; the workspace filter is added for you and cannot be removed.",
+  "sql.noRows": "The query ran and matched nothing.",
+  "sql.rows": { one: "{count} row", other: "{count} rows" },
+  "sql.capped":
+    "Showing the first {count} rows — the ceiling this console reads to. Narrow the query or aggregate it.",
+  "sql.examples": "TRY ONE OF THESE",
   "monitors.on.packet_loss_pct": "packet loss (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

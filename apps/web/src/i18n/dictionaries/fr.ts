@@ -605,6 +605,15 @@ export const fr: Dictionary = {
   "svcTelemetry.p95": "P95",
   "svcTelemetry.was": "{value} la veille",
   "svcTelemetry.window": "Sur les {hours} dernières heures, contre la même fenêtre la veille.",
+  "telemetry.tab.sql": "SQL",
+  "sql.run": "Exécuter",
+  "sql.tables":
+    "Tables lisibles : {tables}. SELECT uniquement ; le filtre du workspace est ajouté pour vous et ne peut pas être retiré.",
+  "sql.noRows": "La requête s’est exécutée et n’a rien trouvé.",
+  "sql.rows": { one: "{count} ligne", other: "{count} lignes" },
+  "sql.capped":
+    "Les {count} premières lignes — le plafond de lecture de cette console. Resserrez la requête ou agrégez-la.",
+  "sql.examples": "ESSAYEZ L’UNE DE CELLES-CI",
   "monitors.on.packet_loss_pct": "perte de paquets (%)",
   "monitors.routeName": "Moniteur — {name}",
   "monitors.routeDesc":
