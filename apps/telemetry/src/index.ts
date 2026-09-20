@@ -23,10 +23,24 @@ import { telemetryInstalled } from "@openincident/telemetry";
 import { callerFor, keyFromHeaders, type Caller } from "./auth";
 import { ingestLogs, ingestSpans, settingsFor, type Outcome } from "./ingest";
 import { decodeLogs, decodeSpans } from "./otlp";
+import {
+  decodeLogsProto,
+  decodeSpansProto,
+  encodeLogsResponse,
+  encodeTraceResponse,
+} from "./protobuf";
 
 const PORT = Number(process.env.TELEMETRY_PORT ?? 4318);
 /** OTLP's own limit, and the one §15.4 names. */
 const MAX_BODY = 16 * 1024 * 1024;
+
+function sendProto(res: ServerResponse, status: number, body: Buffer): void {
+  res.writeHead(status, {
+    "content-type": "application/x-protobuf",
+    "content-length": body.byteLength,
+  });
+  res.end(body);
+}
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
@@ -128,13 +142,26 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       error: { code: "signal_not_allowed", message: `this key may not send ${signal}` },
     });
 
+  // An OTLP sender must be answered in the encoding it used: a protobuf
+  // exporter reading a JSON error body logs a parse failure and hides ours.
   const type = String(req.headers["content-type"] ?? "");
-  if (!type.includes("json")) {
+  const proto = type.includes("protobuf") || type.includes("octet-stream");
+  const fail = (status: number, code: string, message?: string) =>
+    proto
+      ? sendProto(
+          res,
+          status,
+          signal === "logs"
+            ? encodeLogsResponse(0, message ?? code)
+            : encodeTraceResponse(0, message ?? code),
+        )
+      : send(res, status, { error: { code, ...(message ? { message } : {}) } });
+
+  if (!proto && !type.includes("json")) {
     return send(res, 415, {
       error: {
-        code: "protobuf_not_supported_yet",
-        message:
-          "this instance reads OTLP/JSON only for now — set OTEL_EXPORTER_OTLP_PROTOCOL=http/json",
+        code: "unsupported_content_type",
+        message: "send OTLP as application/x-protobuf or application/json",
       },
     });
   }
@@ -143,39 +170,49 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   try {
     body = await readBody(req);
   } catch {
-    return send(res, 413, { error: { code: "payload_too_large" } });
-  }
-
-  let payload: unknown;
-  try {
-    payload = JSON.parse(body.toString("utf8"));
-  } catch {
-    return send(res, 400, { error: { code: "invalid_json" } });
+    return fail(413, "payload_too_large");
   }
 
   const settings = await settingsFor(caller.tenantId);
   if (!settings.enabledSignals.includes(signal))
-    return send(res, 403, {
-      error: { code: "signal_disabled", message: `${signal} is turned off for this workspace` },
-    });
+    return fail(403, "signal_disabled", `${signal} is turned off for this workspace`);
 
   let outcome: Outcome;
   try {
-    outcome =
-      signal === "logs"
-        ? await ingestLogs(caller, settings, decodeLogs(payload))
-        : await ingestSpans(caller, settings, decodeSpans(payload));
+    if (signal === "logs") {
+      const decoded = proto ? decodeLogsProto(body) : decodeLogs(JSON.parse(body.toString("utf8")));
+      outcome = await ingestLogs(caller, settings, decoded);
+    } else {
+      const decoded = proto
+        ? decodeSpansProto(body)
+        : decodeSpans(JSON.parse(body.toString("utf8")));
+      outcome = await ingestSpans(caller, settings, decoded);
+    }
   } catch (err) {
-    console.error(`[telemetry] ${signal} insert failed:`, err);
+    if (!proto && err instanceof SyntaxError)
+      return send(res, 400, { error: { code: "invalid_json" } });
+    console.error(`[telemetry] ${signal} failed:`, err);
     // 503 rather than 500: the OTel SDKs retry on it, and the data is still
     // in the collector's queue. A 500 tells them to give up.
-    return send(res, 503, { error: { code: "storage_unavailable" } });
+    return fail(503, "storage_unavailable");
   }
 
-  send(res, outcome.accepted > 0 || outcome.rejected.length === 0 ? 200 : 422, {
-    accepted: outcome.accepted,
-    rejected: outcome.rejected.length,
-  });
+  const rejected = outcome.rejected.length;
+  if (proto) {
+    const reason = outcome.rejected[0]?.reason ?? "";
+    sendProto(
+      res,
+      200,
+      signal === "logs"
+        ? encodeLogsResponse(rejected, reason)
+        : encodeTraceResponse(rejected, reason),
+    );
+  } else {
+    send(res, outcome.accepted > 0 || rejected === 0 ? 200 : 422, {
+      accepted: outcome.accepted,
+      rejected,
+    });
+  }
   void record(caller, signal, outcome, body.byteLength);
 }
 
@@ -187,7 +224,7 @@ createServer((req, res) => {
 }).listen(PORT, () => {
   console.log(
     telemetryInstalled()
-      ? `Open Incident telemetry ingestion on :${PORT} — OTLP/JSON logs and traces`
+      ? `Open Incident telemetry ingestion on :${PORT} — OTLP logs and traces, protobuf and JSON`
       : `Open Incident telemetry ingestion on :${PORT} — no storage configured, answering 503`,
   );
 });

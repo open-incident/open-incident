@@ -13,7 +13,8 @@
     "@openincident/ai": "workspace:*",
     "@openincident/db": "workspace:*",
     "@openincident/telemetry": "workspace:*",
-    "drizzle-orm": "^0.44.0"
+    "drizzle-orm": "^0.44.0",
+    "protobufjs": "^8.8.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
