@@ -27,7 +27,12 @@ import {
   withTenant,
   type ExceptionRegression,
 } from "@openincident/db";
-import { groupRates, telemetryInstalled, type GroupRate } from "@openincident/telemetry";
+import {
+  groupRates,
+  telemetryInstalled,
+  tenantsWithData,
+  type GroupRate,
+} from "@openincident/telemetry";
 import { ensureMonitorSource, postAlert } from "./monitors";
 import { tenantOrigin } from "./notify";
 
@@ -58,16 +63,56 @@ export const SURGE_FLOOR = 10;
  */
 export const REPEAT_AFTER_HOURS = 6;
 
-export type RegressionSweepResult = { checked: number; raised: number; failed: number };
+/**
+ * How far back the gate looks, and it has to be the **widest** window the
+ * sweep reads rather than the one it acts on.
+ *
+ * `groupRates` compares the last hour against a seven-day baseline. Gating on
+ * the last hour alone would skip a workspace whose baseline is the only thing
+ * that changed — and a baseline that silently stops being computed is how a
+ * regression detector starts calling everything normal.
+ */
+const GATE_WINDOW_MINUTES = 7 * 24 * 60 + 60;
+
+export type RegressionSweepResult = {
+  checked: number;
+  raised: number;
+  failed: number;
+  /** Workspaces with no exceptions in the window, which cost nothing. */
+  skipped: number;
+};
 
 export async function sweepExceptionRegressions(
   tenantIds: string[],
   now = new Date(),
 ): Promise<RegressionSweepResult> {
-  const out: RegressionSweepResult = { checked: 0, raised: 0, failed: 0 };
+  const out: RegressionSweepResult = { checked: 0, raised: 0, failed: 0, skipped: 0 };
   if (!telemetryInstalled()) return out;
 
-  for (const tenantId of tenantIds) {
+  /*
+   * Who has any exception at all, asked once for everybody.
+   *
+   * Same gate as the service map, and the same reason: this sweep used to open
+   * a Postgres transaction and run a ClickHouse query per workspace per
+   * minute, whether or not that workspace had ever recorded an exception.
+   */
+  const window = new Date(now.getTime() - GATE_WINDOW_MINUTES * 60_000);
+  let active: Set<string>;
+  try {
+    active = await tenantsWithData("exceptions", window);
+  } catch (err) {
+    // The gate failing must not stop the sweep: fall back to all of them,
+    // which is the old behaviour and merely slow.
+    console.error(
+      "[exception-regressions] gate failed, sweeping all:",
+      err instanceof Error ? err.message : err,
+    );
+    active = new Set(tenantIds);
+  }
+  const working = tenantIds.filter((id) => active.has(id));
+  out.skipped = tenantIds.length - working.length;
+
+  for (const tenantId of working) {
     try {
       out.raised += await sweepOne(tenantId, now, out);
     } catch (err) {

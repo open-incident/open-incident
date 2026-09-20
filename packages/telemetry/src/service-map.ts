@@ -142,6 +142,54 @@ export async function rollupServiceEdges(
   return edges;
 }
 
+/**
+ * Which tables a sweep may gate on. A fixed set, because the name goes into a
+ * query unparameterised — ClickHouse will not bind an identifier.
+ */
+const GATED: Record<"spans" | "exceptions", { table: string; ts: string }> = {
+  spans: { table: "otel_spans", ts: "start_ts" },
+  exceptions: { table: "otel_exceptions", ts: "ts" },
+};
+
+/**
+ * Which workspaces have anything in the window — asked once, for all of them.
+ *
+ * This is the gate the per-tenant sweeps were missing, and its absence was
+ * expensive in a way that only appears past a handful of workspaces. Every
+ * live tenant used to be swept unconditionally: a Postgres transaction to read
+ * its settings, a ClickHouse query, and for the service map up to
+ * `ROLLUP_BACKFILL_MINUTES` × 3 statements on a cold start. A workspace that
+ * had never sent a span paid the whole bill every minute, for ever, to produce
+ * nothing.
+ *
+ * Measured on a development instance with twenty-six workspaces, twenty-three
+ * of them empty test leftovers: ~112 ClickHouse queries a minute with nobody
+ * using the product, against 433 KiB of data in the entire store. The work was
+ * proportional to the number of workspaces and unrelated to whether any of
+ * them had data.
+ *
+ * `DISTINCT` over the first column of the ordering key is close to free — the
+ * parts are sorted by `tenant_id` — and it turns "ask twenty-six workspaces"
+ * into "ask once, then work for the two that have something".
+ */
+export async function tenantsWithData(
+  signal: keyof typeof GATED,
+  since: Date,
+): Promise<Set<string>> {
+  const { table, ts } = GATED[signal];
+  const rs = await clickhouse().query({
+    // The raw table, like the rollup below and for the same reason: this reads
+    // across every tenant on purpose, so the parameterised views — which exist
+    // to make a missing tenant filter impossible — cannot express it.
+    query: `SELECT DISTINCT toString(tenant_id) AS tenant
+              FROM ${table}
+             WHERE ${ts} >= {since:DateTime64(9)}`,
+    query_params: { since: chTime(since) },
+    format: "JSONEachRow",
+  });
+  return new Set((await rs.json<{ tenant: string }>()).map((r) => r.tenant));
+}
+
 /** The minutes still to roll up, oldest first — a gap is filled, not skipped. */
 export async function pendingMinutes(
   tenantId: string,

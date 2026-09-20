@@ -86,6 +86,7 @@ export {
   rollupServiceEdges,
   serviceEdges,
   servicesSeen,
+  tenantsWithData,
   type EdgeRow,
 } from "./service-map";
 export {
