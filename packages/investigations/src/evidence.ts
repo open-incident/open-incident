@@ -29,6 +29,13 @@ import {
   type Tx,
 } from "@openincident/db";
 import {
+  neighbours,
+  newExceptions,
+  serviceWindow,
+  telemetryInstalled,
+  type Neighbour,
+} from "@openincident/telemetry";
+import {
   embeddingsConfigured,
   getAiSettings,
   similarDocuments,
@@ -65,7 +72,24 @@ const fmt = (d: Date) => d.toISOString().slice(0, 16).replace("T", " ");
 const clip = (s: string | null | undefined, n: number) =>
   (s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 
-type Sources = { services: boolean; incidents: boolean; changeEvents: boolean; docs: boolean };
+type Sources = {
+  services: boolean;
+  incidents: boolean;
+  changeEvents: boolean;
+  docs: boolean;
+  telemetry?: boolean;
+};
+
+/**
+ * Absent means on, as it does for the AI capabilities.
+ *
+ * Every workspace that had governance settings before these checks existed has
+ * no `telemetry` key at all, and reading that as `false` would switch the
+ * checks off for all of them without anybody choosing to.
+ */
+function telemetryAllowed(sources: Sources): boolean {
+  return sources.telemetry !== false && telemetryInstalled();
+}
 
 async function head(tx: Tx, tenantId: string, incidentId: string): Promise<IncidentHead | null> {
   const [row] = await tx
@@ -352,6 +376,8 @@ function noteItems(notes: InvestigationNote[]): EvidenceItem[] {
 
 const SECTION_CAP: Record<InvestigationCheckKind, number> = {
   timeline: 9000,
+  telemetry: 3000,
+  dependencies: 2000,
   alerts: 4000,
   changes: 3500,
   similar_incidents: 4500,
@@ -362,6 +388,9 @@ const SECTION_CAP: Record<InvestigationCheckKind, number> = {
 
 const SECTION_TITLE: Record<InvestigationCheckKind, string> = {
   timeline: "Timeline of this incident",
+  telemetry:
+    "What the telemetry shows for the affected service, against the same window the day before",
+  dependencies: "Services this one talks to, in the same window",
   alerts: "Alerts linked to this incident",
   changes:
     "Changes recorded in the day before the incident and since (the affected service, or unscoped)",
@@ -417,6 +446,22 @@ export async function gatherEvidence(
           sources.services ? ownershipItems(tx, tenantId, inc, origin) : Promise.resolve("skipped"),
         off,
       ),
+      await timed(
+        "telemetry",
+        () =>
+          telemetryAllowed(sources)
+            ? telemetryItems(tenantId, inc, origin)
+            : Promise.resolve("skipped"),
+        off,
+      ),
+      await timed(
+        "dependencies",
+        () =>
+          telemetryAllowed(sources)
+            ? dependencyItems(tenantId, inc, origin)
+            : Promise.resolve("skipped"),
+        off,
+      ),
       await timed("notes", () => Promise.resolve(noteItems(notes))),
     ];
     const items = results.flatMap((r) => r.items);
@@ -445,5 +490,123 @@ export async function gatherEvidence(
       }
     }
     return { incident: inc, items, checks, text: lines.join("\n").slice(0, 32_000) };
+  });
+}
+
+/* ---------- Telemetry ---------- */
+
+/** The window the checks read: from an hour before the incident to now, or to its end. */
+function windowOf(inc: IncidentHead): { from: Date; to: Date } {
+  return {
+    from: new Date(inc.declaredAt.getTime() - 3_600_000),
+    to: inc.resolvedAt ?? new Date(),
+  };
+}
+
+/**
+ * The comparison, as a clause that reads inside a sentence.
+ *
+ * A percentage against zero is not a percentage, so those two cases say what
+ * happened in words instead of printing an infinity the analysis would then
+ * quote back at somebody.
+ */
+function change(now: number, before: number): string {
+  if (before === 0 && now === 0) return "none either day";
+  if (before === 0) return "none the day before";
+  const pct = Math.round(((now - before) / before) * 100);
+  return `${before} the day before, ${pct >= 0 ? "+" : "−"}${Math.abs(pct)} %`;
+}
+
+/** "3 times", "once" — the evidence is read by a model and then quoted to people. */
+function times(n: number): string {
+  return n === 1 ? "once" : `${n} times`;
+}
+
+/**
+ * What the affected service's own signals say.
+ *
+ * Aggregates and at most a handful of named exception groups, never a dump:
+ * the model reading this has a context window, and ten thousand log lines
+ * would push the timeline and the change events out of it.
+ *
+ * Nothing is asserted about cause. The items say what the numbers are and what
+ * they were yesterday; the analysis is what draws a conclusion, and it has to
+ * cite the item it drew it from.
+ */
+async function telemetryItems(
+  tenantId: string,
+  inc: IncidentHead,
+  origin: string,
+): Promise<EvidenceItem[]> {
+  if (!inc.service) return [];
+  const { from, to } = windowOf(inc);
+  const out: EvidenceItem[] = [];
+  const explorer = `${origin}/app/telemetry`;
+
+  const w = await serviceWindow(tenantId, inc.service, from, to);
+  if (w.errorLogs > 0 || w.errorLogsBefore > 0) {
+    out.push({
+      id: `T${out.length + 1}`,
+      kind: "telemetry",
+      label: `${inc.service} error logs`,
+      url: `${explorer}?tab=logs&service=${encodeURIComponent(inc.service)}`,
+      body: `${inc.service} wrote ${w.errorLogs} error-level logs in the window (${change(w.errorLogs, w.errorLogsBefore)}).`,
+    });
+  }
+  if (w.spans > 0 || w.spansBefore > 0) {
+    const rate = w.spans > 0 ? (w.errorSpans / w.spans) * 100 : 0;
+    const rateBefore = w.spansBefore > 0 ? (w.errorSpansBefore / w.spansBefore) * 100 : 0;
+    out.push({
+      id: `T${out.length + 1}`,
+      kind: "telemetry",
+      label: `${inc.service} traffic and latency`,
+      url: `${explorer}?tab=traces`,
+      body: `${inc.service} served ${w.spans} spans (${change(w.spans, w.spansBefore)}), ${rate.toFixed(1)} % of them failing against ${rateBefore.toFixed(1)} % the day before, p95 ${w.p95Ms} ms against ${w.p95MsBefore} ms.`,
+    });
+  }
+
+  for (const e of await newExceptions(tenantId, from, to, inc.service)) {
+    out.push({
+      id: `T${out.length + 1}`,
+      kind: "telemetry",
+      label: `${e.type}: ${clip(e.message, 60)}`,
+      url: `${explorer}?tab=exceptions&fp=${e.fingerprint}`,
+      // First seen inside the window is the fact worth stating: a bug that has
+      // been firing for a month is background, one that started twenty minutes
+      // before the declaration is a candidate.
+      body: `A new exception group first appeared at ${e.first_seen} and has fired ${times(e.occurrences)}: ${e.type} — ${clip(e.message, 200)}.`,
+    });
+  }
+  return out;
+}
+
+/**
+ * The neighbours, and which side of the call they are on.
+ *
+ * Direction is the whole value of this check. A downstream neighbour erroring
+ * is a candidate cause; an upstream one erroring is more likely a consequence.
+ * An analysis that cannot tell them apart names the victim with confidence.
+ */
+async function dependencyItems(
+  tenantId: string,
+  inc: IncidentHead,
+  origin: string,
+): Promise<EvidenceItem[]> {
+  if (!inc.service) return [];
+  const { from, to } = windowOf(inc);
+  const rows = await neighbours(tenantId, inc.service, from, to);
+  return rows.map((n: Neighbour, i: number) => {
+    const rate = n.calls > 0 ? (n.errors / n.calls) * 100 : 0;
+    const side =
+      n.direction === "downstream"
+        ? `${inc.service} calls ${n.other}`
+        : `${n.other} calls ${inc.service}`;
+    return {
+      id: `D${i + 1}`,
+      kind: "dependency" as const,
+      label: `${n.direction}: ${n.other}`,
+      url: `${origin}/app/telemetry?tab=map`,
+      body: `${side}: ${n.calls} calls in the window (${change(n.calls, n.callsBefore)}), ${rate.toFixed(1)} % failing against ${n.errorsBefore} failures the day before, p95 ${n.p95Ms} ms.`,
+    };
   });
 }

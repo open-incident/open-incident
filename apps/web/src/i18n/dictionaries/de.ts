@@ -552,6 +552,10 @@ export const de: Dictionary = {
   "map.edgeErrors": { one: "{count} fehlgeschlagen", other: "{count} fehlgeschlagen" },
   "map.observedNote":
     "Beobachtet, nicht deklariert: jede Abhängigkeit hier ist im Zeitraum tatsächlich vorgekommen, und eine, die aufhört vorzukommen, wird nicht mehr gezeigt. Die Tiefe ist der längste Pfad zu einem Dienst — wovon am Ende alles abhängt, steht rechts.",
+  "settings.ai.source.telemetry":
+    "Telemetrie — Logs, Traces und Ausnahmen des betroffenen Dienstes",
+  "ai.investigation.check.telemetry": "Telemetrie",
+  "ai.investigation.check.dependencies": "Abhängigkeiten",
   "monitors.on.packet_loss_pct": "Paketverlust (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

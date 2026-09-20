@@ -227,6 +227,36 @@ migrated dashboard that quietly changes its numbers is worse than a missing
 panel. Skipped panels are listed with their reason so the gap is visible the
 day of the migration, not a week later.
 
+## What Atlas reads
+
+An investigation gathers two more checks when the module is installed:
+**Telemetry** and **Dependencies**, on the affected service, over the window
+from an hour before the incident was declared to its end.
+
+Every figure is given against **the same window the day before**, because a
+number on its own says nothing: "four hundred errors" is either a catastrophe
+or a Tuesday, and only the comparison tells you which. The checks report the
+service's error-log count, its traffic, its failure rate and its p95; the
+exception groups whose **first** occurrence falls inside the window — a bug
+that has been firing for a month is background, one that started twenty
+minutes before the declaration is a candidate; and the neighbours it called or
+was called by, with the same comparison.
+
+The direction of a dependency is stated rather than left to be inferred. A
+downstream neighbour erroring is a candidate cause; an upstream one erroring is
+more likely a consequence, and an analysis that cannot tell them apart names
+the victim with confidence.
+
+What is returned is aggregates and at most a handful of named examples, never a
+dump. The model reading this has a context window, and ten thousand log lines
+would push the timeline and the change events out of it — making the analysis
+worse, not better. Each item carries an id the findings must cite, so a claim
+about the telemetry can be traced back to the number it came from.
+
+The checks are governed like the others, under Settings → AI: a workspace can
+switch the telemetry source off. A workspace whose settings predate the checks
+has them on, because absent is not a choice somebody made.
+
 ## Isolation and deletion
 
 Every ClickHouse table is shared, with `tenant_id` first in its sort key, and

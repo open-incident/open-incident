@@ -86,3 +86,11 @@ export {
   servicesSeen,
   type EdgeRow,
 } from "./service-map";
+export {
+  neighbours,
+  newExceptions,
+  serviceWindow,
+  type Neighbour,
+  type NewException,
+  type ServiceWindow,
+} from "./evidence";

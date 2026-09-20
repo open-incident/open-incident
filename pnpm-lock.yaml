@@ -508,6 +508,9 @@ importers:
       '@openincident/db':
         specifier: workspace:*
         version: link:../db
+      '@openincident/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
       bullmq:
         specifier: ^5.44.0
         version: 5.81.4(supports-color@7.2.0)

@@ -548,6 +548,9 @@ export const fr: Dictionary = {
   "map.edgeErrors": { one: "{count} en échec", other: "{count} en échec" },
   "map.observedNote":
     "Observé, et non déclaré : chaque dépendance ici a eu lieu dans la fenêtre, et celle qui cesse d’avoir lieu cesse d’être affichée. La profondeur est le plus long chemin qui atteint un service : ce dont tout finit par dépendre se trouve à droite.",
+  "settings.ai.source.telemetry": "Télémétrie — logs, traces et exceptions du service concerné",
+  "ai.investigation.check.telemetry": "Télémétrie",
+  "ai.investigation.check.dependencies": "Dépendances",
   "monitors.on.packet_loss_pct": "perte de paquets (%)",
   "monitors.routeName": "Moniteur — {name}",
   "monitors.routeDesc":

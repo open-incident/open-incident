@@ -39,7 +39,14 @@ export const AI_CAPABILITIES: AiCapability[] = [
 export type AiSettingsView = {
   enabled: boolean;
   capabilities: Partial<Record<AiCapability, boolean>>;
-  sources: { services: boolean; incidents: boolean; changeEvents: boolean; docs: boolean };
+  sources: {
+    services: boolean;
+    incidents: boolean;
+    changeEvents: boolean;
+    docs: boolean;
+    /** Absent means on — rows written before the telemetry checks existed. */
+    telemetry?: boolean;
+  };
   privateOptIn: boolean;
   provider: string | null;
 };

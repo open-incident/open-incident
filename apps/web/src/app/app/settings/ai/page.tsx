@@ -277,6 +277,9 @@ export default async function AiGovernancePage({
                   ["services", true, true],
                   ["incidents", data.settings.sources.incidents, false],
                   ["changeEvents", data.settings.sources.changeEvents, false],
+                  // Absent means on: a workspace whose settings predate the
+                  // telemetry checks has never chosen to switch them off.
+                  ["telemetry", data.settings.sources.telemetry !== false, false],
                 ] as const
               ).map(([k, on, locked]) => (
                 <div

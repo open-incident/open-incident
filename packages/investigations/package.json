@@ -15,6 +15,7 @@
     "@openincident/ai": "workspace:*",
     "@openincident/chat": "workspace:*",
     "@openincident/db": "workspace:*",
+    "@openincident/telemetry": "workspace:*",
     "bullmq": "^5.44.0",
     "drizzle-orm": "^0.44.0",
     "ioredis": "^5.6.0"

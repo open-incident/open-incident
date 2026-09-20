@@ -548,6 +548,9 @@ export const en = {
   "map.edgeErrors": { one: "{count} failed", other: "{count} failed" },
   "map.observedNote":
     "Observed, not declared: every dependency here happened inside the window, and one that stops happening stops being shown. Depth is the longest path that reaches a service, so what everything ends up depending on sits on the right.",
+  "settings.ai.source.telemetry": "Telemetry — logs, traces and exceptions of the affected service",
+  "ai.investigation.check.telemetry": "Telemetry",
+  "ai.investigation.check.dependencies": "Dependencies",
   "monitors.on.packet_loss_pct": "packet loss (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

@@ -20,6 +20,7 @@ export async function saveAiSettings(formData: FormData) {
     incidents: formData.get("src_incidents") === "on",
     changeEvents: formData.get("src_changeEvents") === "on",
     docs: formData.get("src_docs") === "on",
+    telemetry: formData.get("src_telemetry") === "on",
   };
   const values = {
     enabled: formData.get("enabled") === "on",

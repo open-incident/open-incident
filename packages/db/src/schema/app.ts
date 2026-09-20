@@ -2086,7 +2086,19 @@ export const aiSettings = app.table(
       .notNull()
       .default({}),
     sources: jsonb("sources")
-      .$type<{ services: boolean; incidents: boolean; changeEvents: boolean; docs: boolean }>()
+      /*
+       * `telemetry` is absent from rows written before it existed, and absent
+       * means on — the same convention `capabilities` above uses. Reading a
+       * missing key as `false` would switch the check off for every workspace
+       * that had settings before the feature, silently.
+       */
+      .$type<{
+        services: boolean;
+        incidents: boolean;
+        changeEvents: boolean;
+        docs: boolean;
+        telemetry?: boolean;
+      }>()
       .notNull()
       .default({ services: true, incidents: true, changeEvents: true, docs: false }),
     /** Private incidents feed the knowledge layer only with this explicit opt-in. */
@@ -2168,11 +2180,28 @@ export type InvestigationTrigger = "declaration" | "manual" | "signal" | "note" 
 /** Five levels, from a guess to a cause the material itself confirms. */
 export type Confidence = "speculation" | "plausible" | "likely" | "strong" | "validated";
 export type InvestigationCheckKind =
-  "timeline" | "alerts" | "changes" | "similar_incidents" | "runbooks" | "ownership" | "notes";
+  | "timeline"
+  | "alerts"
+  | "changes"
+  | "similar_incidents"
+  | "runbooks"
+  | "ownership"
+  | "notes"
+  | "telemetry"
+  | "dependencies";
 /** One piece of evidence the analysis may cite — `E3`, `A1`, `C2`… — with where it leads. */
 export type Citation = {
   id: string;
-  kind: "event" | "alert" | "change" | "incident" | "runbook" | "owner" | "note";
+  kind:
+    | "event"
+    | "alert"
+    | "change"
+    | "incident"
+    | "runbook"
+    | "owner"
+    | "note"
+    | "telemetry"
+    | "dependency";
   label: string;
   url: string | null;
 };
