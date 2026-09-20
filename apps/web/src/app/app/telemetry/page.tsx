@@ -19,6 +19,7 @@ import { MetricsTab } from "./metrics-tab";
 import { MapTab } from "./map-tab";
 import { SqlTab } from "./sql-tab";
 import { ProfilesTab } from "./profiles-tab";
+import { FilterError, QueryBar } from "./query-bar";
 import { RumTab } from "./rum-tab";
 import { Waterfall } from "./waterfall";
 
@@ -204,9 +205,22 @@ export default async function TelemetryPage({
       </div>
 
       <div style={{ marginTop: 18 }}>
-        {tab === "logs" && <LogsTab tenantId={tenant.id} service={sp.service} />}
+        {tab === "logs" && (
+          <LogsTab
+            tenantId={tenant.id}
+            service={sp.service}
+            filter={sp.q}
+            mayEdit={canRespond(member)}
+          />
+        )}
         {tab === "traces" && (
-          <TracesTab tenantId={tenant.id} open={sp.trace} service={sp.service} />
+          <TracesTab
+            tenantId={tenant.id}
+            open={sp.trace}
+            service={sp.service}
+            filter={sp.q}
+            mayEdit={canRespond(member)}
+          />
         )}
         {tab === "metrics" && <MetricsTab tenantId={tenant.id} open={sp.metric} />}
         {tab === "exceptions" && (
@@ -215,6 +229,7 @@ export default async function TelemetryPage({
             open={sp.fp}
             mayEdit={canRespond(member)}
             service={sp.service}
+            filter={sp.q}
           />
         )}
         {tab === "map" && (
@@ -277,62 +292,111 @@ async function Empty({ message }: { message: string }) {
   );
 }
 
-async function LogsTab({ tenantId, service }: { tenantId: string; service?: string }) {
+async function LogsTab({
+  tenantId,
+  service,
+  filter,
+  mayEdit,
+}: {
+  tenantId: string;
+  service?: string;
+  filter?: string;
+  mayEdit: boolean;
+}) {
   const t = await getT();
-  const rows = await logs(tenantId, { limit: 200, ...(service ? { service } : {}) });
-  if (rows.length === 0) return <Empty message={t("telemetry.noLogs")} />;
+  // The filter is compiled here rather than validated first: the compiler is
+  // the only thing that knows what is valid, and running it twice to ask the
+  // same question would be two places for the answer to differ.
+  let rows: Awaited<ReturnType<typeof logs>> = [];
+  let error: string | null = null;
+  try {
+    rows = await logs(tenantId, { limit: 200, ...(service ? { service } : {}), filter });
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+
+  const bar = (
+    <QueryBar
+      tenantId={tenantId}
+      signal="logs"
+      query={filter}
+      service={service}
+      mayEdit={mayEdit}
+    />
+  );
+  if (error) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {bar}
+        <FilterError message={error} />
+      </div>
+    );
+  }
+  if (rows.length === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {bar}
+        <Empty message={t(filter ? "explorer.noMatch" : "telemetry.noLogs")} />
+      </div>
+    );
+  }
   return (
-    <div style={{ ...CARD, overflow: "hidden" }}>
-      {rows.map((l, i) => {
-        const tone = severityTone(l.severity_number);
-        return (
-          <div
-            key={`${l.ts}-${i}`}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "150px 62px 150px minmax(0,1fr) 90px",
-              gap: 10,
-              alignItems: "baseline",
-              padding: "7px 14px",
-              borderTop: i ? "1px solid var(--line-2)" : "none",
-              fontSize: 12.5,
-            }}
-          >
-            <span style={{ ...MONO, color: "var(--ink-3)" }}>{l.ts.slice(0, 23)}</span>
-            <span
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {bar}
+      <div style={{ ...CARD, overflow: "hidden" }}>
+        {rows.map((l, i) => {
+          const tone = severityTone(l.severity_number);
+          return (
+            <div
+              key={`${l.ts}-${i}`}
               style={{
-                ...MONO,
-                fontSize: 10.5,
-                fontWeight: 700,
-                color: tone.color,
-                background: tone.bg,
-                borderRadius: 5,
-                padding: "1px 5px",
-                justifySelf: "start",
+                display: "grid",
+                gridTemplateColumns: "150px 62px 150px minmax(0,1fr) 90px",
+                gap: 10,
+                alignItems: "baseline",
+                padding: "7px 14px",
+                borderTop: i ? "1px solid var(--line-2)" : "none",
+                fontSize: 12.5,
               }}
             >
-              {l.severity_text || tone.label}
-            </span>
-            <span style={{ ...MONO, color: "var(--ink-2)" }}>{l.service_name}</span>
-            <span style={{ ...MONO, color: "var(--ink)", wordBreak: "break-word" }}>{l.body}</span>
-            {l.trace_id ? (
-              <Link
-                href={`/app/telemetry?tab=traces&trace=${l.trace_id}`}
+              <span style={{ ...MONO, color: "var(--ink-3)" }}>{l.ts.slice(0, 23)}</span>
+              <span
                 style={{
                   ...MONO,
-                  color: "var(--brand)",
-                  textDecoration: "none",
-                  justifySelf: "end",
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  color: tone.color,
+                  background: tone.bg,
+                  borderRadius: 5,
+                  padding: "1px 5px",
+                  justifySelf: "start",
                 }}
               >
-                {t("telemetry.openTrace")}
-              </Link>
-            ) : (
-              <span />
-            )}
-          </div>
-        );
-      })}
+                {l.severity_text || tone.label}
+              </span>
+              <span style={{ ...MONO, color: "var(--ink-2)" }}>{l.service_name}</span>
+              <span style={{ ...MONO, color: "var(--ink)", wordBreak: "break-word" }}>
+                {l.body}
+              </span>
+              {l.trace_id ? (
+                <Link
+                  href={`/app/telemetry?tab=traces&trace=${l.trace_id}`}
+                  style={{
+                    ...MONO,
+                    color: "var(--brand)",
+                    textDecoration: "none",
+                    justifySelf: "end",
+                  }}
+                >
+                  {t("telemetry.openTrace")}
+                </Link>
+              ) : (
+                <span />
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -341,94 +405,134 @@ async function TracesTab({
   tenantId,
   open,
   service,
+  filter,
+  mayEdit,
 }: {
   tenantId: string;
   open?: string;
   service?: string;
+  filter?: string;
+  mayEdit: boolean;
 }) {
   const t = await getT();
-  const rows = await traces(tenantId, { service });
-  if (rows.length === 0) return <Empty message={t("telemetry.noTraces")} />;
+  let rows: Awaited<ReturnType<typeof traces>> = [];
+  let error: string | null = null;
+  try {
+    rows = await traces(tenantId, { service, filter });
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+
+  const bar = (
+    <QueryBar
+      tenantId={tenantId}
+      signal="traces"
+      query={filter}
+      service={service}
+      mayEdit={mayEdit}
+    />
+  );
+  if (error) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {bar}
+        <FilterError message={error} />
+      </div>
+    );
+  }
+  if (rows.length === 0) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {bar}
+        <Empty message={t(filter ? "explorer.noMatch" : "telemetry.noTraces")} />
+      </div>
+    );
+  }
   const spans = open ? await trace(tenantId, open) : [];
   const correlated = open ? await logs(tenantId, { traceId: open, limit: 50 }) : [];
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: open ? "minmax(0,1fr) minmax(0,1.2fr)" : "1fr",
-        gap: 14,
-      }}
-    >
-      <div style={{ ...CARD, overflow: "hidden", alignSelf: "start" }}>
-        {rows.map((r, i) => (
-          <Link
-            key={r.trace_id}
-            href={`/app/telemetry?tab=traces&trace=${r.trace_id}`}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(0,1fr) 70px 58px",
-              gap: 10,
-              alignItems: "center",
-              padding: "9px 14px",
-              borderTop: i ? "1px solid var(--line-2)" : "none",
-              background: r.trace_id === open ? "var(--sunk)" : "transparent",
-              textDecoration: "none",
-              color: "inherit",
-            }}
-          >
-            <span style={{ minWidth: 0 }}>
-              <span style={{ display: "block", fontSize: 13, fontWeight: 600 }}>{r.root_name}</span>
-              <span style={{ ...MONO, fontSize: 11, color: "var(--ink-3)" }}>
-                {r.root_service}
-                {r.services.length > 1 ? ` +${r.services.length - 1}` : ""} ·{" "}
-                {r.start_ts.slice(0, 19)}
-              </span>
-            </span>
-            <span style={{ ...MONO, color: "var(--ink-2)", textAlign: "right" }}>
-              {ms(r.duration_ns)}
-            </span>
-            <span
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {bar}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: open ? "minmax(0,1fr) minmax(0,1.2fr)" : "1fr",
+          gap: 14,
+        }}
+      >
+        <div style={{ ...CARD, overflow: "hidden", alignSelf: "start" }}>
+          {rows.map((r, i) => (
+            <Link
+              key={r.trace_id}
+              href={`/app/telemetry?tab=traces&trace=${r.trace_id}`}
               style={{
-                ...MONO,
-                fontSize: 10.5,
-                textAlign: "right",
-                color: Number(r.error_count) > 0 ? "var(--dang)" : "var(--ink-3)",
+                display: "grid",
+                gridTemplateColumns: "minmax(0,1fr) 70px 58px",
+                gap: 10,
+                alignItems: "center",
+                padding: "9px 14px",
+                borderTop: i ? "1px solid var(--line-2)" : "none",
+                background: r.trace_id === open ? "var(--sunk)" : "transparent",
+                textDecoration: "none",
+                color: "inherit",
               }}
             >
-              {r.span_count} {t("telemetry.spans")}
-            </span>
-          </Link>
-        ))}
-      </div>
-
-      {open && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ ...CARD, padding: "14px 16px" }}>
-            <div style={{ ...MONO, fontSize: 11, color: "var(--ink-3)", marginBottom: 10 }}>
-              {open}
-            </div>
-            <Waterfall spans={spans} />
-          </div>
-          <div style={{ ...CARD, padding: "12px 16px" }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>
-              {t("telemetry.logsOfTrace")}
-            </div>
-            {correlated.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-                {t("telemetry.noLogsHere")}
-              </div>
-            ) : (
-              correlated.map((l, i) => (
-                <div key={i} style={{ ...MONO, padding: "3px 0", color: "var(--ink)" }}>
-                  <span style={{ color: "var(--ink-3)" }}>{l.ts.slice(11, 23)} </span>
-                  {l.body}
-                </div>
-              ))
-            )}
-          </div>
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 13, fontWeight: 600 }}>
+                  {r.root_name}
+                </span>
+                <span style={{ ...MONO, fontSize: 11, color: "var(--ink-3)" }}>
+                  {r.root_service}
+                  {r.services.length > 1 ? ` +${r.services.length - 1}` : ""} ·{" "}
+                  {r.start_ts.slice(0, 19)}
+                </span>
+              </span>
+              <span style={{ ...MONO, color: "var(--ink-2)", textAlign: "right" }}>
+                {ms(r.duration_ns)}
+              </span>
+              <span
+                style={{
+                  ...MONO,
+                  fontSize: 10.5,
+                  textAlign: "right",
+                  color: Number(r.error_count) > 0 ? "var(--dang)" : "var(--ink-3)",
+                }}
+              >
+                {r.span_count} {t("telemetry.spans")}
+              </span>
+            </Link>
+          ))}
         </div>
-      )}
+
+        {open && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ ...CARD, padding: "14px 16px" }}>
+              <div style={{ ...MONO, fontSize: 11, color: "var(--ink-3)", marginBottom: 10 }}>
+                {open}
+              </div>
+              <Waterfall spans={spans} />
+            </div>
+            <div style={{ ...CARD, padding: "12px 16px" }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>
+                {t("telemetry.logsOfTrace")}
+              </div>
+              {correlated.length === 0 ? (
+                <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+                  {t("telemetry.noLogsHere")}
+                </div>
+              ) : (
+                correlated.map((l, i) => (
+                  <div key={i} style={{ ...MONO, padding: "3px 0", color: "var(--ink)" }}>
+                    <span style={{ color: "var(--ink-3)" }}>{l.ts.slice(11, 23)} </span>
+                    {l.body}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -14,8 +14,8 @@
  */
 import { read } from "./query";
 
-export const PROFILES = "otel_profiles_t(tenant = {tenant:UUID})";
-export const PROFILE_STACKS = "profile_stacks_t(tenant = {tenant:UUID})";
+export { PROFILES, PROFILE_STACKS } from "./views";
+import { PROFILES, PROFILE_STACKS } from "./views";
 
 export type ProfileWindow = {
   service: string;

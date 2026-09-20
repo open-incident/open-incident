@@ -2,7 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { exceptionGroups, withTenant, type ExceptionGroupStatus } from "@openincident/db";
+import { and, eq } from "drizzle-orm";
+import {
+  exceptionGroups,
+  savedQueries,
+  withTenant,
+  type ExceptionGroupStatus,
+  type SavedQuerySignal,
+} from "@openincident/db";
+import { compileFilter, compileUserSql, parsePromql } from "@openincident/telemetry";
 import { canRespond, isManager, requireMember } from "@/lib/session";
 import { issueKey, revokeKey } from "@/lib/telemetry";
 
@@ -72,3 +80,76 @@ export async function setExceptionStatus(form: FormData): Promise<void> {
 
 const STATUSES: ExceptionGroupStatus[] = ["open", "resolved", "ignored", "snoozed"];
 const SNOOZE_HOURS = 24;
+
+/**
+ * Saving the query somebody is looking at.
+ *
+ * Compiled before it is stored, with the same compiler the explorer and the
+ * monitors use: a saved query that does not run is a bookmark to a failure,
+ * and the moment to say so is while the person still remembers what they
+ * meant.
+ */
+export async function saveQuery(form: FormData): Promise<void> {
+  const { tenant, member } = await requireMember();
+  const signal = String(form.get("signal") ?? "");
+  const query = String(form.get("query") ?? "").trim();
+  const name = String(form.get("name") ?? "").trim();
+  const service = String(form.get("service") ?? "").trim();
+  const back = `/app/telemetry?tab=${encodeURIComponent(signal)}${query ? `&q=${encodeURIComponent(query)}` : ""}`;
+
+  if (!canRespond(member) || !SIGNALS.includes(signal as SavedQuerySignal) || !name || !query) {
+    redirect(`${back}&error=invalid`);
+  }
+  const refusal = savedQueryError(signal as SavedQuerySignal, query);
+  if (refusal) redirect(`${back}&error=query&why=${encodeURIComponent(refusal)}`);
+
+  await withTenant(tenant.id, (tx) =>
+    tx
+      .insert(savedQueries)
+      .values({
+        tenantId: tenant.id,
+        name,
+        signal: signal as SavedQuerySignal,
+        query,
+        service: service || null,
+        createdByMemberId: member.id,
+      })
+      // A name reused is the same query being refined, not a second one: the
+      // alternative is a list with four things called "checkout errors".
+      .onConflictDoUpdate({
+        target: [savedQueries.tenantId, savedQueries.signal, savedQueries.name],
+        set: { query, service: service || null, updatedAt: new Date() },
+      }),
+  );
+  revalidatePath("/app/telemetry");
+  redirect(back);
+}
+
+export async function deleteSavedQuery(form: FormData): Promise<void> {
+  const { tenant, member } = await requireMember();
+  const id = String(form.get("id") ?? "");
+  const signal = String(form.get("signal") ?? "logs");
+  if (canRespond(member) && id) {
+    await withTenant(tenant.id, (tx) =>
+      tx
+        .delete(savedQueries)
+        .where(and(eq(savedQueries.tenantId, tenant.id), eq(savedQueries.id, id))),
+    );
+  }
+  revalidatePath("/app/telemetry");
+  redirect(`/app/telemetry?tab=${encodeURIComponent(signal)}`);
+}
+
+const SIGNALS: SavedQuerySignal[] = ["logs", "traces", "exceptions", "metrics", "sql"];
+
+/** Whether the query would run, checked with whichever compiler owns it. */
+function savedQueryError(signal: SavedQuerySignal, query: string): string | null {
+  try {
+    if (signal === "sql") compileUserSql(query);
+    else if (signal === "metrics") parsePromql(query);
+    else compileFilter(signal, query);
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+  return null;
+}

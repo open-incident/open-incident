@@ -63,7 +63,14 @@ const NUMERIC: Record<string, string[]> = {
   metrics: [],
 };
 
-export function TelemetryEditor({ kind }: { kind: string }) {
+export function TelemetryEditor({
+  kind,
+  initialQuery,
+}: {
+  kind: string;
+  /** Carried over from an explorer, so what is watched is what was looked at. */
+  initialQuery?: string;
+}) {
   const t = useT();
   const promql = kind === "metrics";
   const [aggregate, setAggregate] = useState(promql ? "count" : "count");
@@ -90,6 +97,7 @@ export function TelemetryEditor({ kind }: { kind: string }) {
         <input
           name="telemetryQuery"
           required
+          defaultValue={initialQuery ?? ""}
           className="oi-field"
           data-testid="telemetry-query"
           placeholder={t(`telemetryMonitor.placeholder.${kind}` as MessageKey)}

@@ -155,15 +155,27 @@ export function NewMonitor({
   services,
   capabilities,
   initialOpen = false,
+  initialType,
+  initialQuery,
 }: {
   services: string[];
   /** What this instance can run — a type it cannot is shown, greyed, with why. */
   capabilities: Record<string, { ok: boolean; why?: string }>;
   initialOpen?: boolean;
+  /** Arriving from an explorer: the type is known and the filter is written. */
+  initialType?: string;
+  initialQuery?: string;
 }) {
   const t = useT();
   const [open, setOpen] = useState(initialOpen);
-  const [kind, setKind] = useState<Kind | null>(null);
+  /*
+   * Somebody arriving from "watch this" has already chosen the type and
+   * written the query. Sending them to step one to pick the type they just
+   * came from would be the product forgetting what they did a second ago.
+   */
+  const [kind, setKind] = useState<Kind | null>(
+    initialType ? (KINDS.find((k) => k.id === initialType) ?? null) : null,
+  );
 
   const close = () => {
     setOpen(false);
@@ -400,7 +412,7 @@ export function NewMonitor({
                     </>
                   )}
 
-                  {telemetry && <TelemetryEditor kind={kind.id} />}
+                  {telemetry && <TelemetryEditor kind={kind.id} initialQuery={initialQuery} />}
 
                   <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                     <span style={LABEL}>{t("monitors.fieldService")}</span>

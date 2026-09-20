@@ -12,8 +12,9 @@
  * for `for` evaluations and posting the alert belong to the sweep, which lives
  * with the other monitors in `@openincident/oncall`.
  */
-import { EXCEPTIONS, LOGS, read, SPANS } from "./query";
+import { read } from "./query";
 import { evalPromql } from "./promql/eval";
+import { SOURCES, columnOf, compileFilter, fieldsOf, TelemetryFilterError } from "./filter";
 
 export type TelemetryMonitorKind = "logs" | "traces" | "metrics" | "exceptions";
 
@@ -45,156 +46,22 @@ export type SeriesValue = {
   value: number;
 };
 
-export class TelemetryMonitorError extends Error {}
-
-/* ---------- What a filter may name ---------- */
-
-/*
- * An allowlist rather than a parser that trusts its input.
- *
- * The filter is written by a person in a form field and ends up inside a
- * ClickHouse query, so the only safe shape is: the column names are chosen
- * from a fixed list and everything else is a bound parameter. `attr:foo`
- * reaches an attribute — the key travels as a parameter too.
- */
-type Column = { sql: string; numeric: boolean };
-
-const COLUMNS: Record<TelemetryMonitorKind, Record<string, Column>> = {
-  logs: {
-    service_name: { sql: "service_name", numeric: false },
-    environment: { sql: "environment", numeric: false },
-    severity_number: { sql: "severity_number", numeric: true },
-    severity_text: { sql: "severity_text", numeric: false },
-    body: { sql: "body", numeric: false },
-    trace_id: { sql: "trace_id", numeric: false },
-  },
-  traces: {
-    service_name: { sql: "service_name", numeric: false },
-    environment: { sql: "environment", numeric: false },
-    name: { sql: "name", numeric: false },
-    kind: { sql: "kind", numeric: false },
-    status_code: { sql: "status_code", numeric: false },
-    // Exposed in milliseconds because that is the unit a person writes a
-    // threshold in. Nobody has ever meant "above 250000000 nanoseconds".
-    duration_ms: { sql: "(duration_ns / 1000000)", numeric: true },
-    http_status_code: { sql: "http_status_code", numeric: true },
-  },
-  metrics: {},
-  exceptions: {
-    service_name: { sql: "service_name", numeric: false },
-    environment: { sql: "environment", numeric: false },
-    release: { sql: "release", numeric: false },
-    type: { sql: "type", numeric: false },
-    message: { sql: "message", numeric: false },
-    fingerprint: { sql: "fingerprint", numeric: false },
-  },
-};
-
-const SOURCES: Record<Exclude<TelemetryMonitorKind, "metrics">, { from: string; ts: string }> = {
-  logs: { from: LOGS, ts: "ts" },
-  traces: { from: SPANS, ts: "start_ts" },
-  exceptions: { from: EXCEPTIONS, ts: "ts" },
-};
-
-/** The fields a filter or a `group by` may name, for the form's picker. */
-export function fieldsOf(kind: TelemetryMonitorKind): string[] {
-  return Object.keys(COLUMNS[kind]);
-}
-
-type Bound = { sql: string; params: Record<string, unknown> };
-
-function columnOf(
-  kind: TelemetryMonitorKind,
-  field: string,
-  params: Record<string, unknown>,
-): Column {
-  const attr = /^attr:(.+)$/.exec(field.trim());
-  if (attr) {
-    const name = `attr_${Object.keys(params).length}`;
-    params[name] = attr[1];
-    return { sql: `attributes[{${name}:String}]`, numeric: false };
-  }
-  const column = COLUMNS[kind][field.trim()];
-  if (!column) {
-    throw new TelemetryMonitorError(
-      `"${field}" is not a field of ${kind}; use one of ${fieldsOf(kind).join(", ")} or attr:<name>`,
-    );
-  }
-  return column;
-}
-
-const TERM =
-  /^\s*([A-Za-z_][\w.]*(?::[\w.-]+)?)\s*(=~|!~|>=|<=|!=|==|=|>|<|\bcontains\b)\s*(.+?)\s*$/i;
-
 /**
- * A filter expression into a `WHERE` clause.
- *
- * The grammar is deliberately one line long — `field op value`, joined by
- * `AND` — because a monitor that needs boolean algebra is a monitor whose
- * author will not be able to say what it watches at three in the morning.
- * The metrics type has PromQL for the cases this cannot express.
+ * Kept as a name of its own, re-exported from the filter module: callers catch
+ * "the monitor refused this", and the fact that most refusals come from the
+ * filter compiler is an implementation detail they should not have to know.
  */
-export function compileFilter(kind: TelemetryMonitorKind, expression: string): Bound {
-  const params: Record<string, unknown> = {};
-  const text = expression.trim();
-  if (!text) return { sql: "1 = 1", params };
-
-  const clauses: string[] = [];
-  for (const raw of text.split(/\s+AND\s+/i)) {
-    const m = TERM.exec(raw);
-    if (!m) {
-      throw new TelemetryMonitorError(
-        `cannot read "${raw.trim()}" — a filter is "field = value", joined by AND`,
-      );
-    }
-    const [, field, rawOp, rawValue] = m as unknown as [string, string, string, string];
-    const op = rawOp.toLowerCase();
-    const column = columnOf(kind, field, params);
-    const literal = unquote(rawValue);
-    const name = `f${Object.keys(params).length}`;
-
-    if (op === "contains") {
-      params[name] = literal;
-      clauses.push(`positionCaseInsensitive(${column.sql}, {${name}:String}) > 0`);
-      continue;
-    }
-    if (op === "=~" || op === "!~") {
-      params[name] = literal;
-      clauses.push(`${op === "!~" ? "NOT " : ""}match(${column.sql}, {${name}:String})`);
-      continue;
-    }
-    if (column.numeric) {
-      const n = Number(literal);
-      if (!Number.isFinite(n)) {
-        throw new TelemetryMonitorError(`${field} is a number, and "${literal}" is not one`);
-      }
-      params[name] = n;
-      clauses.push(`${column.sql} ${op === "=" ? "=" : op} {${name}:Float64}`);
-      continue;
-    }
-    if (op !== "=" && op !== "==" && op !== "!=") {
-      throw new TelemetryMonitorError(`${field} holds text, so ${op} does not apply to it`);
-    }
-    params[name] = literal;
-    clauses.push(`${column.sql} ${op === "!=" ? "!=" : "="} {${name}:String}`);
-  }
-  return { sql: clauses.join(" AND "), params };
-}
-
-function unquote(value: string): string {
-  const m = /^(['"])(.*)\1$/s.exec(value);
-  return m ? (m[2] ?? "") : value;
-}
+export { TelemetryFilterError as TelemetryMonitorError, compileFilter, fieldsOf };
 
 function aggregateSql(kind: TelemetryMonitorKind, q: TelemetryMonitorQuery): string {
   const seconds = q.windowMinutes * 60;
   if (q.aggregate === "count") return "toFloat64(count())";
   if (q.aggregate === "rate") return `count() / ${seconds}`;
   if (!q.field) {
-    throw new TelemetryMonitorError(`${q.aggregate} needs a field to run on`);
+    throw new TelemetryFilterError(`${q.aggregate} needs a field to run on`);
   }
   const column = columnOf(kind, q.field, {});
-  if (!column.numeric) throw new TelemetryMonitorError(`${q.field} is not a number`);
+  if (!column.numeric) throw new TelemetryFilterError(`${q.field} is not a number`);
   const quantile = /^p(\d+)$/.exec(q.aggregate);
   if (quantile) return `quantile(0.${quantile[1]})(${column.sql})`;
   return `${q.aggregate}(${column.sql})`;
@@ -215,7 +82,7 @@ export async function evaluate(
   at: Date = new Date(),
 ): Promise<SeriesValue[]> {
   if (q.windowMinutes < 1 || q.windowMinutes > 60) {
-    throw new TelemetryMonitorError("the window is between 1 and 60 minutes");
+    throw new TelemetryFilterError("the window is between 1 and 60 minutes");
   }
   return kind === "metrics" ? evaluatePromql(tenantId, q, at) : evaluateRows(tenantId, kind, q, at);
 }

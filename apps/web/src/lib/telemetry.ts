@@ -134,7 +134,7 @@ export async function usageToday(
 /** The Logs screen. Empty when nothing has arrived — which is a fact, not an error. */
 export async function logs(
   tenantId: string,
-  opts: { traceId?: string; service?: string; limit?: number } = {},
+  opts: { traceId?: string; service?: string; limit?: number; filter?: string } = {},
 ): Promise<LogRow[]> {
   if (!telemetryInstalled()) return [];
   return recentLogs(tenantId, opts);
@@ -142,7 +142,7 @@ export async function logs(
 
 export async function traces(
   tenantId: string,
-  opts: { limit?: number; service?: string } = {},
+  opts: { limit?: number; service?: string; filter?: string } = {},
 ): Promise<TraceRow[]> {
   if (!telemetryInstalled()) return [];
   return recentTraces(tenantId, { limit: opts.limit ?? 60, ...opts });
@@ -194,7 +194,7 @@ export type { ExceptionGroup, ExceptionOccurrence } from "@openincident/telemetr
 /** The exception groups a workspace carries, newest activity first. */
 export async function exceptionGroups(
   tenantId: string,
-  opts: { limit?: number; service?: string } = {},
+  opts: { limit?: number; service?: string; filter?: string } = {},
 ) {
   if (!telemetryInstalled()) return [];
   return groupsOf(tenantId, opts);

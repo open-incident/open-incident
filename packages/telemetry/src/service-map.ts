@@ -15,8 +15,8 @@
 import { clickhouse } from "./client";
 import { read, SPANS } from "./query";
 
-export const EDGES = "service_edges_t(tenant = {tenant:UUID})";
-export const EDGE_RUNS = "service_edge_runs_t(tenant = {tenant:UUID})";
+export { EDGES, EDGE_RUNS } from "./views";
+import { EDGES, EDGE_RUNS } from "./views";
 
 /**
  * How far behind the clock the rollup stays.

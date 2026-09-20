@@ -14,6 +14,8 @@
  * of the design.
  */
 import { clickhouse, telemetryInstalled } from "./client";
+import { compileFilter } from "./filter";
+import { EXCEPTIONS, EXCEPTION_GROUPS, LOGS, MINUTES, SERIES, SPANS, TRACES } from "./views";
 
 /**
  * The sources a query may name.
@@ -24,12 +26,17 @@ import { clickhouse, telemetryInstalled } from "./client";
  * forgetting it is a syntax error rather than a leak. These constants are the
  * only correct spelling, and callers interpolate them.
  */
-export const LOGS = "otel_logs_t(tenant = {tenant:UUID})";
-export const SPANS = "otel_spans_t(tenant = {tenant:UUID})";
-export const TRACES = "otel_traces_t(tenant = {tenant:UUID})";
-
-export const TENANT_VIEWS = [LOGS, SPANS, TRACES] as const;
-export type TenantView = (typeof TENANT_VIEWS)[number];
+export {
+  LOGS,
+  SPANS,
+  TRACES,
+  SERIES,
+  MINUTES,
+  EXCEPTIONS,
+  EXCEPTION_GROUPS,
+  TENANT_VIEWS,
+  type TenantView,
+} from "./views";
 
 /*
  * The tables the query layer may not name directly.
@@ -125,14 +132,34 @@ export type LogRow = {
   span_id: string;
 };
 
-/** The Logs screen: most recent first, optionally narrowed to one trace. */
+/**
+ * The Logs screen: most recent first, narrowed by whatever was asked.
+ *
+ * `filter` is the same one-line language the telemetry monitors take, compiled
+ * by the same function. That is the point: a filter somebody typed here to
+ * find a problem is a filter they can turn into a monitor without rewriting
+ * it, and a language that behaves differently in the two places is a language
+ * nobody trusts in either.
+ */
 export async function recentLogs(
   tenantId: string,
-  opts: { limit?: number; traceId?: string; service?: string } = {},
+  opts: { limit?: number; traceId?: string; service?: string; filter?: string } = {},
 ): Promise<LogRow[]> {
   const where = ["1 = 1"];
-  if (opts.traceId) where.push("trace_id = {traceId:String}");
-  if (opts.service) where.push("service_name = {service:String}");
+  const params: Record<string, unknown> = { limit: opts.limit ?? 100 };
+  if (opts.traceId) {
+    where.push("trace_id = {traceId:String}");
+    params.traceId = opts.traceId;
+  }
+  if (opts.service) {
+    where.push("service_name = {service:String}");
+    params.service = opts.service;
+  }
+  if (opts.filter?.trim()) {
+    const compiled = compileFilter("logs", opts.filter);
+    where.push(compiled.sql);
+    Object.assign(params, compiled.params);
+  }
   return read<LogRow>(
     tenantId,
     `SELECT ts, service_name, environment, severity_number, severity_text, body, trace_id, span_id
@@ -140,13 +167,7 @@ export async function recentLogs(
       WHERE ${where.join(" AND ")}
       ORDER BY ts DESC
       LIMIT {limit:UInt32}`,
-    {
-      params: {
-        limit: opts.limit ?? 100,
-        ...(opts.traceId ? { traceId: opts.traceId } : {}),
-        ...(opts.service ? { service: opts.service } : {}),
-      },
-    },
+    { params },
   );
 }
 
@@ -165,23 +186,37 @@ export type TraceRow = {
 /** The Traces screen: one line per trace, newest first. */
 export async function recentTraces(
   tenantId: string,
-  opts: { limit?: number; service?: string } = {},
+  opts: { limit?: number; service?: string; filter?: string } = {},
 ): Promise<TraceRow[]> {
   // Any trace the service took part in, not only the ones it started: during
   // an incident the interesting trace is usually one this service was called
   // from, and filtering on the root would hide every one of them.
-  const where = opts.service ? "WHERE has(services, {service:String})" : "";
+  const where: string[] = [];
+  const params: Record<string, unknown> = { limit: opts.limit ?? 100 };
+  if (opts.service) {
+    where.push("has(services, {service:String})");
+    params.service = opts.service;
+  }
+  if (opts.filter?.trim()) {
+    /*
+     * The filter names span fields, and this table is one row per trace. So it
+     * is applied as "a trace with at least one span that matches", through a
+     * subquery on the spans — which is what somebody typing
+     * `status_code = 'error'` into a trace list means.
+     */
+    const compiled = compileFilter("traces", opts.filter);
+    where.push(`trace_id IN (SELECT trace_id FROM ${SPANS} WHERE ${compiled.sql} LIMIT 10000)`);
+    Object.assign(params, compiled.params);
+  }
   return read<TraceRow>(
     tenantId,
     `SELECT trace_id, start_ts, duration_ns, root_service, root_name,
             span_count, error_count, services, has_exception
        FROM ${TRACES}
-      ${where}
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
       ORDER BY start_ts DESC
       LIMIT {limit:UInt32}`,
-    {
-      params: { limit: opts.limit ?? 100, ...(opts.service ? { service: opts.service } : {}) },
-    },
+    { params },
   );
 }
 
@@ -248,9 +283,6 @@ export async function purgeTenant(tenantId: string): Promise<number | null> {
   }
   return left;
 }
-
-export const SERIES = "metric_series_t(tenant = {tenant:UUID})";
-export const MINUTES = "metric_1m_t(tenant = {tenant:UUID})";
 
 export type MetricName = {
   metric_name: string;
@@ -382,9 +414,6 @@ export async function metricMetadata(
   return out;
 }
 
-export const EXCEPTIONS = "otel_exceptions_t(tenant = {tenant:UUID})";
-export const EXCEPTION_GROUPS = "exception_groups_t(tenant = {tenant:UUID})";
-
 export type ExceptionGroup = {
   fingerprint: string;
   type: string;
@@ -399,11 +428,23 @@ export type ExceptionGroup = {
 /** The groups list, worst first — most recent activity, then volume. */
 export async function exceptionGroups(
   tenantId: string,
-  opts: { limit?: number; service?: string } = {},
+  opts: { limit?: number; service?: string; filter?: string } = {},
 ): Promise<ExceptionGroup[]> {
   // `services` is the set a group was seen in, so narrowing to one service is
   // membership rather than equality: the same bug can fire in two of them.
-  const where = opts.service ? "WHERE has(services, {service:String})" : "";
+  const clauses: string[] = [];
+  const extra: Record<string, unknown> = {};
+  if (opts.service) clauses.push("has(services, {service:String})");
+  if (opts.filter?.trim()) {
+    // Same shape as the traces filter: the fields belong to an occurrence, the
+    // rows are groups, so the filter selects the fingerprints that have one.
+    const compiled = compileFilter("exceptions", opts.filter);
+    clauses.push(
+      `fingerprint IN (SELECT fingerprint FROM ${EXCEPTIONS} WHERE ${compiled.sql} LIMIT 10000)`,
+    );
+    Object.assign(extra, compiled.params);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
   return read<ExceptionGroup>(
     tenantId,
     `SELECT fingerprint, type, message, toString(occurrences) AS occurrences,
@@ -414,7 +455,11 @@ export async function exceptionGroups(
       ORDER BY last_seen DESC, occurrences DESC
       LIMIT {limit:UInt32}`,
     {
-      params: { limit: opts.limit ?? 100, ...(opts.service ? { service: opts.service } : {}) },
+      params: {
+        limit: opts.limit ?? 100,
+        ...(opts.service ? { service: opts.service } : {}),
+        ...extra,
+      },
     },
   );
 }

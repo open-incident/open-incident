@@ -770,6 +770,17 @@ export const de: Dictionary = {
   "settings.rum.add": "Hinzufügen",
   "settings.rum.badOrigin":
     "„{rule}“ ist kein Ursprung. Ein Ursprung ist ein Schema und ein Host, sonst nichts — kein Pfad, keine Query. Ein Pfad würde nie zu dem passen, was ein Browser sendet, und Sie würden rätseln, warum nichts ankommt.",
+  "explorer.filter": "Filtern",
+  "explorer.saveAs": "Benennen…",
+  "explorer.save": "Speichern",
+  "explorer.saved": "GESPEICHERT",
+  "explorer.watch": "Darauf achten →",
+  "explorer.noMatch": "Nichts entspricht diesem Filter in dem, was aufbewahrt wird.",
+  "explorer.fields":
+    "feld = wert, verbunden mit AND. Felder: {fields}. Außerdem attr:<name> für ein Attribut, contains für eine Teilzeichenkette, =~ für einen regulären Ausdruck — dieselbe Sprache wie ein Monitor, damit ein Filter, der ein Problem fand, zu einem wird, der darauf achtet.",
+  "explorer.placeholder.logs": "severity_number >= 17 AND service_name = 'checkout-api'",
+  "explorer.placeholder.traces": "status_code = 'error' AND duration_ms > 500",
+  "explorer.placeholder.exceptions": "type =~ '.*Timeout' AND environment = 'production'",
   "monitors.on.packet_loss_pct": "Paketverlust (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

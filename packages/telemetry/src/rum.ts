@@ -10,8 +10,8 @@
  */
 import { read } from "./query";
 
-export const RUM_EVENTS = "rum_events_t(tenant = {tenant:UUID})";
-export const RUM_SESSIONS = "rum_sessions_t(tenant = {tenant:UUID})";
+export { RUM_EVENTS, RUM_SESSIONS } from "./views";
+import { RUM_EVENTS, RUM_SESSIONS } from "./views";
 
 /** The five, in the order a page produces them. */
 export const VITALS = ["TTFB", "FCP", "LCP", "CLS", "INP"] as const;

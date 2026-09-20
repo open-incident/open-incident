@@ -765,6 +765,17 @@ export const en = {
   "settings.rum.add": "Add",
   "settings.rum.badOrigin":
     "“{rule}” is not an origin. An origin is a scheme and a host and nothing else — no path, no query. A path here would never match what a browser sends, and you would be left wondering why nothing arrives.",
+  "explorer.filter": "Filter",
+  "explorer.saveAs": "Name it…",
+  "explorer.save": "Save",
+  "explorer.saved": "SAVED",
+  "explorer.watch": "Watch this →",
+  "explorer.noMatch": "Nothing matches this filter in what is kept.",
+  "explorer.fields":
+    "field = value, joined by AND. Fields: {fields}. Also attr:<name> for an attribute, contains for a substring, =~ for a regular expression — the same language a monitor takes, so a filter that found a problem becomes one that watches for it.",
+  "explorer.placeholder.logs": "severity_number >= 17 AND service_name = 'checkout-api'",
+  "explorer.placeholder.traces": "status_code = 'error' AND duration_ms > 500",
+  "explorer.placeholder.exceptions": "type =~ '.*Timeout' AND environment = 'production'",
   "monitors.on.packet_loss_pct": "packet loss (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

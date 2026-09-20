@@ -32,11 +32,17 @@ const BAR: Record<string, string> = {
 export default async function MonitorsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ new?: string; error?: string; why?: string }>;
+  searchParams: Promise<{
+    new?: string;
+    error?: string;
+    why?: string;
+    type?: string;
+    q?: string;
+  }>;
 }) {
   const { tenant, member } = await requireMember();
   const t = await getT();
-  const { new: openNew, error, why } = await searchParams;
+  const { new: openNew, error, why, type, q } = await searchParams;
 
   const data = await withTenant(tenant.id, async (tx) => ({
     monitors: await listMonitors(tx, tenant.id),
@@ -102,7 +108,9 @@ export default async function MonitorsPage({
           <NewMonitor
             services={data.services.map((s) => s.key)}
             capabilities={capabilities}
-            initialOpen={!!openNew}
+            initialOpen={!!openNew || !!type}
+            initialType={type}
+            initialQuery={q}
           />
         )}
       </div>

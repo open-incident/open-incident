@@ -2967,6 +2967,44 @@ export const memberNotifications = app.table(
 
 /** One row per workspace, created on first use. Absent means "the defaults". */
 /**
+ * A query somebody wants back tomorrow.
+ *
+ * The explorers are where an incident is worked, and the filter that found the
+ * problem is worth more than the answer it gave: next time the same thing
+ * happens, the question is already written. Saving it is also the step before
+ * alerting on it — a saved query carries everything a telemetry monitor needs,
+ * so "watch this" is one click rather than a form filled in twice.
+ *
+ * Per workspace and not per person on purpose. The value of "the query that
+ * found last month's outage" is that the next person on call can find it, and
+ * a private one is a query that dies with the tab it was typed in.
+ */
+export const savedQueries = app.table(
+  "saved_queries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    name: text("name").notNull(),
+    /** Which explorer it belongs to; `sql` is the console's own language. */
+    signal: text("signal").$type<SavedQuerySignal>().notNull(),
+    query: text("query").notNull(),
+    /** Narrowed to one service when it was saved from a filtered view. */
+    service: text("service"),
+    createdByMemberId: uuid("created_by_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("saved_queries_tenant_name").on(t.tenantId, t.signal, t.name),
+    index("saved_queries_tenant_signal").on(t.tenantId, t.signal),
+  ],
+);
+
+export type SavedQuerySignal = "logs" | "traces" | "exceptions" | "metrics" | "sql";
+
+/**
  * A site or application whose browsers report back.
  *
  * Its id travels in a page, so it is public by construction and is not a

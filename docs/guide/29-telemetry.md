@@ -493,6 +493,30 @@ A rolling window forgives an incident gradually and never hands you a fresh
 budget. A calendar one restarts on the first, whether or not the problem was
 fixed — which is usually what a contract says.
 
+## Filtering, saving, and watching
+
+Logs, Traces and Exceptions each take a filter, and it is the **same one-line
+language the monitors take**: `field = value`, joined by `AND`, with
+`contains` for a substring, `=~` for a regular expression and `attr:<name>` to
+reach an attribute. One compiler serves both, so a filter that behaves one way
+in the explorer cannot behave another way in the alert.
+
+That is what makes the last button on the bar honest. **Watch this** opens the
+monitor form with the type already chosen and the exact text already in the
+box: the thing being alerted on is the thing that was just looked at, not a
+re-interpretation of it.
+
+A filter lives in the address, so a narrowed view is a link somebody can paste
+into an incident. **Saving** it puts it beside the box for next time — per
+workspace and not per person, because the value of "the query that found last
+month's outage" is that the next person on call can find it. A saved query is
+compiled before it is stored: a bookmark to a failure is worse than no
+bookmark, and the moment to say so is while its author still remembers what
+they meant.
+
+A filter naming a field we do not have is refused by name, with the list of the
+ones we do — the same refusal, word for word, that the monitor form gives.
+
 ## The SQL console
 
 **SQL** is the honest end of the explorer: every question the filters do not
