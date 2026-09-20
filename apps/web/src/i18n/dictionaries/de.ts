@@ -98,6 +98,9 @@ export const de: Dictionary = {
   "telemetry.noFrames": "Aus diesem Stack konnte kein Frame gelesen werden.",
   "telemetry.fullStack": "Vollständiger Stacktrace",
   "telemetry.tab.logs": "Logs",
+  "telemetry.logsFoot": { one: "{count} Zeile", other: "{count} Zeilen" },
+  "telemetry.logsNote":
+    "Geheimnisse und Token werden bei der Aufnahme geschwärzt, nie erst bei der Anzeige. Zeile anklicken, um den Trace zu öffnen.",
   "telemetry.tab.traces": "Traces",
   "telemetry.tab.connect": "Verbinden",
   "telemetry.tab.metrics": "Metriken",

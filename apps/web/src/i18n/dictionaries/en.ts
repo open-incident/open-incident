@@ -107,6 +107,9 @@ export const en = {
   "telemetry.noFrames": "No frame could be parsed from this stack.",
   "telemetry.fullStack": "Full stack trace",
   "telemetry.tab.logs": "Logs",
+  "telemetry.logsFoot": { one: "{count} line", other: "{count} lines" },
+  "telemetry.logsNote":
+    "Secrets and tokens are redacted at ingestion, never on display. Click a line to open its trace.",
   "telemetry.tab.traces": "Traces",
   "telemetry.tab.connect": "Connect",
   "telemetry.tab.metrics": "Metrics",

@@ -99,6 +99,9 @@ export const fr: Dictionary = {
   "telemetry.noFrames": "Aucun cadre n’a pu être lu dans cette pile.",
   "telemetry.fullStack": "Trace de pile complète",
   "telemetry.tab.logs": "Logs",
+  "telemetry.logsFoot": { one: "{count} ligne", other: "{count} lignes" },
+  "telemetry.logsNote":
+    "Secrets et jetons sont caviardés à l’ingestion, jamais à l’affichage. Cliquez une ligne pour ouvrir sa trace.",
   "telemetry.tab.traces": "Traces",
   "telemetry.tab.connect": "Brancher",
   "telemetry.tab.metrics": "Métriques",

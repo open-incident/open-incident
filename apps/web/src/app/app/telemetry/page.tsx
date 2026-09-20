@@ -544,60 +544,80 @@ async function LogsTab({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {bar}
-      <div style={{ ...CARD, overflow: "hidden" }}>
+      <div
+        style={{
+          ...CARD,
+          overflow: "hidden",
+          background: "var(--topbar-dark)",
+          fontFamily: "var(--mono)",
+          fontSize: 11.5,
+          lineHeight: 1.6,
+        }}
+      >
+        {/*
+         * A terminal, not a table.
+         *
+         * Logs are read the way logs have always been read — fixed width, one
+         * line each, scanned rather than parsed — and the dark ground is what
+         * makes a level jump out of a thousand lines. It is the same treatment
+         * the product already gives an alert payload, and it is deliberately
+         * dark in both themes: a log stream is a code block, not a surface.
+         */}
         {rows.map((l, i) => {
           const tone = severityTone(l.severity_number);
-          return (
-            <div
-              key={`${l.ts}-${i}`}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "150px 62px 150px minmax(0,1fr) 90px",
-                gap: 10,
-                alignItems: "baseline",
-                padding: "7px 14px",
-                borderTop: i ? "1px solid var(--line-2)" : "none",
-                fontSize: 12.5,
-              }}
-            >
-              <span style={{ ...MONO, color: "var(--ink-3)" }}>{l.ts.slice(0, 23)}</span>
+          const line = (
+            <>
+              <span style={{ color: "#6F7E89" }}>{l.ts.slice(11, 23)}</span>
+              <span style={{ fontWeight: 700, color: tone.color }}>
+                {(l.severity_text || tone.label).slice(0, 5)}
+              </span>
               <span
                 style={{
-                  ...MONO,
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  color: tone.color,
-                  background: tone.bg,
-                  borderRadius: 5,
-                  padding: "1px 5px",
-                  justifySelf: "start",
+                  color: "var(--code-blue)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
                 }}
               >
-                {l.severity_text || tone.label}
+                {l.service_name}
               </span>
-              <span style={{ ...MONO, color: "var(--ink-2)" }}>{l.service_name}</span>
-              <span style={{ ...MONO, color: "var(--ink)", wordBreak: "break-word" }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {l.body}
               </span>
-              {l.trace_id ? (
-                <Link
-                  href={`/app/telemetry?tab=traces&trace=${l.trace_id}`}
-                  style={{
-                    ...MONO,
-                    color: "var(--brand)",
-                    textDecoration: "none",
-                    justifySelf: "end",
-                  }}
-                >
-                  {t("telemetry.openTrace")}
-                </Link>
-              ) : (
-                <span />
-              )}
+            </>
+          );
+          const shared: React.CSSProperties = {
+            display: "grid",
+            gridTemplateColumns: "92px 52px 150px minmax(0,1fr)",
+            gap: 12,
+            padding: "5px 16px",
+            borderTop: i ? "1px solid #1C2329" : "none",
+            color: "#C9D3DA",
+            textDecoration: "none",
+          };
+          // The whole line opens the trace when there is one. A link in its own
+          // column made the reader aim at six characters; the line is the
+          // target, and a line without a trace simply is not one.
+          return l.trace_id ? (
+            <Link
+              key={`${l.ts}-${i}`}
+              href={`/app/telemetry?tab=traces&trace=${l.trace_id}`}
+              style={{ ...shared, cursor: "pointer" }}
+              title={t("telemetry.openTrace")}
+            >
+              {line}
+            </Link>
+          ) : (
+            <div key={`${l.ts}-${i}`} style={shared}>
+              {line}
             </div>
           );
         })}
+        <div style={{ padding: "8px 16px", color: "#6F7E89", fontSize: 11 }}>
+          {t("telemetry.logsFoot", { count: rows.length })}
+        </div>
       </div>
+      <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{t("telemetry.logsNote")}</div>
     </div>
   );
 }
