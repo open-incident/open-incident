@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "pack": "host",
+  "title": "Hosts",
+  "description": "CPU, memory, disks and network of the machines running the host pack. Read beside an application's own numbers: “p95 tripled” and “p95 tripled and the disk filled” are two different investigations.",
+  "signals": [
+    "system.cpu.utilization",
+    "system.memory.utilization"
+  ],
+  "panels": [
+    {
+      "id": "cpu-now",
+      "title": "CPU in use",
+      "query": "100 * (1 - avg(system.cpu.utilization{state=\"idle\"}))",
+      "type": "stat",
+      "unit": "%",
+      "w": 4,
+      "h": 120,
+      "threshold": 85
+    },
+    {
+      "id": "mem-now",
+      "title": "Memory in use",
+      "query": "100 * max(system.memory.utilization{state=\"used\"})",
+      "type": "stat",
+      "unit": "%",
+      "w": 4,
+      "h": 120,
+      "threshold": 90
+    },
+    {
+      "id": "load-now",
+      "title": "Load, 1 min",
+      "query": "max(system.cpu.load_average.1m)",
+      "type": "stat",
+      "unit": "",
+      "w": 4,
+      "h": 120
+    },
+    {
+      "id": "cpu-by-host",
+      "title": "CPU per machine",
+      "query": "100 * (1 - avg by (host.name) (system.cpu.utilization{state=\"idle\"}))",
+      "type": "line",
+      "unit": "%",
+      "w": 6,
+      "h": 160,
+      "threshold": 85
+    },
+    {
+      "id": "mem-by-host",
+      "title": "Memory per machine",
+      "query": "100 * sum by (host.name) (system.memory.utilization{state=\"used\"})",
+      "type": "line",
+      "unit": "%",
+      "w": 6,
+      "h": 160,
+      "threshold": 90
+    },
+    {
+      "id": "disk-full",
+      "title": "Fullest filesystems",
+      "query": "100 * topk(5, max by (host.name, mountpoint) (system.filesystem.utilization))",
+      "type": "line",
+      "unit": "%",
+      "w": 6,
+      "h": 160,
+      "threshold": 90
+    },
+    {
+      "id": "load-by-host",
+      "title": "Load average, 1 min",
+      "query": "max by (host.name) (system.cpu.load_average.1m)",
+      "type": "line",
+      "unit": "",
+      "w": 6,
+      "h": 160
+    },
+    {
+      "id": "net-io",
+      "title": "Network, bytes per second",
+      "query": "sum by (host.name, direction) (rate(system.network.io[5m]))",
+      "type": "area",
+      "unit": "B/s",
+      "w": 6,
+      "h": 160
+    },
+    {
+      "id": "disk-io",
+      "title": "Disk, bytes per second",
+      "query": "sum by (host.name, direction) (rate(system.disk.io[5m]))",
+      "type": "area",
+      "unit": "B/s",
+      "w": 6,
+      "h": 160
+    },
+    {
+      "id": "swap",
+      "title": "Swapping, operations per second",
+      "query": "sum by (host.name, direction) (rate(system.paging.operations[5m]))",
+      "type": "line",
+      "unit": "/s",
+      "w": 6,
+      "h": 160,
+      "threshold": 100
+    },
+    {
+      "id": "net-errors",
+      "title": "Network errors and drops",
+      "query": "sum by (host.name) (rate(system.network.errors[5m]))",
+      "type": "line",
+      "unit": "/s",
+      "w": 6,
+      "h": 160,
+      "threshold": 1
+    }
+  ]
+}

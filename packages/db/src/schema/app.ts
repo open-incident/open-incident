@@ -3254,6 +3254,17 @@ export const telemetrySettings = app.table(
       .$type<"P1" | "P2" | "P3" | "P4">()
       .notNull()
       .default("P3"),
+    /**
+     * Collector packs whose dashboard has already been placed.
+     *
+     * The product places a pack's dashboard the first time that pack reports,
+     * which is only welcome once: a workspace that deleted it, or rewrote it
+     * and then deleted it, does not want it back at the next sweep. So the
+     * pack is recorded here rather than inferred from whether the dashboard
+     * still exists — deleting a dashboard is an answer, and this is where it
+     * is remembered.
+     */
+    packsPlaced: jsonb("packs_placed").$type<string[]>().notNull().default([]),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -3372,6 +3383,14 @@ export type DashboardPanel = {
   unit: string;
   w: number;
   h: number;
+  /**
+   * The value past which this panel is a problem, drawn as a rule across it.
+   *
+   * Optional, and absent on anything imported: a threshold nobody chose is a
+   * line the reader has to ignore. The collector packs set theirs, because
+   * "90 % of a filesystem" is a fact about filesystems rather than a taste.
+   */
+  threshold?: number;
 };
 
 export type DashboardLayout = { panels: DashboardPanel[] };

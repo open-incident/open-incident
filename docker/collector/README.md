@@ -25,6 +25,36 @@ The last column is the point of this table. Four of these were started against
 a real daemon and what they produced was read back out; the fifth was not, and
 its header says so rather than letting you find out during an incident.
 
+## Each pack brings a dashboard
+
+`dashboards/` holds one JSON per pack — the screen that reads what the pack
+sends, with the thresholds that matter for it. You do not have to import them:
+the first time a pack reports, the product places its dashboard once, and
+**Telemetry → Connect** has a button to place it before that. After the first
+placement the dashboard belongs to the workspace — rename it, rewrite it,
+delete it; it is not put back.
+
+The files are here for the two cases that are not the product: reading a diff
+of what a panel now asks, and carrying a dashboard into an instance with no
+internet. They are generated from `packages/telemetry/src/packs.ts` by
+`pnpm --filter @openincident/telemetry run packs:emit`, and a test fails if
+they drift.
+
+## What identifies a series
+
+A collector puts the thing it is measuring on the **resource**, not on the
+metric: `host.name` for a machine, `container.name` for a container,
+`postgresql.database.name`, `postgresql.table.name` and
+`postgresql.index.name` for a database, the `k8s.*` names for a cluster. Open
+Incident keeps exactly those as labels (`SERIES_RESOURCE_LABELS`) and drops the
+rest of the resource — `container.id`, `k8s.pod.uid`, `process.pid` change on
+every restart and would make a new series each time.
+
+One consequence for the host pack: `hostmetrics` reports numbers and no host at
+all, so the pack runs `resourcedetection` and the container must be started
+with `--hostname "$(hostname)"`. Without it every machine reports as its own
+container id, which changes on each restart.
+
 `tail-sampling.yaml` is the odd one — it is not a source, it is a gateway your
 services export to instead of exporting to us. It holds each trace until it has
 finished and then decides, which is why it can keep the ones that failed. See

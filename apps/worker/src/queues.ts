@@ -16,6 +16,7 @@
  * - service-map      : rolls traces up into the edges of the dependency map
  * - exception-regressions: a bug that is new, back, or suddenly much louder
  * - slo-sweep       : error budgets, and the burn rates that page on them
+ * - pack-dashboards  : places a collector pack's dashboard the first time it reports
  * - qa-run           : the repository's own test suites, on demand
  */
 import { QA_QUEUE } from "@openincident/qa";
@@ -37,6 +38,7 @@ export const QUEUE_NAMES = [
   "service-map",
   "exception-regressions",
   "slo-sweep",
+  "pack-dashboards",
   "coverage-sweep",
   "runbook-sync",
   "investigation",
@@ -112,6 +114,9 @@ export const QUEUE_SHAPES: Record<WorkQueue, Shape> = {
   // Urgent for the same reason, and one at a time because an objective window
   // is a month of points: two ticks would read it twice.
   "slo-sweep": { group: "urgent", concurrency: 1 },
+  // Nothing waits on this one: it places a screen somebody will read tomorrow.
+  // One at a time, because two ticks would both see the same unplaced pack.
+  "pack-dashboards": { group: "bulk", concurrency: 1 },
   "status-sweep": { group: "urgent", concurrency: 1 },
   "update-reminders": { group: "urgent", concurrency: 1 },
   "coverage-sweep": { group: "bulk", concurrency: 1 },

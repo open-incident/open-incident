@@ -344,6 +344,13 @@
       "when": 1789925394584,
       "tag": "0048_rum_mobile",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1789944180631,
+      "tag": "0049_pack_dashboards",
+      "breakpoints": true
     }
   ]
 }

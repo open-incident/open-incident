@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "pack": "docker",
+  "title": "Containers",
+  "description": "CPU, memory, network and block I/O per container, from the Docker pack. One series per container name — a container id changes on every deploy and a chart keyed on it starts from nothing each time.",
+  "signals": [
+    "container.memory.percent"
+  ],
+  "panels": [
+    {
+      "id": "count",
+      "title": "Containers reporting",
+      "query": "count(container.cpu.utilization)",
+      "type": "stat",
+      "unit": "",
+      "w": 4,
+      "h": 120
+    },
+    {
+      "id": "cpu-top",
+      "title": "Busiest container",
+      "query": "max(container.cpu.utilization)",
+      "type": "stat",
+      "unit": "%",
+      "w": 4,
+      "h": 120,
+      "threshold": 90
+    },
+    {
+      "id": "mem-top",
+      "title": "Closest to its memory limit",
+      "query": "max(container.memory.percent)",
+      "type": "stat",
+      "unit": "%",
+      "w": 4,
+      "h": 120,
+      "threshold": 90
+    },
+    {
+      "id": "cpu-by-container",
+      "title": "CPU per container",
+      "query": "topk(8, max by (container.name) (container.cpu.utilization))",
+      "type": "line",
+      "unit": "%",
+      "w": 6,
+      "h": 160,
+      "threshold": 90
+    },
+    {
+      "id": "mem-by-container",
+      "title": "Memory against the limit, per container",
+      "query": "topk(8, max by (container.name) (container.memory.percent))",
+      "type": "line",
+      "unit": "%",
+      "w": 6,
+      "h": 160,
+      "threshold": 90
+    },
+    {
+      "id": "mem-bytes",
+      "title": "Memory used, per container",
+      "query": "topk(8, max by (container.name) (container.memory.usage.total))",
+      "type": "area",
+      "unit": "B",
+      "w": 6,
+      "h": 160
+    },
+    {
+      "id": "net-rx",
+      "title": "Network in, bytes per second",
+      "query": "sum by (container.name) (rate(container.network.io.usage.rx_bytes[5m]))",
+      "type": "line",
+      "unit": "B/s",
+      "w": 6,
+      "h": 160
+    },
+    {
+      "id": "net-tx",
+      "title": "Network out, bytes per second",
+      "query": "sum by (container.name) (rate(container.network.io.usage.tx_bytes[5m]))",
+      "type": "line",
+      "unit": "B/s",
+      "w": 6,
+      "h": 160
+    },
+    {
+      "id": "net-dropped",
+      "title": "Packets dropped per second",
+      "query": "sum by (container.name) (rate(container.network.io.usage.rx_dropped[5m]))",
+      "type": "line",
+      "unit": "/s",
+      "w": 6,
+      "h": 160,
+      "threshold": 1
+    },
+    {
+      "id": "block-io",
+      "title": "Block I/O, bytes per second",
+      "query": "sum by (container.name, operation) (rate(container.blockio.io_service_bytes_recursive[5m]))",
+      "type": "area",
+      "unit": "B/s",
+      "w": 12,
+      "h": 160
+    }
+  ]
+}

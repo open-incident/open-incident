@@ -24,6 +24,7 @@ import {
   sweepHeartbeats,
   sweepMonitors,
   sweepExceptionRegressions,
+  sweepPackDashboards,
   sweepServiceEdges,
   sweepSlos,
   sweepTelemetryMonitors,
@@ -225,6 +226,12 @@ const processors: Record<QueueName, Processor> = {
     if (r.published || r.failed)
       console.log(`[slo-sweep] ${r.evaluated} read, ${r.published} alert(s), ${r.failed} failed`);
   },
+  "pack-dashboards": async () => {
+    const tenants = (await listLiveTenants()).map((t) => t.id);
+    const r = await sweepPackDashboards(tenants);
+    for (const p of r.placed) console.log(`[pack-dashboards] ${p.tenantId}: ${p.pack} → ${p.slug}`);
+    if (r.failed) console.log(`[pack-dashboards] ${r.failed} failed`);
+  },
   "tracker-sync": async () => {
     // Issue trackers: a closed issue marks its follow-up done. Per tenant, failures isolated.
     let completed = 0;
@@ -377,6 +384,7 @@ async function registerSchedulers() {
     ["service-map", 60_000],
     ["exception-regressions", 300_000],
     ["slo-sweep", 300_000],
+    ["pack-dashboards", 3_600_000],
     ["coverage-sweep", 6 * 3_600_000],
     ["runbook-sync", 6 * 3_600_000],
     ["housekeeping", DAY_MS],

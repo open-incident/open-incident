@@ -1,0 +1,1 @@
+ALTER TABLE "app"."telemetry_settings" ADD COLUMN "packs_placed" jsonb DEFAULT '[]'::jsonb NOT NULL;

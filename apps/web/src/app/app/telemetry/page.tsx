@@ -13,7 +13,9 @@ import {
   traces,
   usageToday,
 } from "@/lib/telemetry";
-import { createIngestionKey, revokeIngestionKey } from "./actions";
+import { packsReporting, type PackId } from "@openincident/telemetry";
+import { packDashboardSlugs } from "@openincident/oncall";
+import { createIngestionKey, installPackDashboard, revokeIngestionKey } from "./actions";
 import { NotInstalled } from "./not-installed";
 import { ExceptionsTab } from "./exceptions-tab";
 import { MetricsTab } from "./metrics-tab";
@@ -889,7 +891,16 @@ async function ConnectTab({
   http: string;
 }) {
   const t = await getT();
-  const [keys, rejections] = await Promise.all([listKeys(tenantId), recentRejections(tenantId)]);
+  const [keys, rejections, reporting, placed] = await Promise.all([
+    listKeys(tenantId),
+    recentRejections(tenantId),
+    // Which packs are actually sending, and which already have their screen.
+    // Both are read here rather than guessed from the pack list: "install" on
+    // a dashboard that exists, or "reporting" on one that stopped, are the two
+    // ways this card could lie.
+    packsReporting(tenantId).catch(() => [] as PackId[]),
+    packDashboardSlugs(tenantId),
+  ]);
   const snippet = [
     `OTEL_EXPORTER_OTLP_ENDPOINT=${http}`,
     `OTEL_EXPORTER_OTLP_HEADERS=x-oi-key=${issued ?? "<your key>"}`,
@@ -956,22 +967,68 @@ async function ConnectTab({
             ["docker", "telemetry.packDocker"],
             ["kubernetes", "telemetry.packKubernetes"],
           ] as const
-        ).map(([file, label]) => (
-          <div
-            key={file}
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              gap: 10,
-              padding: "6px 0",
-              borderTop: "1px solid var(--line-2)",
-              fontSize: 12.5,
-            }}
-          >
-            <span style={{ ...MONO, fontWeight: 600, minWidth: 130 }}>{file}.yaml</span>
-            <span style={{ color: "var(--ink-2)", lineHeight: 1.45 }}>{t(label)}</span>
-          </div>
-        ))}
+        ).map(([file, label]) => {
+          const on = reporting.includes(file);
+          const slug = placed[file];
+          return (
+            <div
+              key={file}
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: 10,
+                padding: "8px 0",
+                borderTop: "1px solid var(--line-2)",
+                fontSize: 12.5,
+              }}
+            >
+              <span style={{ ...MONO, fontWeight: 600, minWidth: 130 }}>{file}.yaml</span>
+              <span style={{ color: "var(--ink-2)", lineHeight: 1.45, flex: 1, minWidth: 180 }}>
+                {t(label)}
+              </span>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: on ? "var(--ok)" : "var(--ink-3)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {on ? t("telemetry.packReporting") : t("telemetry.packSilent")}
+              </span>
+              {slug ? (
+                <Link
+                  href={`/app/dashboards/${slug}`}
+                  style={{ fontSize: 11.5, fontWeight: 600, color: "var(--brand)" }}
+                >
+                  {t("telemetry.packOpen")}
+                </Link>
+              ) : (
+                admin && (
+                  <form action={installPackDashboard}>
+                    <input type="hidden" name="pack" value={file} />
+                    <button
+                      type="submit"
+                      data-testid={`pack-install-${file}`}
+                      style={{
+                        border: "1px solid var(--line)",
+                        background: "var(--panel)",
+                        borderRadius: 7,
+                        padding: "3px 9px",
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {t("telemetry.packInstall")}
+                    </button>
+                  </form>
+                )
+              )}
+            </div>
+          );
+        })}
         <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 10, lineHeight: 1.5 }}>
           {t("telemetry.packsWhere")}
         </div>

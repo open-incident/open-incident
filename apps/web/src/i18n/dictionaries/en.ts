@@ -701,6 +701,10 @@ export const en = {
   "telemetry.packPostgres": "Connections against max_connections, commits, dead rows, index hits",
   "telemetry.packDocker": "CPU, memory, network and block I/O per container",
   "telemetry.packKubernetes": "Kubelet metrics, cluster objects and container logs",
+  "telemetry.packReporting": "reporting",
+  "telemetry.packSilent": "no signal yet",
+  "telemetry.packOpen": "Open its dashboard",
+  "telemetry.packInstall": "Place its dashboard",
   "telemetry.packsWhere":
     "In docker/collector/ of the repository, with a README saying which of them have been run against a real daemon and which have not.",
   "telemetry.tab.profiles": "Profiles",

@@ -10,7 +10,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "ch:migrate": "tsx src/cli/migrate.ts"
+    "ch:migrate": "tsx src/cli/migrate.ts",
+    "packs:emit": "tsx src/cli/packs.ts"
   },
   "dependencies": {
     "@clickhouse/client": "^1.11.0"

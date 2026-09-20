@@ -15,5 +15,6 @@ export * from "./coverage-sweep";
 export * from "./pay";
 export * from "./telemetry-monitors";
 export * from "./service-map";
+export * from "./pack-dashboards";
 export * from "./exception-regressions";
 export * from "./slos";

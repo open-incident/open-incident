@@ -10,7 +10,14 @@ import {
   type ExceptionGroupStatus,
   type SavedQuerySignal,
 } from "@openincident/db";
-import { compileFilter, compileUserSql, parsePromql } from "@openincident/telemetry";
+import {
+  compileFilter,
+  compileUserSql,
+  packById,
+  parsePromql,
+  type PackId,
+} from "@openincident/telemetry";
+import { packDashboardSlug, placePack } from "@openincident/oncall";
 import { canRespond, isManager, requireMember } from "@/lib/session";
 import { issueKey, revokeKey } from "@/lib/telemetry";
 
@@ -152,4 +159,25 @@ function savedQueryError(signal: SavedQuerySignal, query: string): string | null
     return err instanceof Error ? err.message : String(err);
   }
   return null;
+}
+
+/**
+ * Places a collector pack's dashboard, on request.
+ *
+ * The sweep does this by itself the first time a pack reports; this is the
+ * other way in, for a workspace that deleted the dashboard and changed its
+ * mind, or that wants the screen ready before the collector is running. A pack
+ * already placed is not placed twice — the reader is sent to the one they have.
+ */
+export async function installPackDashboard(form: FormData): Promise<void> {
+  const { tenant, member } = await requireMember();
+  if (!isManager(member)) redirect(PAGE);
+  const pack = String(form.get("pack") ?? "");
+  if (!packById(pack)) redirect(PAGE);
+  const id = pack as PackId;
+
+  const slug =
+    (await placePack(tenant.id, id, member.id)) ?? (await packDashboardSlug(tenant.id, id));
+  revalidatePath(PAGE);
+  redirect(slug ? `/app/dashboards/${slug}` : `${PAGE}&error=pack`);
 }

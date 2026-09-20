@@ -704,6 +704,10 @@ export const fr: Dictionary = {
     "Connexions face à max_connections, commits, lignes mortes, hits d’index",
   "telemetry.packDocker": "CPU, mémoire, réseau et E/S bloc par conteneur",
   "telemetry.packKubernetes": "Métriques kubelet, objets du cluster et logs de conteneurs",
+  "telemetry.packReporting": "en réception",
+  "telemetry.packSilent": "aucun signal",
+  "telemetry.packOpen": "Ouvrir son tableau",
+  "telemetry.packInstall": "Poser son tableau",
   "telemetry.packsWhere":
     "Dans docker/collector/ du dépôt, avec un README qui dit lesquels ont été exécutés contre un vrai démon et lesquels non.",
   "telemetry.tab.profiles": "Profils",

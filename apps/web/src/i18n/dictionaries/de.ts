@@ -708,6 +708,10 @@ export const de: Dictionary = {
     "Verbindungen gegen max_connections, Commits, tote Zeilen, Index-Treffer",
   "telemetry.packDocker": "CPU, Speicher, Netzwerk und Block-I/O je Container",
   "telemetry.packKubernetes": "Kubelet-Metriken, Cluster-Objekte und Container-Logs",
+  "telemetry.packReporting": "meldet",
+  "telemetry.packSilent": "noch kein Signal",
+  "telemetry.packOpen": "Dashboard öffnen",
+  "telemetry.packInstall": "Dashboard anlegen",
   "telemetry.packsWhere":
     "Unter docker/collector/ im Repository, mit einer README, die sagt, welche gegen einen echten Daemon gelaufen sind und welche nicht.",
   "telemetry.tab.profiles": "Profile",

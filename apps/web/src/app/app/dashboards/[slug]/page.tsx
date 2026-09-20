@@ -131,7 +131,12 @@ export default async function DashboardPage({
               </div>
               {d.ok ? (
                 <>
-                  <Chart series={d.series} kind={p.type} height={tv ? 160 : 120} />
+                  <Chart
+                    series={d.series}
+                    kind={p.type}
+                    height={tv ? 160 : 120}
+                    threshold={p.threshold}
+                  />
                   <Legend series={d.series} />
                 </>
               ) : (
