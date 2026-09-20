@@ -69,6 +69,33 @@ export const de: Dictionary = {
     "Richten Sie Ihren OpenTelemetry-Collector oder Ihre SDKs auf {endpoint} mit dem einmalig gezeigten Arbeitsbereichs-Token.",
   "telemetry.step3":
     "In service.name genannte Services erscheinen automatisch unter Services — nichts vorher auszufüllen.",
+  "telemetry.tab.logs": "Logs",
+  "telemetry.tab.traces": "Traces",
+  "telemetry.tab.connect": "Verbinden",
+  "telemetry.todayRows": "Heute",
+  "telemetry.noLogs":
+    "Noch kein Log eingegangen. Richten Sie einen Collector auf diesen Workspace, und die erste Zeile erscheint hier.",
+  "telemetry.noTraces":
+    "Noch keine Trace eingegangen. Sobald ein Dienst instrumentiert ist, erscheinen seine Anfragen hier.",
+  "telemetry.openTrace": "Trace →",
+  "telemetry.spans": "Spans",
+  "telemetry.logsOfTrace": "Logs dieser Trace",
+  "telemetry.noLogsHere": "Kein Log trägt diese Trace-ID.",
+  "telemetry.keyOnce":
+    "Kopieren Sie diesen Schlüssel jetzt — er wird als Hash gespeichert und nie wieder angezeigt.",
+  "telemetry.fourLines": "Vier Zeilen, und die Telemetrie kommt an",
+  "telemetry.fourLinesBody":
+    "Auf jedem mit OpenTelemetry instrumentierten Dienst setzen. Protobuf und JSON werden akzeptiert; der Dienst erscheint von selbst, sobald ein Span ihn nennt.",
+  "telemetry.keys": "Ingestion-Schlüssel",
+  "telemetry.noKeys": "Noch kein Schlüssel.",
+  "telemetry.keyLabel": "Bezeichnung, z. B. Produktions-Collector",
+  "telemetry.issueKey": "Schlüssel erstellen",
+  "telemetry.revoke": "Widerrufen",
+  "telemetry.lastUsed": "zuletzt {when} verwendet",
+  "telemetry.neverUsed": "nie verwendet",
+  "telemetry.rejections": "Was wir abgelehnt haben",
+  "telemetry.rejectionsBody":
+    "Die letzten Ablehnungen, damit das Onboarding ehrlich ist. Auszüge werden vor der Speicherung bereinigt.",
   "telemetry.footnote":
     "Daten bleiben in der EU · Aufbewahrung und Sampling werden pro Service gesetzt.",
   "services.tabConfirmed": "Bestätigt",

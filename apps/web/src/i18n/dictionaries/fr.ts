@@ -69,6 +69,33 @@ export const fr: Dictionary = {
     "Pointez votre collecteur OpenTelemetry ou vos SDK vers {endpoint} avec le jeton de l'espace, montré une seule fois.",
   "telemetry.step3":
     "Les services nommés dans service.name apparaissent seuls dans Services — rien à remplir d'avance.",
+  "telemetry.tab.logs": "Logs",
+  "telemetry.tab.traces": "Traces",
+  "telemetry.tab.connect": "Brancher",
+  "telemetry.todayRows": "Aujourd’hui",
+  "telemetry.noLogs":
+    "Aucun log n’est encore arrivé. Pointez un collecteur sur cet espace et la première ligne s’affichera ici.",
+  "telemetry.noTraces":
+    "Aucune trace n’est encore arrivée. Dès qu’un service est instrumenté, ses requêtes apparaissent ici.",
+  "telemetry.openTrace": "trace →",
+  "telemetry.spans": "spans",
+  "telemetry.logsOfTrace": "Logs de cette trace",
+  "telemetry.noLogsHere": "Aucun log ne porte cet identifiant de trace.",
+  "telemetry.keyOnce":
+    "Copiez cette clé maintenant — elle est stockée sous forme d’empreinte et ne sera plus jamais affichée.",
+  "telemetry.fourLines": "Quatre lignes, et la télémétrie arrive",
+  "telemetry.fourLinesBody":
+    "À poser sur n’importe quel service instrumenté avec OpenTelemetry. Le protobuf et le JSON sont acceptés ; le service apparaît tout seul la première fois qu’un span le nomme.",
+  "telemetry.keys": "Clés d’ingestion",
+  "telemetry.noKeys": "Aucune clé pour l’instant.",
+  "telemetry.keyLabel": "Libellé, par exemple collecteur production",
+  "telemetry.issueKey": "Créer une clé",
+  "telemetry.revoke": "Révoquer",
+  "telemetry.lastUsed": "utilisée {when}",
+  "telemetry.neverUsed": "jamais utilisée",
+  "telemetry.rejections": "Ce que nous avons refusé",
+  "telemetry.rejectionsBody":
+    "Les derniers refus, pour que le branchement soit honnête. Les extraits sont caviardés avant d’être stockés.",
   "telemetry.footnote":
     "Les données restent en UE · rétention et échantillonnage se règlent par service.",
   "services.tabConfirmed": "Confirmés",

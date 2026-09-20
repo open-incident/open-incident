@@ -77,6 +77,32 @@ export const en = {
     "Point your OpenTelemetry collector or SDKs at {endpoint} with the workspace token, shown once.",
   "telemetry.step3":
     "Services named in service.name appear in Services automatically — nothing to fill in first.",
+  "telemetry.tab.logs": "Logs",
+  "telemetry.tab.traces": "Traces",
+  "telemetry.tab.connect": "Connect",
+  "telemetry.todayRows": "Today",
+  "telemetry.noLogs":
+    "No log has arrived yet. Point a collector at this workspace and the first line shows up here.",
+  "telemetry.noTraces":
+    "No trace has arrived yet. Once a service is instrumented, its requests appear here.",
+  "telemetry.openTrace": "trace →",
+  "telemetry.spans": "spans",
+  "telemetry.logsOfTrace": "Logs of this trace",
+  "telemetry.noLogsHere": "No log carries this trace id.",
+  "telemetry.keyOnce": "Copy this key now — it is stored as a digest and cannot be shown again.",
+  "telemetry.fourLines": "Four lines, and telemetry arrives",
+  "telemetry.fourLinesBody":
+    "Set these on any service instrumented with OpenTelemetry. Protobuf and JSON are both accepted; the service appears on its own the first time a span names it.",
+  "telemetry.keys": "Ingestion keys",
+  "telemetry.noKeys": "No key yet.",
+  "telemetry.keyLabel": "Label, e.g. production collector",
+  "telemetry.issueKey": "Issue a key",
+  "telemetry.revoke": "Revoke",
+  "telemetry.lastUsed": "last used {when}",
+  "telemetry.neverUsed": "never used",
+  "telemetry.rejections": "What we refused",
+  "telemetry.rejectionsBody":
+    "The last refusals, so onboarding is honest. Excerpts are scrubbed before they are stored.",
   "telemetry.footnote": "Data stays in the EU · retention and sampling are set per service.",
   "services.tabConfirmed": "Confirmed",
   "services.tabSeen": "Seen in traffic",

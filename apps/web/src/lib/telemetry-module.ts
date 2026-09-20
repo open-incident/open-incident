@@ -1,19 +1,25 @@
 /**
- * Is the telemetry module installed on this instance?
+ * Where a collector should send its OTLP — the address, not a guess at it.
  *
- * Logs, traces and metrics need a store this instance may not run. Rather than
- * draw empty charts, every telemetry surface asks this and says
- * "not installed on this instance" when the answer is no — the same honesty the
- * AI screens apply when no provider is configured.
+ * The ingestion service is a separate process (D23), so its public address is
+ * not the product's: in development it answers on :4318, and in production it
+ * sits behind the proxy on a hostname the operator chose. Deriving it from the
+ * workspace host printed an address nothing served, which on an onboarding
+ * screen is worse than printing nothing — somebody copies it and spends the
+ * afternoon on a connection refused.
  *
- * The signal is the store's address: a module without its ClickHouse is not
- * installed, whatever any flag claims.
+ * So the operator states it in `TELEMETRY_PUBLIC_ORIGIN`, as §15.3 asks. Unset,
+ * the screen falls back to the conventional `otlp.<host>` shape and the
+ * install steps say to set it.
  */
 export function telemetryInstalled(): boolean {
   return Boolean(process.env.CLICKHOUSE_URL?.trim());
 }
 
-/** Where a collector should send its OTLP, once the module is installed. */
 export function otlpEndpoints(host: string): { grpc: string; http: string } {
-  return { grpc: `otlp.${host}:4317`, http: `https://otlp.${host}/v1` };
+  const origin = process.env.TELEMETRY_PUBLIC_ORIGIN?.trim().replace(/\/$/, "");
+  if (origin) {
+    return { grpc: origin.replace(/^https?:\/\//, ""), http: origin };
+  }
+  return { grpc: `otlp.${host}:4317`, http: `https://otlp.${host}` };
 }

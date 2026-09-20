@@ -182,6 +182,9 @@ importers:
       '@openincident/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@openincident/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
       '@openincident/trackers':
         specifier: workspace:*
         version: link:../../packages/trackers
