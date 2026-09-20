@@ -420,6 +420,235 @@ export function openApiDocument(origin: string): OpenApiDocument {
           },
         },
       },
+      "/services": {
+        get: {
+          summary: "The estate, as the product learned it",
+          description:
+            'Most rows here were never created by anybody: a service appears the first time a trace, a log or an alert names it. `confirmed` and `seen_in` are the difference between "a human said this exists" and "something called itself this once at 3 a.m.".',
+          responses: { "200": { description: "Services" }, ...errors },
+        },
+      },
+      "/services/{key}": {
+        get: {
+          summary: "One service, by its key or its id",
+          description:
+            "Both are accepted on the same path because both are what a caller has: a CI job knows the key it puts in its traces, a webhook payload carries the id.",
+          parameters: [
+            {
+              name: "key",
+              in: "path",
+              required: true,
+              schema: { type: "string" },
+              description: "The service key (`checkout-api`) or its UUID.",
+            },
+          ],
+          responses: {
+            "200": { description: "Service" },
+            "404": { description: "No such service" },
+            ...errors,
+          },
+        },
+      },
+      "/teams": {
+        get: {
+          summary: "Teams, their people and the path they escalate on",
+          description:
+            "Membership is included rather than being a second call: a team with no members routes an alert to nobody and looks configured, and a list that hides that behind another request lets it stay hidden.",
+          responses: { "200": { description: "Teams" }, ...errors },
+        },
+      },
+      "/members": {
+        get: {
+          summary: "Who is in the workspace",
+          description:
+            "Read-only, and it stays that way — accounts arrive by invitation, in the product. This exists to resolve the member ids the other endpoints return into names.",
+          responses: { "200": { description: "Members" }, ...errors },
+        },
+      },
+      "/on-call": {
+        get: {
+          summary: "Who to wake, right now",
+          description:
+            "Computed from the rotations, their active windows and any override laid over the top — there is no table to read, and a cached answer is wrong the moment somebody takes a cover. An empty `on_call` array is the answer that matters most: nobody is on call on that schedule at that moment.",
+          parameters: [
+            {
+              name: "at",
+              in: "query",
+              schema: { type: "string", format: "date-time" },
+              description: "Defaults to now.",
+            },
+            {
+              name: "schedule",
+              in: "query",
+              schema: { type: "string" },
+              description: "One schedule, by id or by name. Omit for all of them.",
+            },
+          ],
+          responses: {
+            "200": { description: "Who is on call" },
+            "404": { description: "No such schedule" },
+            "422": { description: "`at` is not a timestamp" },
+            ...errors,
+          },
+        },
+      },
+      "/schedules": {
+        get: {
+          summary: "The rotas, with the shape of each rotation",
+          responses: { "200": { description: "Schedules" }, ...errors },
+        },
+      },
+      "/schedules/{id}": {
+        get: {
+          summary: "One rota and its rotations",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          ],
+          responses: {
+            "200": { description: "Schedule" },
+            "404": { description: "No such schedule" },
+            ...errors,
+          },
+        },
+      },
+      "/schedules/{id}/overrides": {
+        get: {
+          summary: "Covers in force or still to come",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          ],
+          responses: { "200": { description: "Overrides" }, ...errors },
+        },
+        post: {
+          summary: "Put somebody else on (scope write)",
+          description:
+            "The one write the on-call model really needs from an API. Everything else about a rota is decided once and lived with; a cover is decided at eight in the morning because a person is ill.",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["rotation_id", "member", "start_at", "end_at"],
+                  properties: {
+                    rotation_id: { type: "string", format: "uuid" },
+                    member: {
+                      type: "string",
+                      description: "The member taking the shift, by id or by email.",
+                    },
+                    start_at: { type: "string", format: "date-time" },
+                    end_at: { type: "string", format: "date-time" },
+                    reason: {
+                      type: "string",
+                      enum: ["override", "cover"],
+                      default: "override",
+                      description:
+                        "`cover` is somebody standing in for the person whose turn it is; `override` replaces the shift outright. The pay report counts them differently.",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "201": { description: "Created" },
+            "404": { description: "No such schedule" },
+            "422": { description: "Unknown rotation or member, or end before start" },
+            ...errors,
+          },
+        },
+      },
+      "/escalation-policies": {
+        get: {
+          summary: "The paths an alert can take",
+          description:
+            "The published version, never the draft: a workspace can be halfway through rewriting a path, and answering with the draft would describe behaviour nothing is using. `graph` is null for a path created and never published — which routes nothing.",
+          responses: { "200": { description: "Policies" }, ...errors },
+        },
+      },
+      "/alerts": {
+        get: {
+          summary: "The noise, as it arrived",
+          description:
+            "Alerts, not incidents. Hundreds fire, a handful become incidents, and conflating them is how a tool ends up paging somebody for a disk that is 81 % full. `occurrences` is how many times the same alert fired before anybody looked.",
+          parameters: [
+            {
+              name: "status",
+              in: "query",
+              schema: { type: "string", enum: ["firing", "resolved"] },
+              description:
+                "Two, not four: acknowledged and snoozed are states of the escalation that followed, carried as `acked_at` and `snoozed_until`.",
+            },
+            { name: "since", in: "query", schema: { type: "string", format: "date-time" } },
+            {
+              name: "cursor",
+              in: "query",
+              schema: { type: "string", format: "date-time" },
+              description: "`next_cursor` from the previous page.",
+            },
+            {
+              name: "limit",
+              in: "query",
+              schema: { type: "integer", minimum: 1, maximum: 200, default: 50 },
+            },
+          ],
+          responses: {
+            "200": { description: "Alerts" },
+            "422": { description: "Unknown status, or `since` is not a timestamp" },
+            ...errors,
+          },
+        },
+      },
+      "/alerts/{id}": {
+        get: {
+          summary: "One alert, its payload and what happened to it",
+          description:
+            "The payload is what the sender actually sent, kept whole: an alert nobody can explain is an alert nobody can silence, and the payload is usually the explanation.",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+          ],
+          responses: {
+            "200": { description: "Alert" },
+            "404": { description: "No such alert" },
+            ...errors,
+          },
+        },
+      },
+      "/monitors": {
+        get: {
+          summary: "The checks, and what each one last saw",
+          description:
+            '`state` is the current verdict and `last_check_at` is when it was reached; both are needed, because a monitor saying "up" that was last checked two hours ago says nothing about now. A paused monitor keeps its last state rather than reporting healthy.',
+          responses: { "200": { description: "Monitors" }, ...errors },
+        },
+      },
+      "/heartbeats": {
+        get: {
+          summary: "The jobs that are supposed to check in",
+          description:
+            "The ping token is never returned. It is the credential that lets anybody holding it assert a backup ran, so handing it back would turn a read key into a write one.",
+          responses: { "200": { description: "Heartbeats" }, ...errors },
+        },
+      },
+      "/slos": {
+        get: {
+          summary: "Objectives, and how much budget is left",
+          description:
+            "`budget_left` is a share and it goes negative: past zero the objective is overspent, and clamping at zero would hide the difference between just missing and missing by a factor of fifteen.",
+          responses: { "200": { description: "SLOs" }, ...errors },
+        },
+      },
+      "/runbooks": {
+        get: {
+          summary: "What somebody wrote down for the next person",
+          description:
+            'The content is included: the caller most likely to ask is an assistant trying to answer "what do we do about this", which needs the text. `fetch_error` is returned rather than hidden, so a stale copy can be recognised as one.',
+          responses: { "200": { description: "Runbooks" }, ...errors },
+        },
+      },
       "/status-pages": {
         get: {
           summary: "Status pages and their current state",
