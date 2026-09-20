@@ -28,6 +28,7 @@ export type OpenApiDocument = {
   openapi: string;
   info: { title: string; version: string; description?: string };
   servers: { url: string }[];
+  tags?: { name: string; description?: string }[];
   paths: Record<string, Record<string, OpenApiOperation>>;
   components?: Record<string, unknown>;
   [key: string]: unknown;
@@ -37,7 +38,62 @@ export type OpenApiDocument = {
 export const HTTP_METHODS = ["get", "post", "patch", "put", "delete"] as const;
 export type HttpMethod = (typeof HTTP_METHODS)[number];
 
-export function openApiDocument(origin: string): OpenApiDocument {
+/**
+ * One tag per path prefix, longest match first.
+ *
+ * Assigned here rather than written on each operation for a reason that has
+ * already bitten this document once elsewhere: twenty-eight operations, each
+ * carrying a hand-typed tag, is twenty-eight chances to type a new one by
+ * accident and end up with two folders called "On-call" and "On call". A
+ * prefix map cannot drift, and adding a route to an existing area needs no
+ * decision at all.
+ */
+const TAGS: [prefix: string, tag: string][] = [
+  ["/incidents", "Incidents"],
+  ["/follow-ups", "Incidents"],
+  ["/change-events", "Changes"],
+  ["/services", "Services"],
+  ["/teams", "People"],
+  ["/members", "People"],
+  ["/on-call", "On-call"],
+  ["/schedules", "On-call"],
+  ["/escalation-policies", "On-call"],
+  ["/alerts", "Alerts"],
+  ["/monitors", "Checks"],
+  ["/heartbeats", "Checks"],
+  ["/slos", "Objectives"],
+  ["/runbooks", "Runbooks"],
+  ["/status-pages", "Status pages"],
+];
+
+/** What each tag is for, shown above its section in the reference. */
+const TAG_NOTES: Record<string, string> = {
+  Incidents: "Declaring, reading, updating and closing out what people are working on.",
+  Changes: "Deploys, flag flips and configuration changes — the first question of every incident.",
+  Services:
+    "The estate, mostly as the product learned it: a service appears the first time something names it.",
+  People: "Teams and the people in them, for resolving the ids everything else returns.",
+  "On-call": "Who would be woken, the rotas behind that, and the paths an alert escalates along.",
+  Alerts: "The raw signal. Hundreds fire; a handful become incidents.",
+  Checks: "Monitors that go and look, and heartbeats that wait to be told.",
+  Objectives: "Service level objectives and how much error budget is left.",
+  Runbooks: "What somebody wrote down for the next person.",
+  "Status pages": "What the public sees.",
+};
+
+function tagFor(path: string): string {
+  let best = "";
+  let tag = "Other";
+  for (const [prefix, name] of TAGS) {
+    if (path.startsWith(prefix) && prefix.length > best.length) {
+      best = prefix;
+      tag = name;
+    }
+  }
+  return tag;
+}
+
+export function openApiDocument(origin: string, extraServers: string[] = []): OpenApiDocument {
   const incident = {
     type: "object",
     properties: {
@@ -116,7 +172,10 @@ export function openApiDocument(origin: string): OpenApiDocument {
       description:
         "Authenticate with `Authorization: Bearer oi_live_…`. A key resolves its own workspace. Scopes: `read`, `write` (implies read and incident:create), `incident:create`. Lists are paginated by cursor, 100 items at most. Every error is `{ error: { code, message } }`.",
     },
-    servers: [{ url: `${origin}/api/v1` }],
+    servers: [origin, ...extraServers].map((o) => ({ url: `${o}/api/v1` })),
+    tags: TAGS.map(([, name]) => name)
+      .filter((name, i, all) => all.indexOf(name) === i)
+      .map((name) => ({ name, description: TAG_NOTES[name] })),
     components: {
       securitySchemes: { apiKey: { type: "http", scheme: "bearer" } },
       schemas: {
@@ -672,6 +731,14 @@ export function openApiDocument(origin: string): OpenApiDocument {
         "Outbound webhooks carry `x-oi-event`, `x-oi-timestamp` and `x-oi-signature: sha256=HMAC-SHA256(secret, raw body)`. Events: incident.created, incident.updated, incident.update_published, incident.resolved, follow_up.created, alert.created, alert.resolved, escalation.triggered, escalation.acknowledged, status_page.incident_published. Payload: `{ event, occurred_at, incident, … }`.",
     },
   };
+  // Tagged on the way out, from the path. See TAGS above for why it is not
+  // written on each operation by hand.
+  for (const [path, item] of Object.entries(doc.paths)) {
+    for (const method of HTTP_METHODS) {
+      const operation = (item as Record<string, { tags?: string[] } | undefined>)[method];
+      if (operation) operation.tags = [tagFor(path)];
+    }
+  }
   return doc as unknown as OpenApiDocument;
 }
 
