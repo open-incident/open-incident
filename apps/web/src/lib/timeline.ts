@@ -235,6 +235,10 @@ export function renderEvent(ev: Ev, t: T): TimelineItem {
         ),
         title: p.kind === "pull_request" ? t("timeline.pullRequest") : t("timeline.link"),
         description: `${s(p.ref)} — ${s(p.title)}`,
+        // The payload has carried a url since the first link was added and
+        // nothing rendered it: a timeline entry that names a pull request, a
+        // post-mortem or a trace and cannot open it is a note, not a link.
+        href: s(p.url) || undefined,
       };
     case "deployment":
       return {

@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
-import { services, telemetrySettings, withTenant } from "@openincident/db";
+import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
+import { incidents, services, telemetrySettings, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { canRespond, isManager, requireMember } from "@/lib/session";
 import { requireTenant } from "@/lib/tenant";
@@ -123,6 +123,8 @@ export default async function TelemetryPage({
     error?: string;
     why?: string;
     new?: string;
+
+    attached?: string;
   }>;
 }) {
   const { member } = await requireMember();
@@ -240,6 +242,7 @@ export default async function TelemetryPage({
             service={sp.service}
             filter={sp.q}
             mayEdit={canRespond(member)}
+            attached={sp.attached}
           />
         )}
         {tab === "metrics" && <MetricsTab tenantId={tenant.id} open={sp.metric} />}
@@ -656,12 +659,15 @@ async function TracesTab({
   service,
   filter,
   mayEdit,
+  attached,
 }: {
   tenantId: string;
   open?: string;
   service?: string;
   filter?: string;
   mayEdit: boolean;
+  /** The incident this trace was just attached to, to say so once. */
+  attached?: string;
 }) {
   const t = await getT();
   let rows: Awaited<ReturnType<typeof traces>> = [];
@@ -699,6 +705,18 @@ async function TracesTab({
   }
   const spans = open ? await trace(tenantId, open) : [];
   const correlated = open ? await logs(tenantId, { traceId: open, limit: 50 }) : [];
+  // The incidents a trace can be hung on: the open ones, newest first. Read
+  // only when a trace is open — the list itself has nothing to attach.
+  const attachable = open
+    ? await withTenant(tenantId, (tx) =>
+        tx
+          .select({ id: incidents.id, number: incidents.number, title: incidents.name })
+          .from(incidents)
+          .where(and(eq(incidents.tenantId, tenantId), ne(incidents.phase, "closed")))
+          .orderBy(desc(incidents.declaredAt))
+          .limit(25),
+      )
+    : [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -848,8 +866,26 @@ async function TracesTab({
                   </div>
                 );
               })()}
+              {attached && (
+                <Link
+                  href={`/app/incidents/${attached}`}
+                  data-testid="trace-attached"
+                  style={{
+                    display: "block",
+                    marginBottom: 10,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: "var(--ok)",
+                    textDecoration: "none",
+                  }}
+                >
+                  {t("trace.attached", { number: attached })}
+                </Link>
+              )}
               <Waterfall
                 spans={spans}
+                traceId={open}
+                incidents={attachable}
                 labels={{
                   span: t("trace.span"),
                   depth: t("trace.depth"),
@@ -863,6 +899,11 @@ async function TracesTab({
                   selfTime: t("trace.selfTime"),
                   selectHint: t("trace.selectHint"),
                   close: t("common.close"),
+                  story: t("trace.story"),
+                  storyHint: t("trace.storyHint"),
+                  spanLogs: t("trace.spanLogs"),
+                  attach: t("trace.attach"),
+                  attachDo: t("trace.attachDo"),
                 }}
               />
             </div>

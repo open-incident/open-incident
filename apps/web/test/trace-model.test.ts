@@ -10,6 +10,7 @@ import {
   axisTicks,
   formatMs,
   timeByService,
+  traceStory,
   traceTree,
 } from "../src/app/app/telemetry/trace-model";
 import type { SpanRow } from "@/lib/telemetry";
@@ -203,4 +204,69 @@ describe("formatting", () => {
     [850, "850 ms"],
     [0.4, "400 µs"],
   ])("%s ms → %s", (value, text) => expect(formatMs(value)).toBe(text));
+});
+
+describe("traceStory", () => {
+  it("opens on the request and keeps time order", () => {
+    const story = traceStory(
+      traceTree([
+        span({ span_id: "root", durationMs: 900, service_name: "storefront", name: "POST /pay" }),
+        span({
+          span_id: "db",
+          parent_span_id: "root",
+          durationMs: 500,
+          service_name: "orders-db",
+          name: "pg.query",
+          start_ts: at(300),
+          status_code: "error",
+          status_message: "connection refused",
+        }),
+      ]),
+    );
+    expect(story[0]).toMatchObject({ kind: "start", text: "POST /pay", atMs: 0 });
+    // The failure is placed where it happened: 300 ms in, 500 ms long.
+    expect(story.find((x) => x.kind === "error")).toMatchObject({
+      text: "connection refused",
+      atMs: 800,
+    });
+    const offsets = story.map((x) => x.atMs);
+    expect(offsets).toEqual([...offsets].sort((a, b) => a - b));
+  });
+
+  /*
+   * Self time, not duration: by total duration the answer is always the root,
+   * which contains everything and explains nothing.
+   */
+  it("names the span that spent the time, not the one that contains it", () => {
+    const story = traceStory(
+      traceTree([
+        span({ span_id: "root", durationMs: 900, name: "POST /pay" }),
+        span({
+          span_id: "acquire",
+          parent_span_id: "root",
+          durationMs: 800,
+          name: "pg.acquire",
+          start_ts: at(50),
+        }),
+      ]),
+    );
+    expect(story.find((x) => x.kind === "slow")?.text).toBe("pg.acquire");
+  });
+
+  it("puts a span's events in the trace's frame", () => {
+    const story = traceStory(
+      traceTree([
+        span({
+          span_id: "root",
+          durationMs: 500,
+          events: [{ ts: at(250), name: "retry", attributes: {} }],
+        }),
+      ]),
+    );
+    expect(story.find((x) => x.kind === "event")?.atMs).toBe(250);
+  });
+
+  it("says nothing about an empty trace", () => {
+    expect(traceStory([])).toEqual([]);
+  });
 });

@@ -3,8 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 import {
   exceptionGroups,
+  incidentEvents,
+  incidents,
   savedQueries,
   withTenant,
   type ExceptionGroupStatus,
@@ -180,4 +183,51 @@ export async function installPackDashboard(form: FormData): Promise<void> {
     (await placePack(tenant.id, id, member.id)) ?? (await packDashboardSlug(tenant.id, id));
   revalidatePath(PAGE);
   redirect(slug ? `/app/dashboards/${slug}` : `${PAGE}&error=pack`);
+}
+
+/**
+ * Hangs a trace on an incident, as a timeline entry that leads back to it.
+ *
+ * A trace is evidence, and evidence that lives in somebody's browser tab is
+ * evidence the post-mortem will not have. `link_added` is the kind the
+ * timeline already renders and already stores a URL for; this is the first
+ * thing to fill it in with something that is not an issue tracker.
+ */
+export async function attachTraceToIncident(form: FormData): Promise<void> {
+  const { tenant, member } = await requireMember();
+  const traceId = String(form.get("trace") ?? "").trim();
+  if (!canRespond(member) || !traceId) redirect(`/app/telemetry?tab=traces&trace=${traceId}`);
+  const incidentId = z.string().uuid().parse(form.get("incident"));
+  const title = String(form.get("title") ?? "").slice(0, 200);
+
+  const number = await withTenant(tenant.id, async (tx) => {
+    const [inc] = await tx
+      .select({ id: incidents.id, number: incidents.number })
+      .from(incidents)
+      .where(and(eq(incidents.tenantId, tenant.id), eq(incidents.id, incidentId)));
+    if (!inc) return null;
+    await tx.insert(incidentEvents).values({
+      tenantId: tenant.id,
+      incidentId: inc.id,
+      kind: "link_added",
+      actorKind: "member",
+      actorMemberId: member.id,
+      actorName: member.name,
+      payload: {
+        provider: "telemetry",
+        kind: "trace",
+        ref: traceId.slice(0, 16),
+        title,
+        url: `/app/telemetry?tab=traces&trace=${traceId}`,
+      },
+    });
+    return inc.number;
+  });
+
+  revalidatePath(`/app/incidents/${number ?? ""}`);
+  redirect(
+    number
+      ? `/app/telemetry?tab=traces&trace=${traceId}&attached=${number}`
+      : `/app/telemetry?tab=traces&trace=${traceId}`,
+  );
 }

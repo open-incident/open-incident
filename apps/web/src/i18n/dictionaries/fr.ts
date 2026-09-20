@@ -156,6 +156,12 @@ export const fr: Dictionary = {
   "trace.selfTime": "temps propre — hors attente des enfants",
   "trace.selectHint":
     "Sélectionnez un span pour voir son erreur, ses événements dans l’ordre et ses attributs.",
+  "trace.story": "Ce qui s’est passé, dans l’ordre",
+  "trace.storyHint": "lu dans les spans",
+  "trace.spanLogs": "Logs de ce span",
+  "trace.attach": "Attacher cette trace à un incident",
+  "trace.attachDo": "Attacher",
+  "trace.attached": "Attachée à INC-{number}.",
   "telemetry.logsOfTrace": "Logs de cette trace",
   "telemetry.noLogsHere": "Aucun log ne porte cet identifiant de trace.",
   "telemetry.keyOnce":

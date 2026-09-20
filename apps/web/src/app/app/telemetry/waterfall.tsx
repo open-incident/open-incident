@@ -2,7 +2,16 @@
 
 import { useState } from "react";
 import type { SpanRow } from "@/lib/telemetry";
-import { axisTicks, formatMs, timeByService, traceTree, type TraceNode } from "./trace-model";
+import Link from "next/link";
+import {
+  axisTicks,
+  formatMs,
+  timeByService,
+  traceStory,
+  traceTree,
+  type TraceNode,
+} from "./trace-model";
+import { attachTraceToIncident } from "./actions";
 
 /**
  * The waterfall — one trace, as a profiler draws it.
@@ -23,9 +32,15 @@ import { axisTicks, formatMs, timeByService, traceTree, type TraceNode } from ".
  */
 export function Waterfall({
   spans,
+  traceId,
+  incidents,
   labels,
 }: {
   spans: SpanRow[];
+  /** The trace these spans belong to: a span row does not carry it. */
+  traceId: string;
+  /** Open incidents this trace can be attached to. Empty: the control is not drawn. */
+  incidents: Array<{ id: string; number: number; title: string }>;
   labels: {
     span: string;
     depth: string;
@@ -39,6 +54,11 @@ export function Waterfall({
     selfTime: string;
     selectHint: string;
     close: string;
+    story: string;
+    storyHint: string;
+    spanLogs: string;
+    attach: string;
+    attachDo: string;
   };
 }) {
   const nodes = traceTree(spans);
@@ -53,6 +73,7 @@ export function Waterfall({
   const current = nodes.find((n) => n.span.span_id === selected) ?? null;
   const services = timeByService(nodes);
   const maxDepth = Math.max(...nodes.map((n) => n.depth));
+  const story = traceStory(nodes);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -213,6 +234,8 @@ export function Waterfall({
 
         {current && (
           <SpanDetail
+            incidents={incidents}
+            traceId={traceId}
             node={current}
             total={total}
             labels={labels}
@@ -220,6 +243,46 @@ export function Waterfall({
           />
         )}
       </div>
+
+      {story.length > 1 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }} data-testid="trace-story">
+          <span className="oi-eyebrow">
+            {labels.story}
+            <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+              {" "}
+              — {labels.storyHint}
+            </span>
+          </span>
+          {story.map((step, i) => (
+            <div
+              key={`${step.atMs}-${i}`}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "18px 64px 1fr",
+                gap: 8,
+                fontSize: 12,
+                alignItems: "baseline",
+              }}
+            >
+              <span style={{ fontFamily: "var(--mono)", color: "var(--ink-3)" }}>{i + 1}</span>
+              <span style={{ fontFamily: "var(--mono)", color: "var(--ink-3)" }}>
+                +{formatMs(step.atMs)}
+              </span>
+              <span style={{ wordBreak: "break-word" }}>
+                <span
+                  style={{
+                    color: step.kind === "error" ? "var(--dang)" : "var(--ink)",
+                    fontWeight: step.kind === "error" ? 600 : 400,
+                  }}
+                >
+                  {step.text}
+                </span>
+                <span style={{ color: "var(--ink-3)" }}> · {step.service}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {!current && (
         <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{labels.selectHint}</span>
@@ -372,11 +435,15 @@ function Row({
 function SpanDetail({
   node,
   total,
+  incidents,
+  traceId,
   labels,
   onClose,
 }: {
   node: TraceNode;
   total: number;
+  incidents: Array<{ id: string; number: number; title: string }>;
+  traceId: string;
   labels: {
     start: string;
     duration: string;
@@ -384,6 +451,9 @@ function SpanDetail({
     events: string;
     attributes: string;
     close: string;
+    spanLogs: string;
+    attach: string;
+    attachDo: string;
   };
   onClose: () => void;
 }) {
@@ -440,7 +510,7 @@ function SpanDetail({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
         <Stat label={labels.start} value={`+${formatMs(node.startMs)}`} />
         <Stat label={labels.duration} value={formatMs(node.durationMs)} />
-        <Stat label={labels.ofTrace} value={`${Math.round((node.durationMs / total) * 100)} %`} />
+        <Stat label={labels.ofTrace} value={sharePct(node.durationMs, total)} />
       </div>
 
       {s.status_message && (
@@ -491,6 +561,68 @@ function SpanDetail({
         </div>
       )}
 
+      {/*
+        Two ways out of a span, both of which a reader otherwise does by hand:
+        the log lines this exact span wrote — `span_id`, not the trace's, which
+        would return every line of the request — and hanging the trace on the
+        incident it explains.
+      */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+        <Link
+          href={`/app/telemetry?tab=logs&q=${encodeURIComponent(`span_id = ${s.span_id}`)}`}
+          data-testid="span-logs"
+          style={{
+            fontSize: 11.5,
+            fontWeight: 600,
+            color: "var(--brand)",
+            textDecoration: "none",
+          }}
+        >
+          {labels.spanLogs}
+        </Link>
+        {incidents.length > 0 && (
+          <form action={attachTraceToIncident} style={{ display: "flex", gap: 6 }}>
+            <input type="hidden" name="trace" value={traceId} />
+            <input type="hidden" name="span" value={s.span_id} />
+            <input type="hidden" name="title" value={s.name} />
+            <select
+              name="incident"
+              aria-label={labels.attach}
+              style={{
+                height: 26,
+                border: "1px solid var(--line)",
+                borderRadius: 7,
+                background: "var(--panel)",
+                fontSize: 11.5,
+                maxWidth: 190,
+              }}
+            >
+              {incidents.map((i) => (
+                <option key={i.id} value={i.id}>
+                  INC-{i.number} · {i.title}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              data-testid="span-attach"
+              style={{
+                height: 26,
+                padding: "0 9px",
+                border: "1px solid var(--line)",
+                borderRadius: 7,
+                background: "var(--panel)",
+                fontSize: 11.5,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {labels.attachDo}
+            </button>
+          </form>
+        )}
+      </div>
+
       {attributes.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           <span className="oi-eyebrow">{labels.attributes}</span>
@@ -520,6 +652,14 @@ function SpanDetail({
       )}
     </aside>
   );
+}
+
+/** "0 %" for a span that took twelve milliseconds of three seconds is a lie of rounding. */
+function sharePct(part: number, whole: number): string {
+  if (whole <= 0) return "—";
+  const share = (part / whole) * 100;
+  if (share > 0 && share < 1) return "<1 %";
+  return `${Math.round(share)} %`;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

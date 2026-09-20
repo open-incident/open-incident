@@ -206,3 +206,79 @@ export function formatMs(value: number): string {
   if (value >= 1) return `${Math.round(value)} ms`;
   return `${Math.round(value * 1000)} µs`;
 }
+
+export type StoryStep = {
+  /** Offset from the start of the trace, in milliseconds. */
+  atMs: number;
+  kind: "start" | "error" | "slow" | "event";
+  service: string;
+  text: string;
+};
+
+/**
+ * What happened, in order — read from the spans and from nothing else.
+ *
+ * A waterfall answers "where did the time go" and leaves "what happened" to
+ * the reader, who reconstructs it by hovering bars in time order. This is that
+ * reconstruction, done once: the request arriving, every failure, every event
+ * a span recorded, and the one span that took the trace's time.
+ *
+ * Deterministic on purpose. It is the same list for the same trace, it names
+ * the span each line came from, and no model is involved — so it can be read
+ * as evidence rather than as a summary somebody has to verify.
+ */
+export function traceStory(nodes: TraceNode[], limit = 8): StoryStep[] {
+  if (nodes.length === 0) return [];
+  const steps: StoryStep[] = [];
+  const root = nodes.reduce((a, b) => (a.startMs <= b.startMs ? a : b));
+
+  steps.push({
+    atMs: root.startMs,
+    kind: "start",
+    service: root.span.service_name,
+    text: root.span.name,
+  });
+
+  for (const n of nodes) {
+    if (n.span.status_code === "error") {
+      steps.push({
+        // When it failed, not when it started. A root span that times out
+        // after three seconds did not fail at zero, and putting it there
+        // makes the list open on the consequence of something that has not
+        // happened yet.
+        atMs: n.startMs + n.durationMs,
+        kind: "error",
+        service: n.span.service_name,
+        text: n.span.status_message?.trim() || n.span.name,
+      });
+    }
+    for (const e of n.span.events ?? []) {
+      const at = Date.parse(e.ts) - (Date.parse(n.span.start_ts) - n.startMs);
+      steps.push({
+        atMs: Number.isFinite(at) ? Math.max(0, at) : n.startMs,
+        kind: "event",
+        service: n.span.service_name,
+        text: e.name,
+      });
+    }
+  }
+
+  /*
+   * The one span worth a line of its own: the largest self time, which is
+   * where the trace actually spent itself. Its total duration would name the
+   * root of every trace and say nothing.
+   */
+  const heaviest = [...nodes].sort((a, b) => b.selfMs - a.selfMs)[0];
+  if (heaviest && heaviest !== root && heaviest.selfMs > 0) {
+    steps.push({
+      atMs: heaviest.startMs,
+      kind: "slow",
+      service: heaviest.span.service_name,
+      text: heaviest.span.name,
+    });
+  }
+
+  // Time order, and the earliest kept when there are more than fit: a trace
+  // with forty events is read from its beginning.
+  return steps.sort((a, b) => a.atMs - b.atMs).slice(0, limit);
+}

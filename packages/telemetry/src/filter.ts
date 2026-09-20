@@ -36,6 +36,10 @@ const COLUMNS: Record<FilterKind, Record<string, Column>> = {
     severity_text: { sql: "severity_text", numeric: false },
     body: { sql: "body", numeric: false },
     trace_id: { sql: "trace_id", numeric: false },
+    // Stored since the first migration and never filterable until now: it is
+    // what "the logs of this span" means, and a trace id alone gives the logs
+    // of every span in the request.
+    span_id: { sql: "span_id", numeric: false },
   },
   traces: {
     service_name: { sql: "service_name", numeric: false },
