@@ -25,6 +25,7 @@ import {
   sweepMonitors,
   sweepExceptionRegressions,
   sweepServiceEdges,
+  sweepSlos,
   sweepTelemetryMonitors,
   sweepShiftReminders,
   isSyntheticResult,
@@ -218,6 +219,12 @@ const processors: Record<QueueName, Processor> = {
         `[exception-regressions] ${r.checked} group(s), ${r.raised} alert(s), ${r.failed} failed`,
       );
   },
+  "slo-sweep": async () => {
+    const tenants = (await listLiveTenants()).map((t) => t.id);
+    const r = await sweepSlos(tenants);
+    if (r.published || r.failed)
+      console.log(`[slo-sweep] ${r.evaluated} read, ${r.published} alert(s), ${r.failed} failed`);
+  },
   "tracker-sync": async () => {
     // Issue trackers: a closed issue marks its follow-up done. Per tenant, failures isolated.
     let completed = 0;
@@ -369,6 +376,7 @@ async function registerSchedulers() {
     ["telemetry-monitors", 60_000],
     ["service-map", 60_000],
     ["exception-regressions", 300_000],
+    ["slo-sweep", 300_000],
     ["coverage-sweep", 6 * 3_600_000],
     ["runbook-sync", 6 * 3_600_000],
     ["housekeeping", DAY_MS],

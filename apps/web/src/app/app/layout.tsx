@@ -137,6 +137,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             href: "/app/dashboards",
             labelKey: "nav.dashboards" as const,
           },
+          // Same condition, same reason: an objective is a ratio of two PromQL
+          // expressions, and without metrics there is nothing to ask them of.
+          { id: "slos" as const, href: "/app/slos", labelKey: "nav.slos" as const },
         ]
       : []),
   ];

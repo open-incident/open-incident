@@ -2967,6 +2967,86 @@ export const memberNotifications = app.table(
 
 /** One row per workspace, created on first use. Absent means "the defaults". */
 /**
+ * A service level objective, and the budget it spends.
+ *
+ * An SLO is the one number that turns "is it slow?" into a decision. The
+ * objective says how much failure is acceptable over a window; the error
+ * budget is what is left of that allowance; the **burn rate** is how fast it
+ * is being spent. Paging on burn rate rather than on the objective itself is
+ * the whole point: 99.9 % over a month is still 99.9 % an hour after a total
+ * outage began, and waiting for the monthly figure to move is waiting for the
+ * month to end.
+ *
+ * The indicator is a ratio of two PromQL expressions — good events over total
+ * events — because that is the shape every SLI has, whether it is about
+ * latency ("requests under 300 ms") or availability ("requests that did not
+ * five-hundred"), and because the workspace already has PromQL.
+ */
+export const slos = app.table(
+  "slos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    name: text("name").notNull(),
+    description: text("description"),
+    serviceId: uuid("service_id").references(() => services.id, { onDelete: "set null" }),
+    /** PromQL counting the events that met the bar. */
+    goodQuery: text("good_query").notNull(),
+    /** PromQL counting every event that could have. */
+    totalQuery: text("total_query").notNull(),
+    /** The bar, as a percentage: 99.9 means one failure in a thousand is allowed. */
+    objective: doublePrecision("objective").notNull().default(99.9),
+    /**
+     * `rolling` always looks back the same number of days; `calendar` restarts
+     * on the first of the month.
+     *
+     * The difference is not cosmetic. A rolling window forgives an incident
+     * gradually and never hands anybody a fresh budget; a calendar one is what
+     * a contract with a customer usually says, and it resets whether or not
+     * the problem was fixed.
+     */
+    windowKind: text("window_kind").$type<"rolling" | "calendar">().notNull().default("rolling"),
+    windowDays: integer("window_days").notNull().default(28),
+    /** Whether a burn rate raises an alert, and what it is worth. */
+    burnAlerts: boolean("burn_alerts").notNull().default(true),
+    action: jsonb("action").$type<SignalAction>().notNull(),
+    paused: boolean("paused").notNull().default(false),
+
+    /* What the last evaluation found, so the list reads without recomputing. */
+    lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }),
+    /** The ratio over the whole window, as a percentage. */
+    lastSli: doublePrecision("last_sli"),
+    /** What fraction of the allowance is left, from 1 down through 0 and below. */
+    lastBudgetLeft: doublePrecision("last_budget_left"),
+    lastFastBurn: doublePrecision("last_fast_burn"),
+    lastSlowBurn: doublePrecision("last_slow_burn"),
+    lastDetail: text("last_detail"),
+    /** Which burn, if any, is currently alerting — so a recovery resolves it. */
+    burnState: text("burn_state").$type<SloBurnState>().notNull().default("ok"),
+    burnSince: timestamp("burn_since", { withTimezone: true }),
+    createdByMemberId: uuid("created_by_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("slos_tenant_name").on(t.tenantId, t.name),
+    index("slos_tenant_service").on(t.tenantId, t.serviceId),
+  ],
+);
+
+/**
+ * `fast` is an outage in progress, `slow` is an erosion nobody has noticed.
+ *
+ * They are two states rather than one because they mean different things to
+ * the person receiving them: the first says drop what you are doing, the
+ * second says look at this today. Collapsing them would make the second as
+ * loud as the first, and within a month nobody would answer either.
+ */
+export type SloBurnState = "ok" | "slow" | "fast";
+
+/**
  * What a workspace has decided about one exception group.
  *
  * ClickHouse holds the occurrences and computes the groups; this holds the

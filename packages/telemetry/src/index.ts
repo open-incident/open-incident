@@ -104,3 +104,18 @@ export {
   runUserSql,
   type SqlResult,
 } from "./sql";
+export {
+  FAST_BURN,
+  FAST_WINDOWS,
+  SLOW_BURN,
+  SLOW_WINDOWS,
+  SloError,
+  burnVerdict,
+  confirmBurn,
+  hoursLeft,
+  rangeOf,
+  readSlo,
+  windowStart,
+  type SloDefinition,
+  type SloReading,
+} from "./slo";

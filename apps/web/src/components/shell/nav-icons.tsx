@@ -17,6 +17,7 @@ export type NavIconId =
   | "insights"
   | "telemetry"
   | "dashboards"
+  | "slos"
   | "guide"
   | "settings"
   | "search"
@@ -55,6 +56,15 @@ const PATHS: Record<NavIconId, React.ReactNode> = {
       <rect x="14" y="3" width="7" height="5" rx="1" />
       <rect x="3" y="16" width="7" height="5" rx="1" />
       <rect x="14" y="12" width="7" height="9" rx="1" />
+    </>
+  ),
+  // A target: an objective is a bar you either clear or do not, and the ring
+  // says "how close" in a way a gauge or a percent sign does not.
+  slos: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
     </>
   ),
   guide: (

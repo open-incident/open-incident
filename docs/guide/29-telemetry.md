@@ -259,6 +259,41 @@ migrated dashboard that quietly changes its numbers is worse than a missing
 panel. Skipped panels are listed with their reason so the gap is visible the
 day of the migration, not a week later.
 
+## Service level objectives
+
+An SLO turns "is it slow?" into a decision. You name what counts as a good
+event and what counts as an event at all — two PromQL expressions — and say
+what fraction has to be good. What is left of the difference is the **error
+budget**, and how fast it is being spent is the **burn rate**.
+
+Alerting on the burn rate rather than on the objective is the whole point. An
+SLO of 99.9 % over a month still reads 99.9 % an hour into a total outage,
+because one hour is a small part of a month: waiting for the monthly figure to
+move is waiting for the month to end. The burn rate moves immediately.
+
+Two speeds, because they are two different instructions. A **fast burn** —
+above 14.4× over an hour, confirmed over five minutes — is an outage in
+progress and pages as P1. A **steady burn** — above 6× over six hours,
+confirmed over thirty minutes — is an erosion nobody has noticed and is worth
+today rather than tonight, so it is P3. The short confirming window is what
+lets the alert resolve when the problem does rather than when the long window
+has finished rolling past it.
+
+Two things are deliberate in the arithmetic. **An empty window is not a perfect
+one**: a service that sent nothing reads as no indicator at all, not as 100 %,
+because 100 % is what a broken exporter produces and it is otherwise
+indistinguishable from flawless. And the **step matches the range in your own
+expression** — `increase(x[5m])` is read every five minutes, so the slices tile
+the window with no gap and no overlap. A finer step would count the same events
+several times and a coarser one would skip the gaps; either way the ratio would
+be wrong by a factor that still looks like a plausible percentage. When a
+window and a range would together need more than twenty thousand points, the
+SLO says so instead of quietly coarsening.
+
+A rolling window forgives an incident gradually and never hands you a fresh
+budget. A calendar one restarts on the first, whether or not the problem was
+fixed — which is usually what a contract says.
+
 ## The SQL console
 
 **SQL** is the honest end of the explorer: every question the filters do not

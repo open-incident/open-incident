@@ -15,6 +15,7 @@
  * - telemetry-monitors: evaluates the log, trace, metric and exception monitors
  * - service-map      : rolls traces up into the edges of the dependency map
  * - exception-regressions: a bug that is new, back, or suddenly much louder
+ * - slo-sweep       : error budgets, and the burn rates that page on them
  * - qa-run           : the repository's own test suites, on demand
  */
 import { QA_QUEUE } from "@openincident/qa";
@@ -35,6 +36,7 @@ export const QUEUE_NAMES = [
   "telemetry-monitors",
   "service-map",
   "exception-regressions",
+  "slo-sweep",
   "coverage-sweep",
   "runbook-sync",
   "investigation",
@@ -107,6 +109,9 @@ export const QUEUE_SHAPES: Record<WorkQueue, Shape> = {
   "service-map": { group: "bulk", concurrency: 1 },
   // Urgent: this one decides whether somebody is woken up.
   "exception-regressions": { group: "urgent", concurrency: 1 },
+  // Urgent for the same reason, and one at a time because an objective window
+  // is a month of points: two ticks would read it twice.
+  "slo-sweep": { group: "urgent", concurrency: 1 },
   "status-sweep": { group: "urgent", concurrency: 1 },
   "update-reminders": { group: "urgent", concurrency: 1 },
   "coverage-sweep": { group: "bulk", concurrency: 1 },
