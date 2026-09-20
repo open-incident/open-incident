@@ -51,6 +51,11 @@ services:
     env_file:
       - .env
     environment:
+      # Blanked on purpose. A .env copied from a development machine carries
+      # NODE_EXTRA_CA_CERTS pointing at mkcert's authority on that machine, and
+      # Node warns about the missing file on every line this container logs.
+      # Development TLS is not a container's business.
+      NODE_EXTRA_CA_CERTS: ""
       DATABASE_ADMIN_URL: postgres://${POSTGRES_USER:-openincident}:${POSTGRES_PASSWORD:-openincident}@postgres:5432/${POSTGRES_DB:-openincident}
       DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
       # Empty unless the telemetry profile is on; the column store's migrations
@@ -78,6 +83,11 @@ services:
     env_file:
       - .env
     environment:
+      # Blanked on purpose. A .env copied from a development machine carries
+      # NODE_EXTRA_CA_CERTS pointing at mkcert's authority on that machine, and
+      # Node warns about the missing file on every line this container logs.
+      # Development TLS is not a container's business.
+      NODE_EXTRA_CA_CERTS: ""
       DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
       REDIS_URL: redis://redis:6379
       # The public addresses: your domains in .env, the compose ports by default.
@@ -114,6 +124,11 @@ services:
     env_file:
       - .env
     environment:
+      # Blanked on purpose. A .env copied from a development machine carries
+      # NODE_EXTRA_CA_CERTS pointing at mkcert's authority on that machine, and
+      # Node warns about the missing file on every line this container logs.
+      # Development TLS is not a container's business.
+      NODE_EXTRA_CA_CERTS: ""
       DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
       BASE_DOMAIN: ${BASE_DOMAIN:-localhost:3000}
       STATUS_BASE_DOMAIN: ${STATUS_BASE_DOMAIN:-status.localhost:3001}
@@ -135,6 +150,11 @@ services:
     env_file:
       - .env
     environment:
+      # Blanked on purpose. A .env copied from a development machine carries
+      # NODE_EXTRA_CA_CERTS pointing at mkcert's authority on that machine, and
+      # Node warns about the missing file on every line this container logs.
+      # Development TLS is not a container's business.
+      NODE_EXTRA_CA_CERTS: ""
       DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
       REDIS_URL: redis://redis:6379
       INTERNAL_WEB_ORIGIN: http://web:3000
@@ -183,6 +203,11 @@ services:
     env_file:
       - .env
     environment:
+      # Blanked on purpose. A .env copied from a development machine carries
+      # NODE_EXTRA_CA_CERTS pointing at mkcert's authority on that machine, and
+      # Node warns about the missing file on every line this container logs.
+      # Development TLS is not a container's business.
+      NODE_EXTRA_CA_CERTS: ""
       DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
       REDIS_URL: redis://redis:6379
       INTERNAL_WEB_ORIGIN: http://web:3000
@@ -220,6 +245,11 @@ services:
     env_file:
       - .env
     environment:
+      # Blanked on purpose. A .env copied from a development machine carries
+      # NODE_EXTRA_CA_CERTS pointing at mkcert's authority on that machine, and
+      # Node warns about the missing file on every line this container logs.
+      # Development TLS is not a container's business.
+      NODE_EXTRA_CA_CERTS: ""
       DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
       REDIS_URL: redis://redis:6379
       INTERNAL_WEB_ORIGIN: http://web:3000
@@ -289,6 +319,11 @@ services:
     env_file:
       - .env
     environment:
+      # Blanked on purpose. A .env copied from a development machine carries
+      # NODE_EXTRA_CA_CERTS pointing at mkcert's authority on that machine, and
+      # Node warns about the missing file on every line this container logs.
+      # Development TLS is not a container's business.
+      NODE_EXTRA_CA_CERTS: ""
       DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
       CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
       CLICKHOUSE_DATABASE: ${CLICKHOUSE_DB:-openincident}
