@@ -20,6 +20,7 @@
     "@openincident/db": "workspace:*",
     "@openincident/mail": "workspace:*",
     "@openincident/notify": "workspace:*",
+    "@openincident/telemetry": "workspace:*",
     "@openincident/webhooks": "workspace:*",
     "bullmq": "^5.44.0",
     "drizzle-orm": "^0.44.0",

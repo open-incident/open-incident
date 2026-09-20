@@ -12,6 +12,7 @@
  * - status-sweep     : maintenance windows on the clock, status page snapshots
  * - investigation    : one root cause assessment of an incident (declaration, signal, request)
  * - monitor-sweep    : runs the checks whose turn it is, and publishes state changes
+ * - telemetry-monitors: evaluates the log, trace, metric and exception monitors
  * - qa-run           : the repository's own test suites, on demand
  */
 import { QA_QUEUE } from "@openincident/qa";
@@ -29,6 +30,7 @@ export const QUEUE_NAMES = [
   "tracker-sync",
   "heartbeat-sweep",
   "monitor-sweep",
+  "telemetry-monitors",
   "coverage-sweep",
   "runbook-sync",
   "investigation",
@@ -92,6 +94,9 @@ export const QUEUE_SHAPES: Record<WorkQueue, Shape> = {
   "oncall-sweep": { group: "urgent", concurrency: 1 },
   "heartbeat-sweep": { group: "urgent", concurrency: 1 },
   "monitor-sweep": { group: "urgent", concurrency: 1 },
+  // Same reason, a different bottleneck: two evaluations at once would read
+  // the same month of history from the column store twice.
+  "telemetry-monitors": { group: "urgent", concurrency: 1 },
   "status-sweep": { group: "urgent", concurrency: 1 },
   "update-reminders": { group: "urgent", concurrency: 1 },
   "coverage-sweep": { group: "bulk", concurrency: 1 },

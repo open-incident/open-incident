@@ -23,6 +23,7 @@ import {
   sweepEscalations,
   sweepHeartbeats,
   sweepMonitors,
+  sweepTelemetryMonitors,
   sweepShiftReminders,
   isSyntheticResult,
   type NotifyJob,
@@ -193,6 +194,14 @@ const processors: Record<QueueName, Processor> = {
     const n = await sweepMonitors(tenants);
     if (n) console.log(`[monitor-sweep] ${n} monitor state change(s) published`);
   },
+  "telemetry-monitors": async () => {
+    const tenants = (await listLiveTenants()).map((t) => t.id);
+    const r = await sweepTelemetryMonitors(tenants);
+    if (r.evaluated || r.failed)
+      console.log(
+        `[telemetry-monitors] ${r.evaluated} evaluated, ${r.published} alert(s), ${r.failed} failed`,
+      );
+  },
   "tracker-sync": async () => {
     // Issue trackers: a closed issue marks its follow-up done. Per tenant, failures isolated.
     let completed = 0;
@@ -341,6 +350,7 @@ async function registerSchedulers() {
     ["tracker-sync", 300_000],
     ["heartbeat-sweep", 30_000],
     ["monitor-sweep", 30_000],
+    ["telemetry-monitors", 60_000],
     ["coverage-sweep", 6 * 3_600_000],
     ["runbook-sync", 6 * 3_600_000],
     ["housekeeping", DAY_MS],

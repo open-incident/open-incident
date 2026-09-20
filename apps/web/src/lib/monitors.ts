@@ -7,12 +7,15 @@
  * the latency chart of the last day.
  */
 
+import { telemetryInstalled } from "@openincident/telemetry";
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import {
   monitorChecks,
   monitorDays,
   monitorSecrets,
   monitors,
+  isTelemetryMonitor,
+  telemetryMonitorSeries,
   services,
   type MonitorCriterion,
   type MonitorState,
@@ -122,6 +125,7 @@ export async function getMonitor(tx: Tx, tenantId: string, id: string) {
       paused: monitors.paused,
       serviceId: monitors.serviceId,
       serviceKey: services.key,
+      telemetryQuery: monitors.telemetryQuery,
       createdAt: monitors.createdAt,
     })
     .from(monitors)
@@ -157,6 +161,38 @@ export async function getMonitor(tx: Tx, tenantId: string, id: string) {
         ).map((r) => r.name)
       : [];
 
+  /*
+   * The series a telemetry monitor watches, which is its real state.
+   *
+   * Uptime and latency say nothing about one: it was never reaching out. What
+   * a person needs on this screen is the list of series, what each last
+   * measured and which of them is breaching — one row per phone call the
+   * monitor could make.
+   */
+  const series = isTelemetryMonitor(row.type)
+    ? await tx
+        .select({
+          seriesKey: telemetryMonitorSeries.seriesKey,
+          labels: telemetryMonitorSeries.labels,
+          state: telemetryMonitorSeries.state,
+          lastVerdict: telemetryMonitorSeries.lastVerdict,
+          consecutive: telemetryMonitorSeries.consecutive,
+          lastValue: telemetryMonitorSeries.lastValue,
+          lastDetail: telemetryMonitorSeries.lastDetail,
+          stateSince: telemetryMonitorSeries.stateSince,
+          lastSeenAt: telemetryMonitorSeries.lastSeenAt,
+        })
+        .from(telemetryMonitorSeries)
+        .where(
+          and(
+            eq(telemetryMonitorSeries.tenantId, tenantId),
+            eq(telemetryMonitorSeries.monitorId, id),
+          ),
+        )
+        .orderBy(asc(telemetryMonitorSeries.seriesKey))
+        .limit(200)
+    : [];
+
   const since = lastDays(90)[0]!;
   const [agg] = await tx
     .select({
@@ -178,6 +214,7 @@ export async function getMonitor(tx: Tx, tenantId: string, id: string) {
     ...row,
     checks,
     secretNames,
+    series,
     /** The typed journey, when this monitor is one and it still parses. */
     journey: syntheticConfigOf(row),
     uptime90: total > 0 ? ((agg?.online ?? 0) / total) * 100 : null,
@@ -236,6 +273,14 @@ export function defaultCriteria(type: MonitorType): MonitorCriterion[] {
         },
         { on: "reachable", op: "eq", value: "true", then: "online" },
       ];
+    case "logs":
+    case "traces":
+    case "metrics":
+    case "exceptions":
+      // These four have no reachability to describe. Their rule is the query
+      // they carry, and a criterion saying "reachable = false → offline" next
+      // to it would be a second, false answer to "when does this fire".
+      return [];
     default:
       return [
         { on: "reachable", op: "eq", value: "false", then: "offline" },
@@ -297,9 +342,26 @@ async function canSynthetic(): Promise<MonitorCapability> {
   return live ? { ok: true } : { ok: false, why: "synthetic-service" };
 }
 
+/**
+ * Whether this instance keeps a column store.
+ *
+ * The four telemetry types have nothing to read without one, so they are shown
+ * greyed with the command that starts it — the same treatment the browser
+ * runner gets. A type that silently disappears teaches the reader the feature
+ * does not exist; one that says why teaches them how to have it.
+ */
+function canTelemetry(): MonitorCapability {
+  return telemetryInstalled() ? { ok: true } : { ok: false, why: "telemetry-service" };
+}
+
 export async function monitorCapabilities(): Promise<Record<string, MonitorCapability>> {
   const [ping, synthetic] = await Promise.all([canPing(), canSynthetic()]);
+  const telemetry = canTelemetry();
   return {
+    logs: telemetry,
+    traces: telemetry,
+    metrics: telemetry,
+    exceptions: telemetry,
     http: { ok: true },
     api: { ok: true },
     port: { ok: true },

@@ -42,8 +42,26 @@ mkcert -cert-file "$out/dev.pem" -key-file "$out/dev-key.pem" \
   127.0.0.1 ::1 "$@"
 
 chmod 600 "$out/dev-key.pem"
+
+# The browsers trust mkcert's authority because `mkcert -install` put it in the
+# system store. Node does not read that store: it ships its own list, so every
+# server-to-server call over the dev certificate — the monitor posting its
+# alert to the workspace's own ingest endpoint, a webhook to a local URL, the
+# synthetic runner — fails with a bare "fetch failed" and nothing to go on.
+# Pointing NODE_EXTRA_CA_CERTS at the same authority is what makes the whole
+# instance reachable from inside itself.
+ca="$(mkcert -CAROOT)/rootCA.pem"
+env_file="$root/.env"
+if [ -f "$env_file" ] && ! grep -q "^NODE_EXTRA_CA_CERTS=" "$env_file"; then
+  # Quoted: mkcert's authority lives under "Application Support" on macOS, and an
+  # unquoted path with a space in it breaks every shell that sources this file.
+  printf '\n# mkcert authority, so Node trusts the development certificate.\nNODE_EXTRA_CA_CERTS="%s"\n' "$ca" >> "$env_file"
+  echo "Added NODE_EXTRA_CA_CERTS to .env"
+fi
+
 echo
 echo "Certificate written to certs/. Point the instance at it:"
 echo "  DEV_TLS_CERT=$out/dev.pem"
 echo "  DEV_TLS_KEY=$out/dev-key.pem"
 echo "  PUBLIC_SCHEME=https"
+echo "  NODE_EXTRA_CA_CERTS=$ca"

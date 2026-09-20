@@ -83,6 +83,60 @@ arrival order — spans reach the store from several services and in no
 particular sequence. A span whose parent never arrived is drawn at the root
 rather than hidden.
 
+**Metrics** browses the series a workspace keeps, with their labels and their
+last points. **Exceptions** shows one row per bug rather than one per
+occurrence: the grouping key is a fingerprint computed at ingestion from the
+type, the message with its variable parts removed, and the first three frames
+of your own code — so the same failure at ten thousand occurrences is one line
+with a count and a first-seen, and two callers of the same library failure are
+two lines.
+
+## Monitors on telemetry
+
+Four monitor types watch what a service says about itself rather than whether
+it answers: **logs**, **traces**, **metrics** and **exceptions**. They appear
+in "+ New monitor" beside the reachability types, and are greyed with the
+command to start ClickHouse when the instance has no column store.
+
+A telemetry monitor is a query, a measure and a condition:
+
+- **Which rows**, as `field = value` joined by `AND` — plus `contains` for a
+  substring, `=~` for a regular expression, and `attr:<name>` to reach an
+  attribute. The fields are listed under the box, because a filter naming one
+  we do not have is refused. A metrics monitor takes PromQL instead, from the
+  same subset the Prometheus API answers.
+- **A measure over a window** of one to sixty minutes: how many, per second,
+  or an average, a total or a percentile of a numeric field.
+- **A condition**: above a threshold, or away from the usual. "The usual" is
+  the median of the same hour of the week over the past four weeks, with a
+  robust deviation around it — a median rather than a mean because a month of
+  production contains the incidents, and one four-hour outage would drag a mean
+  far enough to hide the next one. A series with less than two weeks of history
+  says `learning` and pages nobody.
+
+Two settings decide how loud it is. **Held for** is the number of consecutive
+evaluations that must agree before it fires, so a one-minute spike wakes
+nobody; a recovery never waits. **One alert per** splits the monitor by a
+label: "errors by route" pages about `/checkout` without dragging in `/health`,
+and each route resolves on its own. Leaving it empty gives one alert for the
+whole monitor.
+
+**When silent** is asked because silence is ambiguous. A queue with no messages
+is fine; a service that stopped writing logs is the incident. The monitor says
+nothing, pages, or reads the silence as a zero — whichever its author meant.
+
+The evaluation runs every minute, and everything it raises is posted to the
+workspace's own alert ingest endpoint, exactly as a third-party tool posts one.
+There is no private path from a monitor to an incident, so the rules, the
+grouping and the escalation are identical whoever raised the alert. The alert
+is sent **before** the new state is recorded: posting twice is deduplicated on
+the key, while a post lost to an unreachable endpoint would be a page that
+never happens and never retries.
+
+The monitor's own screen shows the series it watches, what each last measured
+and which of them is breaching or being held — not an uptime percentage, which
+a monitor that never reached out does not have.
+
 ## Grafana, and the PromQL subset
 
 The instance answers the Prometheus HTTP API under `/prometheus/api/v1/`, with
@@ -153,5 +207,10 @@ satisfy nobody.
 
 ## What is not here yet
 
-Metrics, exceptions, profiles and RUM are later milestones. They are absent
-from the screens rather than present and empty.
+Profiles, real user monitoring and the service map are later milestones. They
+are absent from the screens rather than present and empty.
+
+The query compiler's refusals are in English whatever the interface language:
+the filter language itself is English — its field names, its `AND`, its
+`contains` — and a diagnostic half-translated around an English expression
+would read worse than one that is not translated at all.

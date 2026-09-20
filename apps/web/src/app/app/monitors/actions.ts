@@ -19,6 +19,7 @@ import {
   monitors,
   withTenant,
   type MonitorType,
+  type TelemetryQuery,
 } from "@openincident/db";
 import {
   SYNTHETIC_MIN_INTERVAL_SECONDS,
@@ -27,6 +28,7 @@ import {
   parseSyntheticConfig,
   performCheck,
   stateFromSample,
+  evaluateTelemetryMonitorNow,
   syntheticConfigOf,
   syntheticRunnerLive,
 } from "@openincident/oncall";
@@ -36,6 +38,7 @@ import { recordAudit } from "@/lib/audit";
 import { requireResponder } from "@/lib/session";
 import { DEFAULT_ACTION, defaultCriteria } from "@/lib/monitors";
 import { observeService } from "@/lib/services";
+import { telemetryQueryError } from "@/lib/telemetry-monitors";
 import {
   applyMonitorChoices,
   dropMonitorRoute,
@@ -54,7 +57,14 @@ const TYPES = [
   "synthetic",
   "incoming",
   "manual",
+  "logs",
+  "traces",
+  "metrics",
+  "exceptions",
 ] as const;
+
+/** The four whose subject is a query rather than an address. */
+const TELEMETRY_TYPES = ["logs", "traces", "metrics", "exceptions"] as const;
 
 const createSchema = z.object({
   type: z.enum(TYPES),
@@ -71,6 +81,20 @@ const createSchema = z.object({
   steps: z.string().max(20_000).optional(),
   /** Synthetic only: the credentials the journey signs in with. */
   secrets: z.string().max(20_000).optional(),
+  /* Telemetry only: the question, and what makes it an alert. */
+  telemetryQuery: z.string().trim().max(2_000).optional(),
+  telemetryAggregate: z
+    .enum(["count", "rate", "sum", "avg", "min", "max", "p50", "p95", "p99"])
+    .default("count"),
+  telemetryField: z.string().trim().max(120).optional(),
+  telemetryWindow: z.coerce.number().int().min(1).max(60).default(5),
+  telemetryCondition: z.enum(["threshold", "anomaly"]).default("threshold"),
+  telemetryOp: z.enum([">", ">=", "<", "<=", "==", "!="]).default(">"),
+  telemetryValue: z.coerce.number().default(0),
+  telemetryDirection: z.enum(["high", "low", "any"]).default("high"),
+  telemetryFor: z.coerce.number().int().min(1).max(10).default(2),
+  telemetryGroupBy: z.string().trim().max(200).optional(),
+  telemetryNoData: z.enum(["ignore", "trigger", "zero"]).default("ignore"),
 });
 
 /** JSON from a form field, or null — a malformed field is a refused monitor. */
@@ -121,6 +145,17 @@ export async function createMonitor(formData: FormData) {
     autoResolve: formData.get("autoResolve") ?? "on",
     steps: formData.get("steps") ?? undefined,
     secrets: formData.get("secrets") ?? undefined,
+    telemetryQuery: formData.get("telemetryQuery") ?? undefined,
+    telemetryAggregate: formData.get("telemetryAggregate") ?? "count",
+    telemetryField: formData.get("telemetryField") ?? undefined,
+    telemetryWindow: formData.get("telemetryWindow") ?? 5,
+    telemetryCondition: formData.get("telemetryCondition") ?? "threshold",
+    telemetryOp: formData.get("telemetryOp") ?? ">",
+    telemetryValue: formData.get("telemetryValue") ?? 0,
+    telemetryDirection: formData.get("telemetryDirection") ?? "high",
+    telemetryFor: formData.get("telemetryFor") ?? 2,
+    telemetryGroupBy: formData.get("telemetryGroupBy") ?? undefined,
+    telemetryNoData: formData.get("telemetryNoData") ?? "ignore",
   });
   if (!parsed.success) redirect("/app/monitors?error=invalid");
   const v = parsed.data;
@@ -142,6 +177,37 @@ export async function createMonitor(formData: FormData) {
       : v.intervalSeconds;
   const secrets = v.type === "synthetic" ? readSecretPairs(v.secrets) : [];
 
+  /*
+   * A telemetry monitor is its query, and a query that does not compile is a
+   * monitor that would evaluate to an error every minute for ever. So it is
+   * compiled here, before the row exists: a filter naming a field we do not
+   * have, or PromQL we cannot answer, is a refusal at creation rather than a
+   * red mark on a screen somebody has stopped reading.
+   */
+  let telemetryQuery: TelemetryQuery | null = null;
+  if ((TELEMETRY_TYPES as readonly string[]).includes(v.type)) {
+    if (!v.telemetryQuery) redirect("/app/monitors?error=telemetry-query");
+    telemetryQuery = {
+      query: v.telemetryQuery,
+      aggregate: v.telemetryAggregate,
+      ...(v.telemetryField ? { field: v.telemetryField } : {}),
+      windowMinutes: v.telemetryWindow,
+      condition:
+        v.telemetryCondition === "anomaly"
+          ? { kind: "anomaly", direction: v.telemetryDirection }
+          : { kind: "threshold", op: v.telemetryOp, value: v.telemetryValue },
+      forEvaluations: v.telemetryFor,
+      groupBy: (v.telemetryGroupBy ?? "")
+        .split(/[,\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 5),
+      noData: v.telemetryNoData,
+    };
+    const refusal = telemetryQueryError(v.type, telemetryQuery);
+    if (refusal) redirect(`/app/monitors?error=telemetry-query&why=${encodeURIComponent(refusal)}`);
+  }
+
   const id = await withTenant(current.tenant.id, async (tx) => {
     const serviceId = v.service
       ? await observeService(tx, current.tenant.id, v.service, "monitor")
@@ -156,6 +222,7 @@ export async function createMonitor(formData: FormData) {
         target: journey?.steps.find((step) => step.kind === "goto")?.value ?? v.target,
         intervalSeconds,
         config: journey ? { ...journey } : {},
+        telemetryQuery,
         criteria: defaultCriteria(v.type as MonitorType),
         action: {
           ...DEFAULT_ACTION,
@@ -292,6 +359,18 @@ export async function checkNow(formData: FormData) {
       trigger: "manual",
     });
     redirect(`/app/monitors/${id}?${queued ? "queued=1" : "error=no-runner"}`);
+  }
+
+  /*
+   * A telemetry monitor has nothing to reach, so "check now" runs the sweep
+   * rather than a probe: it evaluates the query, moves the series and posts
+   * whatever that produced, which is precisely what the minute tick does.
+   * Anything less would be a button that says it checked and did not.
+   */
+  if ((TELEMETRY_TYPES as readonly string[]).includes(monitor.type)) {
+    const out = await evaluateTelemetryMonitorNow(current.tenant.id, monitor.id);
+    revalidatePath(`/app/monitors/${id}`);
+    redirect(`/app/monitors/${id}?${out.failed ? "error=telemetry-eval" : "evaluated=1"}`);
   }
 
   const sample = await performCheck({

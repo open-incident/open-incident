@@ -9,6 +9,7 @@
 import {
   type AnyPgColumn,
   boolean,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -2423,7 +2424,66 @@ export const runbooks = app.table(
  * pinged, and whose silence past its window is the signal (a dead-man's switch).
  */
 export type MonitorType =
-  "http" | "api" | "ping" | "port" | "dns" | "ssl" | "domain" | "synthetic" | "incoming" | "manual";
+  | "http"
+  | "api"
+  | "ping"
+  | "port"
+  | "dns"
+  | "ssl"
+  | "domain"
+  | "synthetic"
+  | "incoming"
+  | "manual"
+  // The four that watch what a service says about itself rather than whether
+  // it answers. They have no target to reach: their subject is a query, and
+  // one evaluation can raise one alert per series.
+  | "logs"
+  | "traces"
+  | "metrics"
+  | "exceptions";
+
+/** The four telemetry types, kept apart because they are evaluated elsewhere. */
+export const TELEMETRY_MONITOR_TYPES = ["logs", "traces", "metrics", "exceptions"] as const;
+
+export function isTelemetryMonitor(type: string): boolean {
+  return (TELEMETRY_MONITOR_TYPES as readonly string[]).includes(type);
+}
+
+/**
+ * What a telemetry monitor watches (§15.8).
+ *
+ * `groupBy` is what makes one monitor into many alerts: "error rate above 5 %
+ * **by route**" should page about `/checkout` without dragging in `/health`,
+ * and each series gets its own episode.
+ *
+ * `noData` exists because silence is ambiguous. A log monitor that sees
+ * nothing may mean the service is quiet or may mean it stopped writing logs,
+ * and only the person who wrote the monitor knows which — so they say.
+ */
+/*
+ * The shape is declared again in `@openincident/telemetry`, which evaluates
+ * it, because that package knows nothing of Postgres and this one knows
+ * nothing of ClickHouse. `@openincident/oncall` depends on both and asserts at
+ * compile time that the two still agree — see its telemetry monitor sweep.
+ */
+export type TelemetryQuery = {
+  /** PromQL for a metrics monitor; a filter expression for the other three. */
+  query: string;
+  aggregate: "count" | "rate" | "sum" | "avg" | "min" | "max" | "p50" | "p95" | "p99";
+  /** The numeric column the aggregate runs on. Unused by `count` and `rate`. */
+  field?: string;
+  /** 1 to 60 minutes. */
+  windowMinutes: number;
+  condition:
+    | { kind: "threshold"; op: ">" | ">=" | "<" | "<=" | "==" | "!="; value: number }
+    | { kind: "anomaly"; direction: "high" | "low" | "any" };
+  /** Held for this many consecutive evaluations before it fires. */
+  forEvaluations: number;
+  groupBy: string[];
+  noData: "ignore" | "trigger" | "zero";
+  /** What the alert is worth. Defaults to P2 on a threshold, P3 on an anomaly. */
+  severity?: "P1" | "P2" | "P3" | "P4";
+};
 
 /**
  * The state a monitor is in, as the reader sees it.
@@ -2616,6 +2676,8 @@ export const monitors = app.table(
     target: text("target").notNull().default(""),
     /** Per-type detail: method, headers, body, steps, record type, port. */
     config: jsonb("config").$type<Record<string, unknown>>().notNull().default({}),
+    /** Set on the four telemetry types, null on the ones that reach out. */
+    telemetryQuery: jsonb("telemetry_query").$type<TelemetryQuery | null>(),
     intervalSeconds: integer("interval_seconds").notNull().default(60),
     /** Checks that must agree before a state change is published. */
     criteria: jsonb("criteria").$type<MonitorCriterion[]>().notNull().default([]),
@@ -2652,6 +2714,64 @@ export const monitors = app.table(
  * history of a year is millions of rows nobody reads, while the day rollup is
  * what the 90-day bars and the uptime figure are made of.
  */
+/**
+ * One row per series a telemetry monitor is watching, and what it is doing.
+ *
+ * The reachability types keep their state on the monitor itself, because they
+ * have exactly one: up or down. A telemetry monitor grouped by route has one
+ * state per route, and they are not a fixed list — a route that starts
+ * receiving traffic appears, one that stops disappears. So the states live
+ * here, keyed by the series, and a series nobody has seen for a day is
+ * forgotten.
+ *
+ * `consecutive` is what `for` counts: a monitor with `for: 3` needs three
+ * evaluations in a row before it pages, which is how a one-minute spike stops
+ * waking anybody up.
+ */
+export const telemetryMonitorSeries = app.table(
+  "telemetry_monitor_series",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: tenantId(),
+    monitorId: uuid("monitor_id")
+      .notNull()
+      .references(() => monitors.id, { onDelete: "cascade" }),
+    /** The label set, spelled as the evaluator spells it; `*` when ungrouped. */
+    seriesKey: text("series_key").notNull(),
+    labels: jsonb("labels").$type<Record<string, string>>().notNull().default({}),
+    /** What the monitor publishes: what an alert was or was not raised for. */
+    state: text("state").$type<TelemetrySeriesState>().notNull().default("ok"),
+    /**
+     * What the last evaluation actually said, which is not the same thing.
+     *
+     * A monitor with `for: 3` that has breached twice publishes `ok` — nobody
+     * has been paged — while its last two evaluations both said `breaching`.
+     * Counting agreement against the published state would compare each
+     * breach to an `ok` and reset the count every time, so the third
+     * evaluation would never arrive and the monitor would never fire.
+     */
+    lastVerdict: text("last_verdict").$type<TelemetrySeriesState>().notNull().default("ok"),
+    /** Evaluations in a row that agreed with `lastVerdict`. */
+    consecutive: integer("consecutive").notNull().default(0),
+    lastValue: doublePrecision("last_value"),
+    lastDetail: text("last_detail"),
+    stateSince: timestamp("state_since", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("telemetry_series_once").on(t.monitorId, t.seriesKey),
+    index("telemetry_series_seen").on(t.lastSeenAt),
+  ],
+);
+
+/**
+ * `learning` is not a failure and not a success: the monitor is watching an
+ * anomaly rule that has not seen enough of this series to have an opinion. It
+ * is a state rather than a silence so the screen can say so.
+ */
+export type TelemetrySeriesState = "ok" | "breaching" | "no_data" | "learning";
+
 export const monitorChecks = app.table(
   "monitor_checks",
   {

@@ -32,11 +32,11 @@ const BAR: Record<string, string> = {
 export default async function MonitorsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ new?: string }>;
+  searchParams: Promise<{ new?: string; error?: string; why?: string }>;
 }) {
   const { tenant, member } = await requireMember();
   const t = await getT();
-  const { new: openNew } = await searchParams;
+  const { new: openNew, error, why } = await searchParams;
 
   const data = await withTenant(tenant.id, async (tx) => ({
     monitors: await listMonitors(tx, tenant.id),
@@ -106,6 +106,33 @@ export default async function MonitorsPage({
           />
         )}
       </div>
+
+      {/*
+        A refused creation used to come back to this list with the reason in
+        the address bar and nowhere else, which reads as "the button does
+        nothing". The reason is shown.
+      */}
+      {error && (
+        <div
+          role="alert"
+          data-testid="monitors-error"
+          style={{
+            border: "1px solid var(--dang)",
+            background: "var(--dang-t)",
+            color: "var(--dang)",
+            borderRadius: 11,
+            padding: "11px 14px",
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          {error === "telemetry-query"
+            ? t("monitors.error.telemetry-query", { why: why ?? t("monitors.error.missing") })
+            : error === "steps"
+              ? t("monitors.error.steps")
+              : t("monitors.error.invalid")}
+        </div>
+      )}
 
       {data.monitors.length === 0 ? (
         <div

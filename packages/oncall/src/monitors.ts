@@ -26,6 +26,7 @@ import {
   monitorChecks,
   monitorDays,
   monitors,
+  isTelemetryMonitor,
   services,
   withTenant,
   type MonitorCriterion,
@@ -528,7 +529,14 @@ export async function ensureMonitorSource(
   return { id: created!.id, secret };
 }
 
-async function postAlert(
+/**
+ * Posts an alert to the workspace's own ingest endpoint.
+ *
+ * Exported because the telemetry monitors take the same road: there is one way
+ * into the alert pipeline, and a second private one would be a second set of
+ * rules to keep in step with the first.
+ */
+export async function postAlert(
   origin: string,
   source: { id: string; secret: string },
   payload: Record<string, unknown>,
@@ -773,7 +781,10 @@ export async function sweepMonitors(tenantIds: string[], now = new Date()): Prom
     // purpose: a hundred monitors on one host should not look like a flood to
     // that host, and each check already carries its own timeout.
     const WIDTH = 6;
-    const runnable = due.filter((m) => m.type !== "manual");
+    // Manual monitors are moved by hand, and the four telemetry types are
+    // evaluated by their own sweep against the column store — neither has
+    // anything for `performCheck` to reach.
+    const runnable = due.filter((m) => m.type !== "manual" && !isTelemetryMonitor(m.type));
     for (let i = 0; i < runnable.length; i += WIDTH) {
       const slice = runnable.slice(i, i + WIDTH);
       const results = await Promise.all(

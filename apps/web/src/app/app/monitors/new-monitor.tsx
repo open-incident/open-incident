@@ -17,6 +17,7 @@ import { useState } from "react";
 import { useT } from "@/i18n/client";
 import { createMonitor } from "./actions";
 import { JourneyEditor, SecretsEditor } from "./journey-editor";
+import { TelemetryEditor } from "./telemetry-editor";
 import type { MessageKey } from "@/i18n/dictionaries/en";
 
 type Kind = { id: string; key: string; name: MessageKey; hint: MessageKey; placeholder: string };
@@ -92,7 +93,44 @@ const KINDS: Kind[] = [
     hint: "monitors.typeManualHint",
     placeholder: "",
   },
+  /*
+   * The four that watch what a service says about itself. They are last
+   * because they are the ones that need something installed — a workspace
+   * with no column store sees them greyed, with the command that turns them
+   * on, which is the same treatment the browser runner gets.
+   */
+  {
+    id: "logs",
+    key: "LOG",
+    name: "monitors.typeLogs",
+    hint: "monitors.typeLogsHint",
+    placeholder: "",
+  },
+  {
+    id: "traces",
+    key: "TRC",
+    name: "monitors.typeTraces",
+    hint: "monitors.typeTracesHint",
+    placeholder: "",
+  },
+  {
+    id: "metrics",
+    key: "MET",
+    name: "monitors.typeMetrics",
+    hint: "monitors.typeMetricsHint",
+    placeholder: "",
+  },
+  {
+    id: "exceptions",
+    key: "EXC",
+    name: "monitors.typeExceptions",
+    hint: "monitors.typeExceptionsHint",
+    placeholder: "",
+  },
 ];
+
+/** The four whose subject is a query rather than an address. */
+const TELEMETRY = new Set(["logs", "traces", "metrics", "exceptions"]);
 
 const CONTROL: React.CSSProperties = {
   height: 38,
@@ -133,8 +171,9 @@ export function NewMonitor({
   };
 
   const synthetic = kind?.id === "synthetic";
+  const telemetry = !!kind && TELEMETRY.has(kind.id);
   /** Kinds whose address is not typed: it is derived, or there is none. */
-  const targetless = kind?.id === "manual" || kind?.id === "incoming" || synthetic;
+  const targetless = kind?.id === "manual" || kind?.id === "incoming" || synthetic || telemetry;
 
   return (
     <>
@@ -181,7 +220,7 @@ export function NewMonitor({
             aria-modal="true"
             data-testid="monitor-form"
             style={{
-              width: synthetic ? 880 : 640,
+              width: synthetic ? 880 : telemetry ? 720 : 640,
               maxWidth: "calc(100vw - 32px)",
               background: "var(--panel)",
               borderRadius: "var(--radius-modal)",
@@ -361,6 +400,8 @@ export function NewMonitor({
                     </>
                   )}
 
+                  {telemetry && <TelemetryEditor kind={kind.id} />}
+
                   <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                     <span style={LABEL}>{t("monitors.fieldService")}</span>
                     <input
@@ -377,27 +418,34 @@ export function NewMonitor({
                     </datalist>
                   </label>
 
-                  <div
-                    style={{
-                      border: "1px solid var(--line)",
-                      borderRadius: 12,
-                      padding: "12px 14px",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 7,
-                      background: "var(--sunk)",
-                    }}
-                  >
-                    <div style={LABEL}>{t("monitors.defaultCriteria")}</div>
-                    <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-                      {t(`monitors.criteriaSentence.${kind.id}` as MessageKey)}
-                    </div>
-                    {synthetic && (
-                      <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                        {t("synthetic.floorNote")}
+                  {/*
+                    A telemetry monitor has no criteria panel: the sentence
+                    above it *is* its rule, and showing a second one would be
+                    two answers to "when does this fire".
+                  */}
+                  {!telemetry && (
+                    <div
+                      style={{
+                        border: "1px solid var(--line)",
+                        borderRadius: 12,
+                        padding: "12px 14px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 7,
+                        background: "var(--sunk)",
+                      }}
+                    >
+                      <div style={LABEL}>{t("monitors.defaultCriteria")}</div>
+                      <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+                        {t(`monitors.criteriaSentence.${kind.id}` as MessageKey)}
                       </div>
-                    )}
-                  </div>
+                      {synthetic && (
+                        <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                          {t("synthetic.floorNote")}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <Choice
                     label={t("monitors.whoToPage")}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { withTenant } from "@openincident/db";
+import { isTelemetryMonitor, withTenant, type TelemetryQuery } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { canRespond, requireMember } from "@/lib/session";
 import { readMonitorChoices } from "@/lib/monitor-choices";
@@ -16,6 +16,38 @@ import {
 import { JourneyEditor } from "../journey-editor";
 import { JourneyCard } from "./journey-card";
 import type { MessageKey } from "@/i18n/dictionaries/en";
+
+/**
+ * The stored query read back as a sentence.
+ *
+ * The person who wrote it chose from selects; the row holds JSON. Rendering
+ * the JSON would make them translate their own monitor back, so the sentence
+ * is rebuilt from the same words the form used.
+ */
+function ruleSentence(
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string,
+  type: string,
+  q: TelemetryQuery,
+): string {
+  const measure =
+    type === "metrics"
+      ? t("telemetryMonitor.promql")
+      : t(
+          `telemetryMonitor.agg${q.aggregate[0]!.toUpperCase()}${q.aggregate.slice(1)}` as MessageKey,
+        ) + (q.field ? ` ${q.field}` : "");
+  const over = type === "metrics" ? "" : ` · ${t("telemetryMonitor.over")} ${q.windowMinutes} min`;
+  const when =
+    q.condition.kind === "threshold"
+      ? `${q.condition.op} ${q.condition.value}`
+      : t(
+          `telemetryMonitor.dir${q.condition.direction[0]!.toUpperCase()}${q.condition.direction.slice(1)}` as MessageKey,
+        );
+  const held =
+    q.forEvaluations > 1
+      ? ` · ${t("telemetryMonitor.forN", { n: q.forEvaluations })}`
+      : ` · ${t("telemetryMonitor.for1")}`;
+  return `${measure}${over} · ${when}${held}`;
+}
 
 const CARD: React.CSSProperties = {
   background: "var(--panel)",
@@ -74,6 +106,7 @@ export default async function MonitorDetailPage({
   // alert obeys, and the two would drift the moment someone edits it.
   const choices = await withTenant(tenant.id, (tx) => readMonitorChoices(tx, tenant.id, id));
   const mayEdit = canRespond(member);
+  const telemetry = isTelemetryMonitor(m.type);
   const tone = STATE_TONE[m.state] ?? STATE_TONE.waiting!;
   // A journey that is not being played is worth saying out loud, on the
   // monitor's own page: the reader is looking at it because it has not moved.
@@ -218,28 +251,62 @@ export default async function MonitorDetailPage({
               overflow: "hidden",
             }}
           >
-            {[
-              {
-                l: t("monitors.kpiUptime"),
-                v: m.uptime90 === null ? "—" : `${m.uptime90.toFixed(2)} %`,
-                ink: m.uptime90 === null ? "var(--ink-3)" : "var(--ok)",
-              },
-              {
-                l: t("monitors.kpiNow"),
-                v: m.lastLatencyMs !== null ? `${m.lastLatencyMs} ms` : "—",
-                ink: "var(--ink)",
-              },
-              {
-                l: t("monitors.kpiChecks"),
-                v: String(m.checks.length),
-                ink: "var(--ink)",
-              },
-              {
-                l: t("monitors.kpiDowntime"),
-                v: m.downtime90Seconds > 0 ? downtimeText : "0",
-                ink: "var(--ink)",
-              },
-            ].map((k) => (
+            {(telemetry
+              ? [
+                  /*
+                    A telemetry monitor never reached out, so it has no uptime
+                    and no latency to show. What it does have is series: how
+                    many it is watching, and how many of them are breaching.
+                  */
+                  {
+                    l: t("telemetryMonitor.kpiSeries"),
+                    v: String(m.series.length),
+                    ink: "var(--ink)",
+                  },
+                  {
+                    l: t("telemetryMonitor.kpiBreaching"),
+                    v: String(
+                      m.series.filter((s) => s.state === "breaching" || s.state === "no_data")
+                        .length,
+                    ),
+                    ink: m.series.some((s) => s.state === "breaching" || s.state === "no_data")
+                      ? "var(--dang)"
+                      : "var(--ok)",
+                  },
+                  {
+                    l: t("telemetryMonitor.kpiLearning"),
+                    v: String(m.series.filter((s) => s.state === "learning").length),
+                    ink: "var(--ink-3)",
+                  },
+                  {
+                    l: t("telemetryMonitor.kpiEvaluated"),
+                    v: m.lastCheckAt ? m.lastCheckAt.toLocaleTimeString() : "—",
+                    ink: "var(--ink)",
+                  },
+                ]
+              : [
+                  {
+                    l: t("monitors.kpiUptime"),
+                    v: m.uptime90 === null ? "—" : `${m.uptime90.toFixed(2)} %`,
+                    ink: m.uptime90 === null ? "var(--ink-3)" : "var(--ok)",
+                  },
+                  {
+                    l: t("monitors.kpiNow"),
+                    v: m.lastLatencyMs !== null ? `${m.lastLatencyMs} ms` : "—",
+                    ink: "var(--ink)",
+                  },
+                  {
+                    l: t("monitors.kpiChecks"),
+                    v: String(m.checks.length),
+                    ink: "var(--ink)",
+                  },
+                  {
+                    l: t("monitors.kpiDowntime"),
+                    v: m.downtime90Seconds > 0 ? downtimeText : "0",
+                    ink: "var(--ink)",
+                  },
+                ]
+            ).map((k) => (
               <div key={k.l} style={{ background: "var(--panel)", padding: "11px 14px" }}>
                 <div style={{ ...EYEBROW, fontSize: 10 }}>{k.l}</div>
                 <div
@@ -343,6 +410,83 @@ export default async function MonitorDetailPage({
             </details>
           )}
 
+          {/*
+            The series, which is what a telemetry monitor actually has. One row
+            per alert it could raise, with what it last measured and why — so
+            a person can tell "nothing is wrong" from "nothing is arriving"
+            without opening a query console.
+          */}
+          {telemetry && (
+            <div style={{ ...CARD, padding: 0, gap: 0 }} data-testid="telemetry-series">
+              <div
+                style={{
+                  padding: "12px 16px",
+                  borderBottom: "1px solid var(--line)",
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                }}
+              >
+                {t("telemetryMonitor.series")}
+              </div>
+              {m.series.length === 0 ? (
+                <div style={{ padding: "14px 16px", fontSize: 12.5, color: "var(--ink-3)" }}>
+                  {m.lastCheckAt
+                    ? t("telemetryMonitor.noSeriesYet")
+                    : t("telemetryMonitor.notEvaluatedYet")}
+                </div>
+              ) : (
+                m.series.map((row) => {
+                  /*
+                    A series can be breaching and not yet firing: `for` holds
+                    it for a few runs. Showing only the published state would
+                    print "within range" next to a detail reading "1 > 0",
+                    which is the screen contradicting itself. The holding is
+                    its own word, in its own colour.
+                  */
+                  const held =
+                    (row.lastVerdict === "breaching" || row.lastVerdict === "no_data") &&
+                    row.state !== row.lastVerdict;
+                  const ink = held
+                    ? "var(--wait)"
+                    : row.state === "breaching" || row.state === "no_data"
+                      ? "var(--dang)"
+                      : row.state === "learning"
+                        ? "var(--ink-3)"
+                        : "var(--ok)";
+                  return (
+                    <div
+                      key={row.seriesKey}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "minmax(0,1fr) 110px minmax(0,1fr)",
+                        gap: 10,
+                        alignItems: "baseline",
+                        padding: "10px 16px",
+                        borderTop: "1px solid var(--line)",
+                        fontSize: 12.5,
+                      }}
+                    >
+                      <span style={{ fontFamily: "var(--mono)", wordBreak: "break-word" }}>
+                        {row.seriesKey === "*" ? t("telemetryMonitor.wholeMonitor") : row.seriesKey}
+                      </span>
+                      <span style={{ color: ink, fontWeight: 600 }}>
+                        {held
+                          ? t("telemetryMonitor.holding", {
+                              n: row.consecutive,
+                              of: m.telemetryQuery?.forEvaluations ?? 1,
+                            })
+                          : t(`telemetryMonitor.state.${row.state}` as MessageKey)}
+                      </span>
+                      <span style={{ color: "var(--ink-2)", wordBreak: "break-word" }}>
+                        {row.lastDetail ?? "—"}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
           {latencies.length > 0 && (
             <div style={{ ...CARD, gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center" }}>
@@ -380,116 +524,152 @@ export default async function MonitorDetailPage({
             </div>
           )}
 
-          <div style={{ ...CARD, padding: 0, gap: 0 }}>
-            <div
-              style={{
-                padding: "12px 16px",
-                borderBottom: "1px solid var(--line)",
-                fontSize: 13.5,
-                fontWeight: 600,
-              }}
-            >
-              {t("monitors.recentChecks")}
-            </div>
-            {m.checks.length === 0 ? (
-              <div style={{ padding: "16px", fontSize: 13, color: "var(--ink-2)" }}>
-                {t("monitors.noChecksYet")}
+          {/*
+            Recent checks, for the types that make one. A telemetry monitor
+            writes series rather than checks, and an empty table promising a
+            first check that will never come is worse than no table.
+          */}
+          {!telemetry && (
+            <div style={{ ...CARD, padding: 0, gap: 0 }}>
+              <div
+                style={{
+                  padding: "12px 16px",
+                  borderBottom: "1px solid var(--line)",
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                }}
+              >
+                {t("monitors.recentChecks")}
               </div>
-            ) : (
-              m.checks.slice(0, 8).map((c, i) => {
-                const ct = STATE_TONE[c.state] ?? STATE_TONE.waiting!;
-                return (
-                  <div
-                    key={i}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "70px 96px minmax(0,1fr) 84px",
-                      gap: 12,
-                      padding: "9px 16px",
-                      borderBottom: "1px solid var(--line-2)",
-                      fontSize: 12.5,
-                      alignItems: "center",
-                    }}
-                  >
-                    <span style={{ fontFamily: "var(--mono)", color: "var(--ink-3)" }}>
-                      {t.fmt.time(c.at, t.timeZone)}
-                    </span>
-                    <span
+              {m.checks.length === 0 ? (
+                <div style={{ padding: "16px", fontSize: 13, color: "var(--ink-2)" }}>
+                  {t("monitors.noChecksYet")}
+                </div>
+              ) : (
+                m.checks.slice(0, 8).map((c, i) => {
+                  const ct = STATE_TONE[c.state] ?? STATE_TONE.waiting!;
+                  return (
+                    <div
+                      key={i}
                       style={{
-                        display: "inline-flex",
+                        display: "grid",
+                        gridTemplateColumns: "70px 96px minmax(0,1fr) 84px",
+                        gap: 12,
+                        padding: "9px 16px",
+                        borderBottom: "1px solid var(--line-2)",
+                        fontSize: 12.5,
                         alignItems: "center",
-                        gap: 5,
-                        fontWeight: 600,
-                        color: ct[1],
                       }}
                     >
+                      <span style={{ fontFamily: "var(--mono)", color: "var(--ink-3)" }}>
+                        {t.fmt.time(c.at, t.timeZone)}
+                      </span>
                       <span
-                        style={{ width: 6, height: 6, borderRadius: "50%", background: ct[1] }}
-                      />
-                      {t(`monitors.state.${c.state}` as MessageKey)}
-                    </span>
-                    <span
-                      style={{
-                        color: "var(--ink-2)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {c.detail}
-                    </span>
-                    <span style={{ fontFamily: "var(--mono)", textAlign: "right" }}>
-                      {c.latencyMs !== null ? `${c.latencyMs} ms` : "—"}
-                    </span>
-                  </div>
-                );
-              })
-            )}
-          </div>
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          fontWeight: 600,
+                          color: ct[1],
+                        }}
+                      >
+                        <span
+                          style={{ width: 6, height: 6, borderRadius: "50%", background: ct[1] }}
+                        />
+                        {t(`monitors.state.${c.state}` as MessageKey)}
+                      </span>
+                      <span
+                        style={{
+                          color: "var(--ink-2)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {c.detail}
+                      </span>
+                      <span style={{ fontFamily: "var(--mono)", textAlign: "right" }}>
+                        {c.latencyMs !== null ? `${c.latencyMs} ms` : "—"}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={CARD}>
-            <div style={EYEBROW}>{t("monitors.criteria")}</div>
-            {m.criteria.length === 0 ? (
-              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-                {t("monitors.noCriteria")}
+          {telemetry && m.telemetryQuery ? (
+            <div style={CARD} data-testid="telemetry-rule">
+              <div style={EYEBROW}>{t("telemetryMonitor.rule")}</div>
+              <div
+                style={{
+                  fontFamily: "var(--mono)",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  wordBreak: "break-word",
+                }}
+              >
+                {m.telemetryQuery.query}
               </div>
-            ) : (
-              m.criteria.map((c, i) => {
-                const dot =
-                  c.then === "online"
-                    ? "var(--ok)"
-                    : c.then === "degraded"
-                      ? "var(--wait)"
-                      : "var(--dang)";
-                return (
-                  <div key={i} style={{ display: "flex", gap: 8, fontSize: 12.5, lineHeight: 1.5 }}>
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        background: dot,
-                        marginTop: 7,
-                        flex: "none",
-                      }}
-                    />
-                    <span>
-                      {t(`monitors.on.${c.on}` as MessageKey)}{" "}
-                      <span style={{ fontFamily: "var(--mono)" }}>
-                        {OP_LABEL[c.op] ?? c.op} {c.value}
-                      </span>{" "}
-                      →{" "}
-                      <strong style={{ color: dot }}>
-                        {t(`monitors.state.${c.then}` as MessageKey)}
-                      </strong>
-                    </span>
-                  </div>
-                );
-              })
-            )}
-          </div>
+              <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-2)" }}>
+                {ruleSentence(t, m.type, m.telemetryQuery)}
+              </div>
+              {m.telemetryQuery.groupBy.length > 0 && (
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                  {t("telemetryMonitor.oneAlertPer", {
+                    fields: m.telemetryQuery.groupBy.join(", "),
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={CARD}>
+              <div style={EYEBROW}>{t("monitors.criteria")}</div>
+              {m.criteria.length === 0 ? (
+                <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+                  {t("monitors.noCriteria")}
+                </div>
+              ) : (
+                m.criteria.map((c, i) => {
+                  const dot =
+                    c.then === "online"
+                      ? "var(--ok)"
+                      : c.then === "degraded"
+                        ? "var(--wait)"
+                        : "var(--dang)";
+                  return (
+                    <div
+                      key={i}
+                      style={{ display: "flex", gap: 8, fontSize: 12.5, lineHeight: 1.5 }}
+                    >
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: dot,
+                          marginTop: 7,
+                          flex: "none",
+                        }}
+                      />
+                      <span>
+                        {t(`monitors.on.${c.on}` as MessageKey)}{" "}
+                        <span style={{ fontFamily: "var(--mono)" }}>
+                          {OP_LABEL[c.op] ?? c.op} {c.value}
+                        </span>{" "}
+                        →{" "}
+                        <strong style={{ color: dot }}>
+                          {t(`monitors.state.${c.then}` as MessageKey)}
+                        </strong>
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
 
           <div style={CARD}>
             <div style={EYEBROW}>{t("monitors.whenOffline")}</div>

@@ -53,3 +53,24 @@ export {
   type Node,
 } from "./promql/parse";
 export { evalPromql, type EvalOptions, type Sample, type Series } from "./promql/eval";
+export {
+  ANOMALY_Z,
+  BASELINE_DAYS,
+  LEARNING_DAYS,
+  TelemetryMonitorError,
+  baselineOf,
+  baselines,
+  compileFilter,
+  evaluate as evaluateTelemetryMonitor,
+  fieldsOf,
+  robustZ,
+  seriesKeyOf,
+  verdictFor,
+  type Baseline,
+  type SeriesValue,
+  type TelemetryAggregate,
+  type TelemetryCondition,
+  type TelemetryMonitorKind,
+  type TelemetryMonitorQuery,
+  type Verdict,
+} from "./monitor";
