@@ -8,7 +8,7 @@
  * itself (name, language, branding live in `app.workspaces`). The application
  * role reads it and never writes it: provisioning does.
  */
-import { jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const directory = pgSchema("directory");
 
@@ -50,6 +50,29 @@ export const apiKeyLookup = directory.table("api_key_lookup", {
   tenantId: uuid("tenant_id")
     .notNull()
     .references(() => tenants.id, { onDelete: "cascade" }),
+});
+
+/**
+ * The same trick for telemetry ingestion keys, and for the same reason.
+ *
+ * A collector authenticates before any tenant context exists, so the row it is
+ * matched against cannot live under row-level security — the application role
+ * would read nothing. The key's own record stays in `app` with the rest of the
+ * workspace's configuration; this table holds only what the ingestion path
+ * needs to answer "whose is this, and may it send that?" before it decodes a
+ * single byte.
+ */
+export const telemetryKeyLookup = directory.table("telemetry_key_lookup", {
+  keyHash: text("key_hash").primaryKey(),
+  tenantId: uuid("tenant_id")
+    .notNull()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  keyId: uuid("key_id").notNull(),
+  /** Duplicated from `app.telemetry_ingestion_keys` so one read answers everything. */
+  signals: jsonb("signals").$type<string[]>().notNull().default(["logs", "traces"]),
+  pinnedServiceName: text("pinned_service_name"),
+  revoked: boolean("revoked").notNull().default(false),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
 });
 
 /**

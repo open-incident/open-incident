@@ -4,7 +4,13 @@
  */
 import { eq, inArray } from "drizzle-orm";
 import { db } from "./client";
-import { apiKeyLookup, statusSnapshots, tenants, type Tenant } from "./schema/directory";
+import {
+  apiKeyLookup,
+  statusSnapshots,
+  telemetryKeyLookup,
+  tenants,
+  type Tenant,
+} from "./schema/directory";
 
 export async function getTenantBySlug(slug: string): Promise<Tenant | null> {
   const [row] = await db.select().from(tenants).where(eq(tenants.slug, slug));
@@ -110,4 +116,62 @@ export async function upsertStatusSnapshot(input: {
 
 export async function deleteStatusSnapshot(pageId: string): Promise<void> {
   await db.delete(statusSnapshots).where(eq(statusSnapshots.pageId, pageId));
+}
+
+export type TelemetryCaller = {
+  tenantId: string;
+  keyId: string;
+  signals: string[];
+  pinnedServiceName: string | null;
+};
+
+/**
+ * The workspace behind an ingestion key, before any tenant context exists.
+ *
+ * One row, found by a unique digest — so "constant time" is a property of the
+ * index rather than of a loop, and the list of valid keys is never held in
+ * memory to be walked. A revoked or expired key resolves to nothing, which the
+ * ingestion path reports as 401 and never as a silent drop.
+ */
+export async function resolveTelemetryKey(keyHash: string): Promise<TelemetryCaller | null> {
+  const [row] = await db
+    .select()
+    .from(telemetryKeyLookup)
+    .innerJoin(tenants, eq(tenants.id, telemetryKeyLookup.tenantId))
+    .where(eq(telemetryKeyLookup.keyHash, keyHash));
+  if (!row) return null;
+  const k = row.telemetry_key_lookup;
+  if (k.revoked) return null;
+  if (k.expiresAt && k.expiresAt <= new Date()) return null;
+  if (row.tenants.status === "suspended" || row.tenants.status === "deleting") return null;
+  return {
+    tenantId: k.tenantId,
+    keyId: k.keyId,
+    signals: k.signals,
+    pinnedServiceName: k.pinnedServiceName,
+  };
+}
+
+/** Mirrors an ingestion key into the lookup. Called wherever the key row is written. */
+export async function registerTelemetryKey(
+  entry: TelemetryCaller & { keyHash: string; expiresAt?: Date | null; revoked?: boolean },
+  on: Pick<typeof db, "delete" | "insert"> = db,
+): Promise<void> {
+  await on.delete(telemetryKeyLookup).where(eq(telemetryKeyLookup.keyHash, entry.keyHash));
+  await on.insert(telemetryKeyLookup).values({
+    keyHash: entry.keyHash,
+    tenantId: entry.tenantId,
+    keyId: entry.keyId,
+    signals: entry.signals,
+    pinnedServiceName: entry.pinnedServiceName,
+    revoked: entry.revoked ?? false,
+    expiresAt: entry.expiresAt ?? null,
+  });
+}
+
+export async function forgetTelemetryKey(
+  keyHash: string,
+  on: Pick<typeof db, "delete"> = db,
+): Promise<void> {
+  await on.delete(telemetryKeyLookup).where(eq(telemetryKeyLookup.keyHash, keyHash));
 }
