@@ -22,6 +22,7 @@ import { SqlTab } from "./sql-tab";
 import { ProfilesTab } from "./profiles-tab";
 import { FilterError, QueryBar } from "./query-bar";
 import { RumTab } from "./rum-tab";
+import { SlosTab } from "./slos-tab";
 import { Waterfall } from "./waterfall";
 import { SERVICE_COLOURS } from "./trace-model";
 
@@ -42,6 +43,7 @@ const TABS = [
   "exceptions",
   "profiles",
   "rum",
+  "slos",
   "map",
   "sql",
   "connect",
@@ -111,6 +113,10 @@ export default async function TelemetryPage({
     type?: string;
     compare?: string;
     view?: string;
+    /** Objectives moved in from /app/slos, which now redirects here. */
+    error?: string;
+    why?: string;
+    new?: string;
   }>;
 }) {
   const { member } = await requireMember();
@@ -254,6 +260,15 @@ export default async function TelemetryPage({
             view={rumViewOf(sp.view)}
             sinceHours={rumWindowOf(sp.since)}
             session={sp.session}
+          />
+        )}
+        {tab === "slos" && (
+          <SlosTab
+            tenantId={tenant.id}
+            mayEdit={canRespond(member)}
+            error={sp.error}
+            why={sp.why}
+            openNew={!!sp.new}
           />
         )}
         {tab === "sql" && <SqlTab tenantId={tenant.id} query={sp.q} />}

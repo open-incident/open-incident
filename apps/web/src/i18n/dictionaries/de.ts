@@ -104,6 +104,9 @@ export const de: Dictionary = {
   "telemetry.tab.traces": "Traces",
   "telemetry.tab.connect": "Verbinden",
   "telemetry.tab.metrics": "Metriken",
+  "telemetry.tab.slos": "Ziele",
+  "slo.tabHint":
+    "Ein Ziel ist ein Verhältnis zweier PromQL-Ausdrücke über die Metriken nebenan. Nach verbleibendem Budget sortiert.",
   "telemetry.noMetrics":
     "Noch keine Metrik eingegangen. Ein Dienst, der OpenTelemetry-Metriken exportiert, zeigt hier seine Serien.",
   "telemetry.seriesCount": "{n} Serien",
@@ -643,7 +646,6 @@ export const de: Dictionary = {
   "sql.capped":
     "Die ersten {count} Zeilen — die Obergrenze dieser Konsole. Grenzen Sie die Abfrage ein oder aggregieren Sie.",
   "sql.examples": "PROBIEREN SIE EINE DAVON",
-  "nav.slos": "SLOs",
   "slo.title": "Service-Level-Ziele",
   "slo.new": "+ Neues SLO",
   "slo.create": "SLO anlegen",
@@ -660,7 +662,7 @@ export const de: Dictionary = {
   "slo.nDays": { one: "{count} Tag", other: "{count} Tage" },
   "slo.budgetLeft": "{pct} % des Budgets übrig",
   "slo.notRead": "noch nicht gelesen",
-  "slo.state.ok": "Im Budget",
+  "slo.state.ok": "Normaler Verbrauch",
   "slo.state.slow": "Stetiger Verbrauch",
   "slo.state.fast": "Schneller Verbrauch",
   "slo.fieldName": "Name",

@@ -75,7 +75,7 @@ export default async function SloPage({ params }: { params: Promise<{ id: string
         gap: 14,
       }}
     >
-      <Link href="/app/slos" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+      <Link href="/app/telemetry?tab=slos" style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
         ‹ {t("slo.title")}
       </Link>
 

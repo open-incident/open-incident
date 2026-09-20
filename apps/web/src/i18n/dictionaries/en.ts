@@ -113,6 +113,9 @@ export const en = {
   "telemetry.tab.traces": "Traces",
   "telemetry.tab.connect": "Connect",
   "telemetry.tab.metrics": "Metrics",
+  "telemetry.tab.slos": "Objectives",
+  "slo.tabHint":
+    "An objective is a ratio of two PromQL expressions over the metrics next door. Sorted by how much budget is left.",
   "telemetry.noMetrics":
     "No metric has arrived yet. A service exporting OpenTelemetry metrics shows its series here.",
   "telemetry.seriesCount": "{n} series",
@@ -637,7 +640,6 @@ export const en = {
   "sql.capped":
     "Showing the first {count} rows — the ceiling this console reads to. Narrow the query or aggregate it.",
   "sql.examples": "TRY ONE OF THESE",
-  "nav.slos": "SLOs",
   "slo.title": "Service level objectives",
   "slo.new": "+ New SLO",
   "slo.create": "Create SLO",
@@ -654,7 +656,7 @@ export const en = {
   "slo.nDays": { one: "{count} day", other: "{count} days" },
   "slo.budgetLeft": "{pct} % of the budget left",
   "slo.notRead": "not read yet",
-  "slo.state.ok": "Within budget",
+  "slo.state.ok": "Burning normally",
   "slo.state.slow": "Burning steadily",
   "slo.state.fast": "Burning fast",
   "slo.fieldName": "Name",

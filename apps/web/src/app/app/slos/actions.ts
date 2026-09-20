@@ -40,11 +40,11 @@ export async function createSlo(form: FormData): Promise<void> {
     burnAlerts: form.get("burnAlerts") === "on" ? "on" : "off",
     page: form.get("page") ?? "owner",
   });
-  if (!parsed.success) redirect("/app/slos?error=invalid");
+  if (!parsed.success) redirect("/app/telemetry?tab=slos&error=invalid");
   const v = parsed.data;
 
   const refusal = sloQueryError(v.goodQuery, v.totalQuery);
-  if (refusal) redirect(`/app/slos?error=query&why=${encodeURIComponent(refusal)}`);
+  if (refusal) redirect(`/app/telemetry?tab=slos&error=query&why=${encodeURIComponent(refusal)}`);
 
   const id = await withTenant(current.tenant.id, async (tx) => {
     const serviceId = v.service
@@ -78,7 +78,7 @@ export async function createSlo(form: FormData): Promise<void> {
     await recordAudit(tx, current, "config", "slo.created", { name: v.name });
     return row!.id;
   });
-  revalidatePath("/app/slos");
+  revalidatePath("/app/telemetry");
   redirect(`/app/slos/${id}`);
 }
 
@@ -113,6 +113,6 @@ export async function deleteSlo(form: FormData): Promise<void> {
       .returning({ name: slos.name });
     if (row) await recordAudit(tx, current, "config", "slo.deleted", { name: row.name });
   });
-  revalidatePath("/app/slos");
-  redirect("/app/slos");
+  revalidatePath("/app/telemetry");
+  redirect("/app/telemetry?tab=slos");
 }
