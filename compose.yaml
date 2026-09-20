@@ -53,6 +53,15 @@ services:
     environment:
       DATABASE_ADMIN_URL: postgres://${POSTGRES_USER:-openincident}:${POSTGRES_PASSWORD:-openincident}@postgres:5432/${POSTGRES_DB:-openincident}
       DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
+      # Empty unless the telemetry profile is on; the column store's migrations
+      # are skipped rather than failing when there is no store to migrate.
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-}
+      # CLICKHOUSE_DATABASE here, CLICKHOUSE_DB on the store itself: the image's
+      # entrypoint reads the second name and our client reads the first, so one
+      # variable in .env feeds both rather than two that can drift apart.
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DB:-openincident}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-openincident}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openincident}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-openincident_app}
       SEED_DEMO: ${SEED_DEMO:-true}
       BASE_DOMAIN: ${BASE_DOMAIN:-localhost:3000}
@@ -74,6 +83,18 @@ services:
       # The public addresses: your domains in .env, the compose ports by default.
       BASE_DOMAIN: ${BASE_DOMAIN:-localhost:3000}
       STATUS_BASE_DOMAIN: ${STATUS_BASE_DOMAIN:-status.localhost:3001}
+      # Empty unless the telemetry profile is on. Every telemetry screen checks
+      # it and says the module is not installed rather than drawing nothing.
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-}
+      # CLICKHOUSE_DATABASE here, CLICKHOUSE_DB on the store itself: the image's
+      # entrypoint reads the second name and our client reads the first, so one
+      # variable in .env feeds both rather than two that can drift apart.
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DB:-openincident}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-openincident}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openincident}
+      # Where a collector reaches the ingestion endpoint, for the Connect
+      # screen to print an address somebody can paste.
+      TELEMETRY_PUBLIC_ORIGIN: ${TELEMETRY_PUBLIC_ORIGIN:-}
     ports:
       - "${WEB_PORT:-3000}:3000"
     depends_on:
@@ -121,6 +142,16 @@ services:
       STATUS_BASE_DOMAIN: ${STATUS_BASE_DOMAIN:-status.localhost:3001}
       WORKER_QUEUES: ${WORKER_QUEUES:-}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-}
+      # Empty unless the telemetry profile is on. The sweeps that read the
+      # column store — telemetry monitors, the service map, exception
+      # regressions, the SLOs — all check for it and do nothing without one.
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-}
+      # CLICKHOUSE_DATABASE here, CLICKHOUSE_DB on the store itself: the image's
+      # entrypoint reads the second name and our client reads the first, so one
+      # variable in .env feeds both rather than two that can drift apart.
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DB:-openincident}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-openincident}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openincident}
     # The ping monitor sends ICMP from an unprivileged datagram socket. Docker
     # has set this range in every container since 2020, so this line changes
     # nothing today — it is written down so a future default cannot take the
@@ -158,6 +189,13 @@ services:
       BASE_DOMAIN: ${BASE_DOMAIN:-localhost:3000}
       STATUS_BASE_DOMAIN: ${STATUS_BASE_DOMAIN:-status.localhost:3001}
       WORKER_QUEUES: bulk
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-}
+      # CLICKHOUSE_DATABASE here, CLICKHOUSE_DB on the store itself: the image's
+      # entrypoint reads the second name and our client reads the first, so one
+      # variable in .env feeds both rather than two that can drift apart.
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DB:-openincident}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-openincident}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openincident}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-}
     depends_on:
       migrate:
@@ -202,6 +240,72 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ---------- Observability (spec 15), behind the `telemetry` profile ----------
+  #
+  # Off by default, and that is a choice rather than an omission. A column
+  # store is a second database to run, back up and watch, and the incident
+  # product is whole without one: an installation that only wants alerting and
+  # on-call should not be paying for ClickHouse.
+  #
+  # Turning it on is one command and two variables:
+  #   docker compose --profile telemetry up -d
+  # with CLICKHOUSE_URL set in .env so the web app, the worker and the
+  # migrations all know the store exists. Without it every telemetry screen
+  # says so and offers this line, rather than drawing empty charts.
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.3-alpine
+    profiles: ["telemetry"]
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-openincident}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-openincident}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openincident}
+      # Without this the entrypoint creates the user with no password at all,
+      # and ClickHouse then refuses every authenticated connection.
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - chdata:/var/lib/clickhouse
+    # ClickHouse opens a file per part and merges them constantly; the default
+    # 1024 is reached by a single busy table and the symptom is a store that
+    # stops accepting writes.
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # The OTLP endpoint your services send to. Its own container because it is
+  # the one part of the stack that faces the outside on a port of its own, and
+  # because a busy installation will want more than one of it without
+  # multiplying the web app.
+  telemetry:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: telemetry
+    profiles: ["telemetry"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://openincident_app:${APP_DB_PASSWORD:-openincident_app}@postgres:5432/${POSTGRES_DB:-openincident}
+      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DB:-openincident}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-openincident}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-openincident}
+      TELEMETRY_PORT: "4318"
+    ports:
+      # 4318 is OTLP/HTTP's registered port, so a collector pointed at this
+      # host needs no port in its endpoint.
+      - "${TELEMETRY_PORT:-4318}:4318"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Optional object storage for workspace files (logos). Start it with
   # `docker compose --profile storage up -d` and set S3_* in .env accordingly,
   # or point S3_* at any S3-compatible bucket you already run.
@@ -240,6 +344,7 @@ services:
       echo bucket ready"
 
 volumes:
+  chdata:
   pgdata:
   redisdata:
   miniodata:

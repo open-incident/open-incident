@@ -65,7 +65,8 @@ export const fr: Dictionary = {
     "Logs, traces et métriques arrivent avec le module OpenTelemetry optionnel. Rien n'est simulé ici : une fois installé, les services montrent leur trafic, les incidents montrent ce qui a changé, et Atlas cite spans et logs.",
   "telemetry.installTitle": "Installer sur cette instance",
   "telemetry.installMeta": "· admin · environ 10 min",
-  "telemetry.step1": "Activez le module : il ajoute un stockage ClickHouse et le récepteur OTLP.",
+  "telemetry.step1":
+    "Démarrez le stockage et le récepteur : `docker compose --profile telemetry up -d`, puis renseignez CLICKHOUSE_URL dans .env et redémarrez. Les migrations partent toutes seules.",
   "telemetry.step2":
     "Pointez votre collecteur OpenTelemetry ou vos SDK vers {endpoint} avec le jeton de l'espace, montré une seule fois.",
   "telemetry.step3":
@@ -457,7 +458,7 @@ export const fr: Dictionary = {
   "monitors.typeExceptionsHint":
     "Se déclenche quand un bug apparaît ou revient — une alerte par exception, pas par occurrence.",
   "monitors.why.telemetry-service":
-    "Indisponible sur cette instance — pas de base colonne. Démarrez-la avec : docker compose --profile telemetry up -d clickhouse telemetry",
+    "Indisponible sur cette instance — pas de base colonne. Démarrez-en une avec `docker compose --profile telemetry up -d`, puis renseignez CLICKHOUSE_URL dans .env.",
   "monitors.criteriaSentence.logs": "",
   "monitors.criteriaSentence.traces": "",
   "monitors.criteriaSentence.metrics": "",
@@ -669,6 +670,16 @@ export const fr: Dictionary = {
   "slo.budgetOver": "budget dépassé {times}×",
   "slo.alreadySpent": "déjà dépassé",
   "slo.notBurning": "rien ne brûle",
+  "telemetry.packs": "Packs Collector",
+  "telemetry.packsHint":
+    "Des configurations OpenTelemetry Collector prêtes à l’emploi. Chacune ne demande que l’adresse ci-dessus et une clé — les services qu’elle trouve apparaissent tout seuls dans Services.",
+  "telemetry.packHost": "CPU, mémoire, charge, disque, système de fichiers, réseau d’une machine",
+  "telemetry.packPostgres":
+    "Connexions face à max_connections, commits, lignes mortes, hits d’index",
+  "telemetry.packDocker": "CPU, mémoire, réseau et E/S bloc par conteneur",
+  "telemetry.packKubernetes": "Métriques kubelet, objets du cluster et logs de conteneurs",
+  "telemetry.packsWhere":
+    "Dans docker/collector/ du dépôt, avec un README qui dit lesquels ont été exécutés contre un vrai démon et lesquels non.",
   "monitors.on.packet_loss_pct": "perte de paquets (%)",
   "monitors.routeName": "Moniteur — {name}",
   "monitors.routeDesc":

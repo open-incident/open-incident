@@ -70,6 +70,20 @@ COPY . .
 RUN pnpm install --frozen-lockfile
 CMD ["pnpm", "--filter", "@openincident/synthetic", "start"]
 
+# ---------- telemetry: the OTLP ingestion endpoint ----------
+# Its own target rather than a second command on the worker, because it is the
+# only service in the stack that faces the outside on a port of its own and is
+# started by a profile: an installation without a column store should not be
+# running it at all, and one with a very busy one may want several.
+FROM build AS telemetry
+ENV NODE_ENV=production
+CMD ["pnpm", "--filter", "@openincident/telemetry-ingest", "start"]
+
 # ---------- migrate: migrations + RLS (+ demo seed) ----------
 FROM build AS migrate
-CMD ["sh", "-c", "pnpm --filter @openincident/db db:migrate && pnpm --filter @openincident/db db:rls && if [ \"$SEED_DEMO\" = \"true\" ]; then pnpm db:seed && pnpm db:seed:auth; fi"]
+# The column store's migrations run here too, and only when one is configured:
+# `ch:migrate` is a no-op without CLICKHOUSE_URL, so an installation that never
+# starts the telemetry profile is not asked to have one. Running them in the
+# same place as the Postgres migrations is what keeps a deployment from having
+# a schema on one side and not the other.
+CMD ["sh", "-c", "pnpm --filter @openincident/db db:migrate && pnpm --filter @openincident/db db:rls && if [ -n \"$CLICKHOUSE_URL\" ]; then pnpm ch:migrate; fi && if [ \"$SEED_DEMO\" = \"true\" ]; then pnpm db:seed && pnpm db:seed:auth; fi"]

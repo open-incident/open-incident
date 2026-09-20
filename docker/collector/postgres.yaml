@@ -1,0 +1,75 @@
+# PostgreSQL — connections, commits, dead rows, index hits — into Open Incident.
+#
+# The one metric this pack exists for is `postgresql.backends` against the
+# server's `max_connections`. A pool that has run out is the most common cause
+# of an application that is up, answering, and useless — and it is invisible
+# from the application's own metrics, which just show everything getting slow.
+#
+#   docker run -d --name oi-collector-postgres \
+#     -v $PWD/postgres.yaml:/etc/otelcol/config.yaml \
+#     -e OI_ENDPOINT=https://otlp.<your workspace host> \
+#     -e OI_KEY=<the ingestion key> \
+#     -e PG_ENDPOINT=db.internal:5432 \
+#     -e PG_USER=openincident -e PG_PASSWORD=… \
+#     otel/opentelemetry-collector-contrib:0.137.0 --config /etc/otelcol/config.yaml
+#
+# The user needs `pg_monitor`, and nothing more:
+#   GRANT pg_monitor TO <user>;
+#
+# The collector version is pinned and it matters here: PostgreSQL 17 moved the
+# checkpoint counters out of pg_stat_bgwriter, and a receiver older than that
+# scrapes nothing at all — "column checkpoints_req does not exist", once per
+# interval, for ever. 0.137 knows the new shape.
+
+receivers:
+  postgresql:
+    endpoint: ${env:PG_ENDPOINT}
+    username: ${env:PG_USER}
+    password: ${env:PG_PASSWORD}
+    # Every database on the server. Naming them explicitly means a database
+    # created next month is a database nobody is watching.
+    databases: []
+    collection_interval: 30s
+    tls:
+      insecure: ${env:PG_INSECURE}
+
+processors:
+  resource:
+    attributes:
+      - key: service.name
+        value: ${env:OI_SERVICE_NAME}
+        action: upsert
+      - key: deployment.environment
+        value: ${env:OI_ENVIRONMENT}
+        action: upsert
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 256
+    spike_limit_mib: 64
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+
+exporters:
+  otlphttp:
+    endpoint: ${env:OI_ENDPOINT}
+    headers:
+      x-oi-key: ${env:OI_KEY}
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 60s
+      max_elapsed_time: 600s
+    sending_queue:
+      enabled: true
+      queue_size: 1000
+
+service:
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    metrics:
+      receivers: [postgresql]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlphttp]

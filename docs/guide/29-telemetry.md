@@ -18,6 +18,27 @@ product keeps — billions of rows nobody updates, queried by time range — and
 putting it in PostgreSQL would ruin both. Configuration and state stay in
 PostgreSQL; the signal goes to ClickHouse, never the other way round.
 
+Both the store and the OTLP receiver sit behind a `telemetry` profile, off by
+default. That is a choice rather than an omission: a column store is a second
+database to run, back up and watch, and the incident product is whole without
+one. An installation that only wants alerting and on-call should not be paying
+for it.
+
+**Self-hosting**, from `compose.yaml`. Set `CLICKHOUSE_URL` in `.env` first, or
+the migrate service has nothing to migrate:
+
+```
+CLICKHOUSE_URL=http://clickhouse:8123   # in .env
+docker compose --profile telemetry up -d
+```
+
+That starts ClickHouse and the ingestion service, and the migrate service
+applies the column store's schema alongside the PostgreSQL migrations — one
+place, so a deployment cannot end up with a schema on one side and not the
+other.
+
+**Developing on the host machine**, from the development stack:
+
 ```
 docker compose -f docker/docker-compose.yml --profile telemetry up -d
 pnpm ch:migrate
@@ -31,6 +52,27 @@ Then, on the instance:
 | `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DATABASE` | Default to the compose values.                                                                                      |
 | `TELEMETRY_PUBLIC_ORIGIN`                                       | The address collectors send to. The ingestion service is a separate process, so this is not the product's own host. |
 | `TELEMETRY_PORT`                                                | What that service listens on. `4318`, the OTLP/HTTP default.                                                        |
+
+## Collector packs
+
+`docker/collector/` holds ready-made OpenTelemetry Collector configurations:
+the host's own numbers, PostgreSQL, Docker containers, Kubernetes. Each takes
+the endpoint and a key and nothing else, and the services it finds appear in
+**Services** on their own. They are listed on **Telemetry → Connect**, beside
+the key they need.
+
+Its README says which of them have been started against a real daemon and
+which have not — three of the four, and the fourth says so in its own header.
+A pack that has never been run is documentation, not a pack, and finding that
+out during an incident is the wrong time.
+
+Two things running them taught us, both pinned into the files:
+
+- The **PostgreSQL** receiver before collector 0.116 reads a column PostgreSQL
+  17 removed. The scrape then fails every interval and sends nothing.
+- The **Docker** receiver defaults to API version 1.25, which Docker 25 and
+  later refuse; and the collector image runs unprivileged while the socket
+  belongs to root, so it needs `--user 0` or the socket's group.
 
 ## Sending
 

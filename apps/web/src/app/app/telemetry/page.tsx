@@ -443,6 +443,47 @@ async function ConnectTab({
         </pre>
       </div>
 
+      {/*
+        The packs, beside the key they need. A reader on this screen has just
+        been handed a token and an endpoint; the next thing they want is
+        something to paste them into, and sending them to a repository to look
+        for it is where onboarding stops.
+      */}
+      <div style={{ ...CARD, padding: "14px 16px" }}>
+        <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 4 }}>
+          {t("telemetry.packs")}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--ink-3)", marginBottom: 10, lineHeight: 1.5 }}>
+          {t("telemetry.packsHint")}
+        </div>
+        {(
+          [
+            ["host", "telemetry.packHost"],
+            ["postgres", "telemetry.packPostgres"],
+            ["docker", "telemetry.packDocker"],
+            ["kubernetes", "telemetry.packKubernetes"],
+          ] as const
+        ).map(([file, label]) => (
+          <div
+            key={file}
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 10,
+              padding: "6px 0",
+              borderTop: "1px solid var(--line-2)",
+              fontSize: 12.5,
+            }}
+          >
+            <span style={{ ...MONO, fontWeight: 600, minWidth: 130 }}>{file}.yaml</span>
+            <span style={{ color: "var(--ink-2)", lineHeight: 1.45 }}>{t(label)}</span>
+          </div>
+        ))}
+        <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 10, lineHeight: 1.5 }}>
+          {t("telemetry.packsWhere")}
+        </div>
+      </div>
+
       <div style={{ ...CARD, padding: "14px 16px" }}>
         <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10 }}>
           {t("telemetry.keys")}

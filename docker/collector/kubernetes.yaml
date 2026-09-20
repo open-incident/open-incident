@@ -1,0 +1,128 @@
+# Kubernetes — cluster objects, kubelet metrics, and container logs.
+#
+# Unlike the other three packs in this directory, this one has **not** been run
+# against a real cluster here. It is written from the receivers' documented
+# configuration and it is the shape a cluster needs; treat the first deploy as
+# the test, and read the collector's own log before believing the dashboards.
+# Saying so is cheaper than you finding out during an incident.
+#
+# It is a DaemonSet config: one collector per node, reading that node's kubelet
+# and that node's container logs. The cluster-wide objects (deployments,
+# replica counts, pod phases) come from `k8s_cluster`, which must run exactly
+# once — so in a real deployment this file is split in two, and the comment at
+# the bottom says how.
+#
+# The service account needs read on nodes, nodes/stats, pods, namespaces,
+# deployments, replicasets, daemonsets, statefulsets, jobs and cronjobs.
+
+receivers:
+  # The node's own kubelet: CPU, memory, filesystem and network per pod and per
+  # container, which is what an "is it the app or the node" question needs.
+  kubeletstats:
+    collection_interval: 30s
+    auth_type: serviceAccount
+    endpoint: https://${env:K8S_NODE_NAME}:10250
+    insecure_skip_verify: true
+    metric_groups: [container, pod, node]
+    extra_metadata_labels: [container.id]
+
+  # Cluster objects. One replica, cluster-wide — see the note at the bottom.
+  k8s_cluster:
+    collection_interval: 30s
+    node_conditions_to_report: [Ready, DiskPressure, MemoryPressure]
+    allocatable_types_to_report: [cpu, memory]
+
+  # Container logs from the node's filesystem. `include_file_path` is on
+  # because the path carries the namespace, pod and container, and the
+  # processor below turns them into attributes — a log line whose pod nobody
+  # can tell is a log line nobody can use.
+  filelog:
+    include: [/var/log/pods/*/*/*.log]
+    exclude: [/var/log/pods/*/otel-collector/*.log]
+    start_at: end
+    include_file_path: true
+    include_file_name: false
+    operators:
+      - type: container
+        id: container-parser
+
+processors:
+  # Fills in namespace, pod, deployment and node from the Kubernetes API, so
+  # every signal carries the same names the person reading it uses.
+  k8sattributes:
+    auth_type: serviceAccount
+    passthrough: false
+    extract:
+      metadata:
+        - k8s.namespace.name
+        - k8s.pod.name
+        - k8s.deployment.name
+        - k8s.node.name
+        - k8s.container.name
+    pod_association:
+      - sources:
+          - from: resource_attribute
+            name: k8s.pod.uid
+      - sources:
+          - from: connection
+
+  # `service.name` decides which service a signal belongs to in the product.
+  # Taking it from the deployment rather than a fixed value is what makes one
+  # collector serve a whole cluster.
+  resource:
+    attributes:
+      - key: service.name
+        from_attribute: k8s.deployment.name
+        action: insert
+      - key: deployment.environment
+        value: ${env:OI_ENVIRONMENT}
+        action: upsert
+
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 512
+    spike_limit_mib: 128
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+
+exporters:
+  otlphttp:
+    endpoint: ${env:OI_ENDPOINT}
+    headers:
+      x-oi-key: ${env:OI_KEY}
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 60s
+      max_elapsed_time: 600s
+    sending_queue:
+      enabled: true
+      queue_size: 2000
+
+service:
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    metrics:
+      receivers: [kubeletstats, k8s_cluster]
+      processors: [memory_limiter, k8sattributes, resource, batch]
+      exporters: [otlphttp]
+    logs:
+      receivers: [filelog]
+      processors: [memory_limiter, k8sattributes, resource, batch]
+      exporters: [otlphttp]
+
+# Splitting this in two, which a real cluster needs:
+#
+#   DaemonSet  — keep `kubeletstats` and `filelog`, drop `k8s_cluster`. One per
+#                node, each reading only its own node.
+#   Deployment — keep `k8s_cluster` alone, one replica. Running it on every
+#                node would report every object once per node, and every count
+#                in the product would be multiplied by the size of the cluster.
+#
+# K8S_NODE_NAME comes from the downward API:
+#   env:
+#     - name: K8S_NODE_NAME
+#       valueFrom: { fieldRef: { fieldPath: spec.nodeName } }

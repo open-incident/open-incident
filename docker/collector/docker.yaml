@@ -1,0 +1,90 @@
+# Container metrics — CPU, memory, network, block I/O, per container.
+#
+# Worth having next to the host pack rather than instead of it: the host says
+# the machine is fine, this says which container ate it. During an incident
+# that is the difference between "the box is busy" and "the payments worker is
+# busy", and only the second one is actionable.
+#
+#   docker run -d --name oi-collector-docker --user 0 \
+#     -v $PWD/docker.yaml:/etc/otelcol/config.yaml \
+#     -v /var/run/docker.sock:/var/run/docker.sock:ro \
+#     -e OI_ENDPOINT=https://otlp.<your workspace host> \
+#     -e OI_KEY=<the ingestion key> \
+#     otel/opentelemetry-collector-contrib:0.137.0 --config /etc/otelcol/config.yaml
+#
+# Two things this needs that nothing warns you about, both found by running it:
+#
+#   --user 0   The collector image runs as an unprivileged user, and the Docker
+#              socket is owned by root. Without this the receiver fails to
+#              start with "permission denied" and the collector exits. On a
+#              host where the socket has a group, `--group-add <gid>` is the
+#              narrower way.
+#
+#   api_version, below. The receiver's default is 1.25, which Docker 25 and
+#              later refuse outright.
+#
+# The socket is mounted read-only, and the receiver only reads: it lists
+# containers and reads their stats. It cannot start, stop or exec anything —
+# but a Docker socket is still the host, so give it to a collector you run and
+# not to one somebody else configures.
+
+receivers:
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
+    collection_interval: 30s
+    # Stated, and not left to the receiver's default of 1.25 — which Docker 25
+    # and later refuse outright ("client version 1.25 is too old"). The
+    # collector then fails to start rather than degrading, so an unstated
+    # version is a pack that does nothing on any current host.
+    api_version: "1.44"
+    # The container's own name becomes a label, so one series per container
+    # rather than one per container id — an id changes on every deploy and a
+    # chart keyed on it restarts from nothing every time.
+    container_labels_to_metric_labels:
+      com.docker.compose.service: compose.service
+    metrics:
+      container.cpu.utilization:
+        enabled: true
+      container.memory.percent:
+        enabled: true
+
+processors:
+  resource:
+    attributes:
+      - key: service.name
+        value: ${env:OI_SERVICE_NAME}
+        action: upsert
+      - key: deployment.environment
+        value: ${env:OI_ENVIRONMENT}
+        action: upsert
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 256
+    spike_limit_mib: 64
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+
+exporters:
+  otlphttp:
+    endpoint: ${env:OI_ENDPOINT}
+    headers:
+      x-oi-key: ${env:OI_KEY}
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 60s
+      max_elapsed_time: 600s
+    sending_queue:
+      enabled: true
+      queue_size: 1000
+
+service:
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    metrics:
+      receivers: [docker_stats]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlphttp]

@@ -65,7 +65,7 @@ export const de: Dictionary = {
   "telemetry.installTitle": "Auf dieser Instanz installieren",
   "telemetry.installMeta": "· Admin · etwa 10 Min.",
   "telemetry.step1":
-    "Modul aktivieren: es fügt einen ClickHouse-Speicher und den OTLP-Empfänger hinzu.",
+    "Speicher und Empfänger starten: `docker compose --profile telemetry up -d`, dann CLICKHOUSE_URL in .env setzen und neu starten. Die Migrationen laufen von selbst.",
   "telemetry.step2":
     "Richten Sie Ihren OpenTelemetry-Collector oder Ihre SDKs auf {endpoint} mit dem einmalig gezeigten Arbeitsbereichs-Token.",
   "telemetry.step3":
@@ -460,7 +460,7 @@ export const de: Dictionary = {
   "monitors.typeExceptionsHint":
     "Löst aus, wenn ein Fehler auftritt oder wiederkommt — eine Meldung je Ausnahme, nicht je Vorkommen.",
   "monitors.why.telemetry-service":
-    "Auf dieser Instanz nicht verfügbar — kein Spaltenspeicher. Starten mit: docker compose --profile telemetry up -d clickhouse telemetry",
+    "Auf dieser Instanz nicht verfügbar — kein Spaltenspeicher. Starten Sie einen mit `docker compose --profile telemetry up -d` und setzen Sie CLICKHOUSE_URL in .env.",
   "monitors.criteriaSentence.logs": "",
   "monitors.criteriaSentence.traces": "",
   "monitors.criteriaSentence.metrics": "",
@@ -674,6 +674,16 @@ export const de: Dictionary = {
   "slo.budgetOver": "Budget {times}× überzogen",
   "slo.alreadySpent": "bereits aufgebraucht",
   "slo.notBurning": "kein Verbrauch",
+  "telemetry.packs": "Collector-Pakete",
+  "telemetry.packsHint":
+    "Fertige OpenTelemetry-Collector-Konfigurationen. Jede braucht nur die Adresse oben und einen Schlüssel — die gefundenen Dienste erscheinen von selbst unter Dienste.",
+  "telemetry.packHost": "CPU, Speicher, Last, Festplatte, Dateisystem, Netzwerk einer Maschine",
+  "telemetry.packPostgres":
+    "Verbindungen gegen max_connections, Commits, tote Zeilen, Index-Treffer",
+  "telemetry.packDocker": "CPU, Speicher, Netzwerk und Block-I/O je Container",
+  "telemetry.packKubernetes": "Kubelet-Metriken, Cluster-Objekte und Container-Logs",
+  "telemetry.packsWhere":
+    "Unter docker/collector/ im Repository, mit einer README, die sagt, welche gegen einen echten Daemon gelaufen sind und welche nicht.",
   "monitors.on.packet_loss_pct": "Paketverlust (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

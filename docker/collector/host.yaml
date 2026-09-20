@@ -1,0 +1,93 @@
+# Host metrics — CPU, memory, disk, filesystem, network — into Open Incident.
+#
+# What this pack is for: the machine's own numbers, next to the application's.
+# An incident that reads "p95 tripled" and an incident that reads "p95 tripled
+# and the disk filled" are two different investigations, and the second one is
+# over in a minute.
+#
+# Run it beside your service:
+#   docker run -d --name oi-collector \
+#     -v $PWD/host.yaml:/etc/otelcol/config.yaml \
+#     -v /:/hostfs:ro,rslave \
+#     -e OI_ENDPOINT=https://otlp.<your workspace host> \
+#     -e OI_KEY=<the ingestion key> \
+#     otel/opentelemetry-collector-contrib:0.137.0 --config /etc/otelcol/config.yaml
+#
+# The host's root is mounted read-only at /hostfs because a collector in a
+# container otherwise reports the container's filesystem: a disk that is always
+# 2 % full, which is worse than no metric at all.
+
+receivers:
+  hostmetrics:
+    collection_interval: 30s
+    root_path: /hostfs
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      load:
+      disk:
+      filesystem:
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+        exclude_mount_points:
+          # The container's own layers and the kernel's pseudo-filesystems are
+          # not disks anybody can run out of.
+          mount_points: ["/hostfs/var/lib/docker/*", "/hostfs/proc/*", "/hostfs/sys/*"]
+          match_type: regexp
+      network:
+      paging:
+
+processors:
+  # Names every series. Without it the metrics arrive with no service.name and
+  # the ingestion refuses them — deliberately, because a metric that belongs to
+  # nothing is a metric nobody can find again.
+  resource:
+    attributes:
+      - key: service.name
+        value: ${env:OI_SERVICE_NAME}
+        action: upsert
+      - key: deployment.environment
+        value: ${env:OI_ENVIRONMENT}
+        action: upsert
+  # A ceiling, so a collector that cannot reach us does not take the host down
+  # with it.
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 256
+    spike_limit_mib: 64
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+
+exporters:
+  otlphttp:
+    endpoint: ${env:OI_ENDPOINT}
+    headers:
+      x-oi-key: ${env:OI_KEY}
+    # Keep trying: a five-minute network partition should not lose five minutes
+    # of the host's history.
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 60s
+      max_elapsed_time: 600s
+    sending_queue:
+      enabled: true
+      queue_size: 1000
+
+service:
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    metrics:
+      receivers: [hostmetrics]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlphttp]

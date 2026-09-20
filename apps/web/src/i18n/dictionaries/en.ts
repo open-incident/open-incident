@@ -73,7 +73,8 @@ export const en = {
     "Logs, traces and metrics arrive with the optional OpenTelemetry module. Nothing here is simulated: once installed, services show their traffic, incidents show what changed, and Atlas cites spans and logs.",
   "telemetry.installTitle": "Install on this instance",
   "telemetry.installMeta": "· admin · about 10 min",
-  "telemetry.step1": "Enable the module: it adds a ClickHouse store and the OTLP receiver.",
+  "telemetry.step1":
+    "Start the store and the receiver: `docker compose --profile telemetry up -d`, then set CLICKHOUSE_URL in .env and restart. The migrations run on their own.",
   "telemetry.step2":
     "Point your OpenTelemetry collector or SDKs at {endpoint} with the workspace token, shown once.",
   "telemetry.step3":
@@ -457,7 +458,7 @@ export const en = {
   "monitors.typeExceptionsHint":
     "Fires when a bug appears or comes back — one alert per exception, not per occurrence.",
   "monitors.why.telemetry-service":
-    "Unavailable on this instance — no column store. Start it with: docker compose --profile telemetry up -d clickhouse telemetry",
+    "Unavailable on this instance — no column store. Start one with `docker compose --profile telemetry up -d`, then set CLICKHOUSE_URL in .env.",
   "monitors.criteriaSentence.logs": "",
   "monitors.criteriaSentence.traces": "",
   "monitors.criteriaSentence.metrics": "",
@@ -669,6 +670,15 @@ export const en = {
   "slo.budgetOver": "the budget is spent {times}× over",
   "slo.alreadySpent": "already spent",
   "slo.notBurning": "not burning",
+  "telemetry.packs": "Collector packs",
+  "telemetry.packsHint":
+    "Ready-made OpenTelemetry Collector configurations. Each takes the endpoint above and a key, and nothing else — the services it finds appear in Services on their own.",
+  "telemetry.packHost": "CPU, memory, load, disk, filesystem, network of a machine",
+  "telemetry.packPostgres": "Connections against max_connections, commits, dead rows, index hits",
+  "telemetry.packDocker": "CPU, memory, network and block I/O per container",
+  "telemetry.packKubernetes": "Kubelet metrics, cluster objects and container logs",
+  "telemetry.packsWhere":
+    "In docker/collector/ of the repository, with a README saying which of them have been run against a real daemon and which have not.",
   "monitors.on.packet_loss_pct": "packet loss (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

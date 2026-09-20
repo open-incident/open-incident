@@ -1,0 +1,62 @@
+# Collector packs
+
+Ready-made OpenTelemetry Collector configurations that send a machine's own
+numbers to Open Incident. Point one at your instance and the services appear in
+**Services** on their own — there is nothing to declare first.
+
+Each pack takes the same two variables:
+
+| Variable          | What it is                                                      |
+| ----------------- | --------------------------------------------------------------- |
+| `OI_ENDPOINT`     | The OTLP address of your instance, from **Telemetry → Connect** |
+| `OI_KEY`          | An ingestion key, issued on the same screen and shown once      |
+| `OI_SERVICE_NAME` | What this collector's own metrics are filed under               |
+| `OI_ENVIRONMENT`  | `production`, `staging` — whatever you call them                |
+
+| Pack              | What it sends                                            | Run against a real one? |
+| ----------------- | -------------------------------------------------------- | ----------------------- |
+| `host.yaml`       | CPU, memory, load, disk, filesystem, network, paging     | Yes                     |
+| `postgres.yaml`   | Connections, commits, dead rows, index hits, table sizes | Yes, PostgreSQL 17      |
+| `docker.yaml`     | CPU, memory, network and block I/O per container         | Yes, Docker 29          |
+| `kubernetes.yaml` | Kubelet metrics, cluster objects, container logs         | **No** — see its header |
+
+The last column is the point of this table. Three of these were started against
+a real daemon and the metrics were read back out of the store; the fourth was
+not, and its header says so rather than letting you find out during an
+incident.
+
+## The collector version is pinned, and it matters
+
+Every pack names `otel/opentelemetry-collector-contrib:0.137.0`. Two things
+found by running the older release we started with:
+
+- The **PostgreSQL** receiver before 0.116 reads `pg_stat_bgwriter.checkpoints_req`,
+  which PostgreSQL 17 removed. The result is not a missing metric, it is a
+  scrape that fails every interval and sends nothing.
+- The **Docker** receiver defaults to API version 1.25, which Docker 25 and
+  later refuse. The collector fails to start.
+
+Neither degrades quietly, which is the good news — but both look like "the pack
+does not work" rather than "the version is wrong".
+
+## What each pack is for
+
+**host** — the machine's numbers beside the application's. An incident that
+reads "p95 tripled" and one that reads "p95 tripled and the disk filled" are
+two different investigations, and the second is over in a minute. Mount the
+host's root at `/hostfs`, or the collector reports its own container's
+filesystem: a disk that is always 2 % full, which is worse than no metric.
+
+**postgres** — the metric this exists for is `postgresql.backends` against
+`max_connections`. A pool that has run out is the commonest cause of an
+application that is up, answering and useless, and it is invisible from the
+application's own metrics, which just show everything getting slow.
+
+**docker** — worth having beside the host pack rather than instead of it. The
+host says the machine is busy; this says which container. Only the second is
+actionable. Needs `--user 0` (or `--group-add` the socket's group) — the image
+runs unprivileged and the socket is root's.
+
+**kubernetes** — one collector per node for the kubelet and the logs, plus
+exactly one cluster-wide for the objects. Running the second on every node
+multiplies every count in the product by the size of the cluster.
