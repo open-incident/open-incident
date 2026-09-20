@@ -781,6 +781,10 @@ export const de: Dictionary = {
   "explorer.placeholder.logs": "severity_number >= 17 AND service_name = 'checkout-api'",
   "explorer.placeholder.traces": "status_code = 'error' AND duration_ms > 500",
   "explorer.placeholder.exceptions": "type =~ '.*Timeout' AND environment = 'production'",
+  "logs.stream": "Strom",
+  "logs.patterns": "Muster",
+  "logs.patternsNote":
+    "Dieselben Zeilen, auf ihre Formen gefaltet: zehntausend Zeilen „user 4821 not found“ sind ein Vorgang. Zahlen, Kennungen, Pfade und URLs werden ersetzt; die Zahl ist, wie viele Zeilen die Form in 24 Stunden abdeckt. Zeigen Sie auf eine Zeile für ein Original.",
   "monitors.on.packet_loss_pct": "Paketverlust (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

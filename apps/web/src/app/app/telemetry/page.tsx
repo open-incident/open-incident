@@ -5,6 +5,7 @@ import { requireTenant } from "@/lib/tenant";
 import { otlpEndpoints } from "@/lib/telemetry-module";
 import {
   listKeys,
+  logPatterns,
   logs,
   recentRejections,
   telemetryInstalled,
@@ -105,6 +106,7 @@ export default async function TelemetryPage({
     since?: string;
     q?: string;
     session?: string;
+    patterns?: string;
     type?: string;
     compare?: string;
     view?: string;
@@ -211,6 +213,7 @@ export default async function TelemetryPage({
             service={sp.service}
             filter={sp.q}
             mayEdit={canRespond(member)}
+            patterns={sp.patterns === "1"}
           />
         )}
         {tab === "traces" && (
@@ -297,38 +300,169 @@ async function LogsTab({
   service,
   filter,
   mayEdit,
+  patterns,
 }: {
   tenantId: string;
   service?: string;
   filter?: string;
   mayEdit: boolean;
+  /** The same stream, folded into the shapes of line it contains. */
+  patterns?: boolean;
 }) {
   const t = await getT();
   // The filter is compiled here rather than validated first: the compiler is
   // the only thing that knows what is valid, and running it twice to ask the
   // same question would be two places for the answer to differ.
   let rows: Awaited<ReturnType<typeof logs>> = [];
+  let shapes: Awaited<ReturnType<typeof logPatterns>> = [];
   let error: string | null = null;
   try {
-    rows = await logs(tenantId, { limit: 200, ...(service ? { service } : {}), filter });
+    if (patterns) shapes = await logPatterns(tenantId, { sinceHours: 24, service, filter });
+    else rows = await logs(tenantId, { limit: 200, ...(service ? { service } : {}), filter });
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
 
+  const modeHref = (on: boolean) => {
+    const p = new URLSearchParams({
+      tab: "logs",
+      ...(service ? { service } : {}),
+      ...(filter ? { q: filter } : {}),
+      ...(on ? { patterns: "1" } : {}),
+    });
+    return `/app/telemetry?${p.toString()}`;
+  };
   const bar = (
-    <QueryBar
-      tenantId={tenantId}
-      signal="logs"
-      query={filter}
-      service={service}
-      mayEdit={mayEdit}
-    />
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <QueryBar
+        tenantId={tenantId}
+        signal="logs"
+        query={filter}
+        service={service}
+        mayEdit={mayEdit}
+      />
+      <div style={{ display: "flex", gap: 6 }}>
+        {[false, true].map((on) => (
+          <Link
+            key={String(on)}
+            href={modeHref(on)}
+            data-testid={on ? "logs-patterns" : "logs-stream"}
+            style={{
+              fontSize: 12,
+              padding: "4px 10px",
+              borderRadius: 7,
+              border: "1px solid var(--line)",
+              background: on === !!patterns ? "var(--panel)" : "transparent",
+              color: on === !!patterns ? "var(--ink)" : "var(--ink-3)",
+              fontWeight: on === !!patterns ? 600 : 400,
+              textDecoration: "none",
+            }}
+          >
+            {t(on ? "logs.patterns" : "logs.stream")}
+          </Link>
+        ))}
+      </div>
+    </div>
   );
   if (error) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {bar}
         <FilterError message={error} />
+      </div>
+    );
+  }
+  /*
+   * A pattern's longest literal run, for the click-through.
+   *
+   * The pattern itself has holes in it, so it cannot be matched exactly. The
+   * longest stretch between two placeholders can be, and for `user <n>
+   * checkout failed` that is "checkout failed" — which narrows the stream to
+   * the lines this row folded and nothing else worth mentioning. Below four
+   * characters it would match half the stream, so the row stays a link back to
+   * the unfiltered view rather than a filter that pretends.
+   */
+  const literalOf = (pattern: string): string | null => {
+    const runs = pattern.split(/<(?:n|url|uuid|hex|path)>/).map((r) => r.trim());
+    const longest = runs.sort((a, b) => b.length - a.length)[0] ?? "";
+    // An apostrophe would end the quoted value the filter language builds.
+    return longest.length >= 4 && !longest.includes("'") ? longest : null;
+  };
+
+  if (patterns) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {bar}
+        {shapes.length === 0 ? (
+          <Empty message={t(filter ? "explorer.noMatch" : "telemetry.noLogs")} />
+        ) : (
+          <div style={{ ...CARD, overflow: "hidden" }} data-testid="log-patterns">
+            {shapes.map((p, i) => {
+              const tone = severityTone(p.severity);
+              const literal = literalOf(p.pattern);
+              return (
+                <Link
+                  key={i}
+                  href={
+                    literal
+                      ? `/app/telemetry?${new URLSearchParams({
+                          tab: "logs",
+                          ...(service ? { service } : {}),
+                          q: `body contains '${literal}'`,
+                        }).toString()}`
+                      : modeHref(false)
+                  }
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "58px 70px minmax(0,1fr) 110px",
+                    gap: 10,
+                    padding: "8px 14px",
+                    borderTop: i ? "1px solid var(--line-2)" : "none",
+                    alignItems: "baseline",
+                    textDecoration: "none",
+                    color: "inherit",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: tone.color,
+                      background: tone.bg,
+                      borderRadius: 5,
+                      padding: "1px 5px",
+                      textAlign: "center",
+                    }}
+                  >
+                    {tone.label}
+                  </span>
+                  <span style={{ ...MONO, textAlign: "right", fontWeight: 600 }}>
+                    {p.occurrences}×
+                  </span>
+                  <span
+                    style={{
+                      ...MONO,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={p.sample}
+                  >
+                    {p.pattern}
+                  </span>
+                  <span
+                    style={{ ...MONO, fontSize: 10.5, color: "var(--ink-3)", textAlign: "right" }}
+                  >
+                    {p.services.slice(0, 2).join(", ")}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+        <span style={{ fontSize: 11, color: "var(--ink-3)", lineHeight: 1.5 }}>
+          {t("logs.patternsNote")}
+        </span>
       </div>
     );
   }

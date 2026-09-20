@@ -208,6 +208,7 @@ export async function exceptionDetail(tenantId: string, fingerprint: string) {
 export {
   layoutByDepth,
   neighbours,
+  logPatterns,
   serviceWindow,
   flamegraph,
   profileDiff,

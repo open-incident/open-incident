@@ -776,6 +776,10 @@ export const en = {
   "explorer.placeholder.logs": "severity_number >= 17 AND service_name = 'checkout-api'",
   "explorer.placeholder.traces": "status_code = 'error' AND duration_ms > 500",
   "explorer.placeholder.exceptions": "type =~ '.*Timeout' AND environment = 'production'",
+  "logs.stream": "Stream",
+  "logs.patterns": "Patterns",
+  "logs.patternsNote":
+    "The same lines, folded into the shapes they take: ten thousand rows reading “user 4821 not found” are one thing that happened. Numbers, identifiers, paths and URLs are replaced; the count is how many lines the shape covers over the last 24 hours. Hover a row for one of the originals.",
   "monitors.on.packet_loss_pct": "packet loss (%)",
   "monitors.routeName": "Monitor — {name}",
   "monitors.routeDesc":

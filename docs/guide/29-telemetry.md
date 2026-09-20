@@ -493,6 +493,25 @@ A rolling window forgives an incident gradually and never hands you a fresh
 budget. A calendar one restarts on the first, whether or not the problem was
 fixed — which is usually what a contract says.
 
+## Log patterns
+
+The Logs screen has two modes. **Stream** is the lines. **Patterns** is the
+same lines folded into the shapes they take, and it is the mode that makes the
+screen usable at real volume: ten thousand rows reading `user 4821 not found`
+are one thing that happened, and one row saying so with a count is a bug report
+where ten thousand are noise.
+
+The same idea as the exception fingerprint, applied to logs — numbers,
+identifiers, paths and URLs are replaced, and what is left is the shape. The
+fold runs in the column store rather than here, which is the only way it
+scales: folding a million lines means reading a million lines, and doing that
+in the application is a million rows over the wire to throw away.
+
+Clicking a pattern narrows the stream to it, using the longest literal run
+between the placeholders. Below four characters there is no run worth
+filtering on and the row simply returns to the stream — a filter that matched
+half of it would be worse than none.
+
 ## Filtering, saving, and watching
 
 Logs, Traces and Exceptions each take a filter, and it is the **same one-line

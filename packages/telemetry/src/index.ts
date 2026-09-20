@@ -8,6 +8,7 @@ export {
 export { migrateClickhouse, type MigrationResult } from "./migrate";
 export {
   read,
+  logPatterns,
   recentLogs,
   recentTraces,
   spansOfTrace,
@@ -33,6 +34,7 @@ export {
   type ExceptionFrame,
   type ExceptionGroup,
   type ExceptionOccurrence,
+  type LogPattern,
   type LogRow,
   type MetricName,
   type MetricPointRow,

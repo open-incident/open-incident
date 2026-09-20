@@ -245,6 +245,88 @@ export async function spansOfTrace(tenantId: string, traceId: string): Promise<S
   );
 }
 
+export type LogPattern = {
+  pattern: string;
+  occurrences: string;
+  services: string[];
+  severity: number;
+  first_seen: string;
+  last_seen: string;
+  sample: string;
+};
+
+/**
+ * The log stream, folded into the shapes of line it contains.
+ *
+ * The same insight as the exception fingerprint, applied to logs: ten thousand
+ * lines reading `user 4821 not found` are one thing that happened, and a
+ * screen showing them one per row is unreadable exactly when it matters. What
+ * a person needs at three in the morning is "these six shapes of line, and one
+ * of them is new tonight".
+ *
+ * The normalisation runs in the column store rather than here, which is the
+ * only way it scales: folding a million lines means reading a million lines,
+ * and doing that in the application is a million rows over the wire to throw
+ * away. The order of the replacements matters — URLs and paths before numbers,
+ * or the digits inside a path are replaced first and the path stops looking
+ * like one.
+ */
+export async function logPatterns(
+  tenantId: string,
+  opts: { sinceHours?: number; service?: string; filter?: string; limit?: number } = {},
+): Promise<LogPattern[]> {
+  const where = ["l.ts >= now() - INTERVAL {since:UInt32} HOUR"];
+  const params: Record<string, unknown> = {
+    since: opts.sinceHours ?? 24,
+    limit: opts.limit ?? 60,
+  };
+  if (opts.service) {
+    where.push("l.service_name = {service:String}");
+    params.service = opts.service;
+  }
+  if (opts.filter?.trim()) {
+    const compiled = compileFilter("logs", opts.filter);
+    where.push(compiled.sql);
+    Object.assign(params, compiled.params);
+  }
+
+  /*
+   * Every backslash is doubled, and that is not belt and braces.
+   *
+   * ClickHouse parses a single-quoted literal with `\` as an escape character
+   * before the regex engine ever sees it, so `\s` is a syntax error at the
+   * backslash and `\1` in a replacement never reaches RE2. The pattern has to
+   * arrive at the engine with its backslashes intact, which means writing two.
+   */
+  const NORMALISE = `
+    replaceRegexpAll(
+      replaceRegexpAll(
+        replaceRegexpAll(
+          replaceRegexpAll(
+            replaceRegexpAll(l.body, 'https?://[^[:space:]\\'"]+', '<url>'),
+            '[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}', '<uuid>'),
+          '(^|[[:space:]])(/[^[:space:]\\'":]+)+', '\\\\1<path>'),
+        '\\\\b[0-9a-fA-F]{16,}\\\\b', '<hex>'),
+      '\\\\b[0-9][0-9_.,]*\\\\b', '<n>')`;
+
+  return read<LogPattern>(
+    tenantId,
+    `SELECT ${NORMALISE} AS pattern,
+            toString(count()) AS occurrences,
+            groupUniqArray(10)(l.service_name) AS services,
+            max(l.severity_number) AS severity,
+            toString(min(l.ts)) AS first_seen,
+            toString(max(l.ts)) AS last_seen,
+            any(l.body) AS sample
+       FROM ${LOGS} AS l
+      WHERE ${where.join(" AND ")}
+      GROUP BY pattern
+      ORDER BY count() DESC
+      LIMIT {limit:UInt32}`,
+    { params, maxRows: 1_000 },
+  );
+}
+
 /** The tables a workspace's telemetry lives in — the purge's list, and the seed's. */
 export const TENANT_TABLES = ["otel_logs", "otel_spans", "otel_traces_index"] as const;
 
