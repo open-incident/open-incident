@@ -493,6 +493,48 @@ A rolling window forgives an incident gradually and never hands you a fresh
 budget. A calendar one restarts on the first, whether or not the problem was
 fixed — which is usually what a contract says.
 
+## Syslog and Fluent
+
+A load balancer, a firewall, a database, a switch, sshd — none of them will
+ever carry an OpenTelemetry SDK, and all of them emit syslog. Accepting it is
+the difference between "the logs of the services somebody instrumented" and
+"the logs", and during an incident the line that explains everything is as
+likely to come from the proxy as from the code.
+
+Both dialects are read, over TCP and UDP. RFC 5424 is the one with structured
+data and a real timestamp; RFC 3164 is the one from the eighties that most
+hardware still sends, whose date carries no year and no timezone — refusing it
+would refuse most of what actually arrives. Severities are mapped onto the same
+scale everything else uses, so a firewall's WARN sorts with an application's.
+The app-name becomes the service, because that is what syslog has that means
+"which thing wrote this".
+
+**The port is the credential.** Syslog has no header to put a key in and no
+handshake; a sender opens a socket and writes. So one port belongs to one
+workspace, named when the listener is configured:
+
+```
+OI_SYSLOG_PORT=5514
+OI_SYSLOG_KEY=oi_…
+```
+
+Off unless both are set. An open syslog port that files everything under
+whichever workspace happens to be first is the kind of default that is
+discovered by reading somebody else's logs.
+
+**Fluent Bit** posts to `/v1/fluent` with its HTTP output, which is one line of
+its configuration — `Name http` instead of `Name forward`. Its records have no
+schema, so the mapping is stated rather than guessed: `log`, `message`, `msg`,
+`short_message` or `MESSAGE` is the body; `level` or `severity` the severity;
+the tag names the service. Everything else becomes an attribute, with one level
+of nesting flattened — a Kubernetes filter puts the namespace, pod and
+container inside an object, and stringifying it whole makes "which pod" a
+question nobody can filter on.
+
+A batch whose records carry no recognisable message is answered **422**, not 200. The commonest cause is a parser putting the message under a key this does
+not know, and a green output plugin beside an empty screen is the worst
+possible pair of signals.
+
 ## Log patterns
 
 The Logs screen has two modes. **Stream** is the lines. **Patterns** is the

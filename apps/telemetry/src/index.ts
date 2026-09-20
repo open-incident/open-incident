@@ -37,6 +37,8 @@ import { ingestMetrics } from "./metrics-ingest";
 import { decodeRemoteWrite, remoteWriteVersion, RemoteWriteError } from "./remote-write";
 import { decodePprof, PprofError } from "./pprof";
 import { decodeRumBatch, originAllowed, RumError } from "./rum";
+import { decodeFluent } from "./fluent";
+import { startSyslog, syslogConfig } from "./syslog-server";
 import { ingestRum } from "./rum-ingest";
 import { ingestProfiles, parsePyroscopeName } from "./profiles-ingest";
 import { SnappyError } from "./snappy";
@@ -176,6 +178,17 @@ const PROFILE_PATHS = new Set(["/v1/profiles", "/ingest", "/ingest/v1/profiles"]
  */
 const RUM_PATH = "/v1/rum";
 
+/*
+ * Fluent Bit's HTTP output, which is one line of its configuration.
+ *
+ * Its native protocol is MessagePack over a socket; its HTTP output is a JSON
+ * array and every installation can switch to it by changing `Name forward` to
+ * `Name http`. Accepting the second rather than implementing the first is the
+ * trade that makes this a day's work instead of a fortnight's, and it costs a
+ * sender one line.
+ */
+const FLUENT_PATH = "/v1/fluent";
+
 /** Each signal answers a protobuf sender in its own response message. */
 function protoResponse(signal: Signal, rejected: number, message: string): Buffer {
   if (signal === "logs") return encodeLogsResponse(rejected, message);
@@ -199,6 +212,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (path === RUM_PATH && (req.method === "POST" || req.method === "OPTIONS")) {
     return rum(req, res);
   }
+  if (req.method === "POST" && path === FLUENT_PATH) return fluent(req, res);
 
   const signal = ROUTES[path];
   if (!signal || req.method !== "POST") return send(res, 404, { error: { code: "not_found" } });
@@ -519,15 +533,91 @@ async function rum(req: IncomingMessage, res: ServerResponse): Promise<void> {
   );
 }
 
+/**
+ * One batch from Fluent Bit.
+ *
+ * Its HTTP output sends an array of flat objects — whatever the parser
+ * produced, plus a `date`. Nothing about that is OTLP, so the mapping is
+ * stated here rather than guessed at: `log` or `message` is the body, `level`
+ * or `severity` the severity, and the tag names the service because a Fluent
+ * tag is exactly "which thing this came from".
+ *
+ * Everything else becomes an attribute. A Kubernetes filter adds a dozen
+ * useful ones and dropping them would lose the pod the line came from.
+ */
+async function fluent(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (!telemetryInstalled()) return send(res, 503, { error: { code: "module_not_installed" } });
+
+  const key = keyFromHeaders(req.headers);
+  if (!key) return send(res, 401, { error: { code: "missing_key", message: "send x-oi-key" } });
+  const caller = await callerFor(key);
+  if (!caller) return send(res, 401, { error: { code: "invalid_key" } });
+  if (!caller.signals.includes("logs"))
+    return send(res, 403, { error: { code: "signal_not_allowed" } });
+
+  let body: Buffer;
+  try {
+    body = await readBody(req);
+  } catch {
+    return send(res, 413, { error: { code: "payload_too_large" } });
+  }
+
+  const settings = await settingsFor(caller.tenantId);
+  if (!settings.enabledSignals.includes("logs"))
+    return send(res, 403, { error: { code: "signal_disabled" } });
+
+  let outcome: Outcome;
+  try {
+    // The tag rides in the query string or the header, because Fluent Bit's
+    // HTTP output puts it in neither by default and both are one line to add.
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const tag = url.searchParams.get("tag") ?? String(req.headers["x-oi-tag"] ?? "");
+    const parsed: unknown = JSON.parse(body.toString("utf8"));
+    const decoded = decodeFluent(parsed, tag || "fluent");
+    /*
+     * A batch that arrived and was understood by nobody is not a success. The
+     * commonest cause is a parser putting the message under a key this does
+     * not know, and answering 200 to it means an operator sees a green output
+     * plugin and an empty screen with nothing to connect them.
+     */
+    const sent = Array.isArray(parsed) ? parsed.length : parsed ? 1 : 0;
+    if (sent > 0 && decoded.length === 0) {
+      return send(res, 422, {
+        error: {
+          code: "nothing_understood",
+          message:
+            "no record carried a message: this reads log, message, msg, short_message or MESSAGE",
+        },
+      });
+    }
+    outcome = await ingestLogs(caller, settings, decoded);
+  } catch (err) {
+    if (err instanceof SyntaxError) return send(res, 400, { error: { code: "invalid_json" } });
+    console.error("[telemetry] fluent failed:", err);
+    return send(res, 503, { error: { code: "storage_unavailable" } });
+  }
+
+  send(res, outcome.accepted > 0 || outcome.rejected.length === 0 ? 200 : 422, {
+    accepted: outcome.accepted,
+    rejected: outcome.rejected.length,
+  });
+  void record(caller, "logs", outcome, body.byteLength);
+}
+
 createServer((req, res) => {
   handle(req, res).catch((err) => {
     console.error("[telemetry] unhandled:", err);
     if (!res.headersSent) send(res, 500, { error: { code: "internal" } });
   });
 }).listen(PORT, () => {
+  // The syslog listener, when one is configured. Off by default and on its own
+  // port: syslog carries no credential, so the port is the credential and one
+  // port belongs to one workspace.
+  const syslog = syslogConfig();
+  if (syslog) startSyslog(syslog);
   console.log(
     telemetryInstalled()
-      ? `Open Incident telemetry ingestion on :${PORT} — OTLP logs, traces, metrics and profiles, Prometheus remote write, browser RUM`
+      ? `Open Incident telemetry ingestion on :${PORT} — OTLP logs, traces, metrics and profiles, Prometheus remote write, browser RUM, Fluent`
       : `Open Incident telemetry ingestion on :${PORT} — no storage configured, answering 503`,
   );
 });
