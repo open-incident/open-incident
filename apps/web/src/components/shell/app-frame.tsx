@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "@/i18n/client";
+import Link from "next/link";
 import { Sidebar, type OnCallNow, type SidebarSection } from "./sidebar";
 import { NavIcon } from "./nav-icons";
 import { CommandPalette } from "./command-palette";
@@ -101,13 +102,9 @@ export function AppFrame({
       <Sidebar
         workspaceName={workspaceName}
         workspaceAccent={workspaceAccent}
-        member={member}
         sections={sections}
-        onCall={onCall}
         canDeclare={canDeclare}
-        canPageSelf={canPageSelf}
         onDeclare={declare}
-        onPageMe={pageMe}
       />
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <header
@@ -184,11 +181,118 @@ export function AppFrame({
               {t("shell.testMode")}
             </span>
           )}
+          {/*
+            Who carries the pager, in the header rather than at the foot of the
+            rail. It is live state, not navigation, and it belongs beside the
+            bell — the corner a reader already watches. Compact on purpose: the
+            schedule and the hour are on the chip's title, because a header is
+            50 px tall and the name is what somebody needs at a glance.
+          */}
+          <Link
+            href="/app/on-call"
+            data-testid="oncall-chip"
+            className="oi-hover-edge"
+            title={
+              onCall
+                ? t("nav.onCallUntil", { schedule: onCall.scheduleName, until: onCall.until })
+                : t("nav.onCallNobodyHint")
+            }
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 7,
+              height: 30,
+              padding: "0 10px",
+              borderRadius: 9,
+              border: "1px solid var(--line)",
+              background: "var(--sunk)",
+              textDecoration: "none",
+              color: "inherit",
+              fontSize: 12.5,
+              maxWidth: 260,
+            }}
+          >
+            <span
+              className={onCall ? "oi-pulse" : undefined}
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: onCall ? "var(--dang)" : "var(--ink-3)",
+                flex: "none",
+              }}
+            />
+            <span
+              style={{
+                fontWeight: 600,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {onCall ? onCall.name : t("nav.onCallNobody")}
+            </span>
+            {onCall && (
+              <span
+                style={{
+                  fontSize: 11.5,
+                  color: "var(--ink-3)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {onCall.until}
+              </span>
+            )}
+          </Link>
+          {canPageSelf && (
+            <button
+              type="button"
+              onClick={pageMe}
+              className="oi-hover-edge"
+              style={{
+                height: 30,
+                padding: "0 10px",
+                border: "1px solid var(--line)",
+                borderRadius: 9,
+                background: "var(--panel)",
+                color: "inherit",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {t("nav.pageMe")}
+            </button>
+          )}
           <NotificationBell
             rows={bell.rows}
             unread={bell.unread}
             markReadAction={markBellReadAction}
           />
+          {/* And the reader, where every application puts them. */}
+          <Link
+            href="/app/account"
+            data-testid="account-chip"
+            title={`${member.name} · ${member.roleLabel}`}
+            style={{
+              display: "grid",
+              placeItems: "center",
+              width: 30,
+              height: 30,
+              borderRadius: "50%",
+              background: "var(--brand-t)",
+              color: "var(--brand)",
+              fontSize: 11,
+              fontWeight: 700,
+              textDecoration: "none",
+              flex: "none",
+            }}
+          >
+            {member.initials}
+          </Link>
         </header>
         <main style={{ flex: 1, minHeight: 0, position: "relative" }}>
           <div style={{ position: "absolute", inset: 0, overflow: "auto" }}>{children}</div>

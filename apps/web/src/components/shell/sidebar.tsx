@@ -1,14 +1,17 @@
 "use client";
 
 /**
- * The 228 px rail: who you are, where you go, and who is on call right now.
+ * The 228 px rail: where you go, and nothing else.
  *
  * It is a column rather than the 60 px strip of the first design because the
- * V2 nav carries nine sections, a badge on two of them and a state at the
- * bottom — a strip would have hidden all three behind tooltips.
+ * V2 nav carries nine sections and a badge on two of them — a strip would have
+ * hidden both behind tooltips.
  *
- * The bottom card is the one piece of live state in the frame: it says who
- * carries the pager, so nobody has to open On-call to find out.
+ * Who is on call and who you are used to live at the bottom of it. They are
+ * now in the header, on the right, with the bell: they are not navigation, and
+ * a rail that mixes "where can I go" with "who is carrying the pager" makes
+ * the reader scan the whole column to find either. The header is also where
+ * every application puts an avatar, which is worth more than a house style.
  */
 
 import Link from "next/link";
@@ -33,13 +36,9 @@ export type OnCallNow = { name: string; scheduleName: string; until: string } | 
 export type SidebarProps = {
   workspaceName: string;
   workspaceAccent: string;
-  member: { name: string; roleLabel: string; initials: string };
   sections: SidebarSection[];
-  onCall: OnCallNow;
   canDeclare: boolean;
-  canPageSelf: boolean;
   onDeclare: () => void;
-  onPageMe: () => void;
 };
 
 const ROW: React.CSSProperties = {
@@ -63,13 +62,9 @@ function isCurrent(pathname: string, href: string): boolean {
 export function Sidebar({
   workspaceName,
   workspaceAccent,
-  member,
   sections,
-  onCall,
   canDeclare,
-  canPageSelf,
   onDeclare,
-  onPageMe,
 }: SidebarProps) {
   const t = useT();
   const pathname = usePathname() ?? "";
@@ -266,115 +261,6 @@ export function Sidebar({
           </Link>
         );
       })}
-
-      <div
-        style={{
-          marginTop: "auto",
-          background: "var(--sunk)",
-          borderRadius: 12,
-          padding: "11px 12px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 3,
-        }}
-      >
-        {onCall ? (
-          <>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 7,
-                fontSize: 12.5,
-                fontWeight: 600,
-              }}
-            >
-              <span
-                className="oi-pulse"
-                style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--dang)" }}
-              />
-              {t("nav.onCallNow", { name: onCall.name })}
-            </div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-              {t("nav.onCallUntil", { schedule: onCall.scheduleName, until: onCall.until })}
-            </div>
-          </>
-        ) : (
-          <>
-            <div style={{ fontSize: 12.5, fontWeight: 600 }}>{t("nav.onCallNobody")}</div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{t("nav.onCallNobodyHint")}</div>
-          </>
-        )}
-        {canPageSelf && (
-          <button
-            type="button"
-            onClick={onPageMe}
-            className="oi-hover-edge"
-            style={{
-              marginTop: 6,
-              height: 28,
-              border: "1px solid var(--line)",
-              borderRadius: 8,
-              background: "var(--panel)",
-              color: "inherit",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            {t("nav.pageMe")}
-          </button>
-        )}
-      </div>
-
-      <Link
-        href="/app/account"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 9,
-          padding: "10px 8px 2px",
-          textDecoration: "none",
-          color: "inherit",
-        }}
-      >
-        <span
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: "50%",
-            background: "var(--brand-t)",
-            color: "var(--brand)",
-            display: "grid",
-            placeItems: "center",
-            fontSize: 10.5,
-            fontWeight: 700,
-            flex: "none",
-          }}
-        >
-          {member.initials}
-        </span>
-        <span style={{ lineHeight: 1.2, minWidth: 0 }}>
-          <span
-            style={{
-              display: "block",
-              fontSize: 12.5,
-              fontWeight: 600,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {member.name}
-          </span>
-          <span style={{ display: "block", fontSize: 11, color: "var(--ink-3)" }}>
-            {member.roleLabel}
-          </span>
-        </span>
-      </Link>
     </aside>
   );
 }
