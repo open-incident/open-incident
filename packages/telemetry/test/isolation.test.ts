@@ -128,6 +128,30 @@ const DAY_AGO = new Date(Date.now() - 86_400_000);
 /** A moment ahead, so a span written a second ago is inside the window. */
 const SOON = new Date(Date.now() + 60_000);
 
+describeWithClickhouse("every rollup expires", () => {
+  /*
+   * The tables of points all expire on their own `retention_at`; the tables
+   * built from them had no TTL at all, so a workspace on fifteen days of
+   * retention kept one row per trace and one row per series per minute for
+   * ever. This is the ceiling that stops that, and the test that keeps it.
+   */
+  it("gives every aggregate table a ceiling", async () => {
+    const rows = await clickhouse()
+      .query({
+        query: `SELECT name, create_table_query FROM system.tables
+                 WHERE database = currentDatabase()
+                   AND name IN ('otel_traces_index', 'metric_1m', 'exception_groups_1h',
+                                'rum_sessions_agg', 'service_edge_runs')`,
+        format: "JSONEachRow",
+      })
+      .then((rs) => rs.json<{ name: string; create_table_query: string }>());
+    expect(rows.length).toBe(5);
+    for (const row of rows) {
+      expect(row.create_table_query, row.name).toContain("TTL ");
+    }
+  });
+});
+
 describeWithClickhouse("a workspace reads its telemetry and only its telemetry", () => {
   it("sees its own logs, and not the other workspace's", async () => {
     const mine = await recentLogs(A);
