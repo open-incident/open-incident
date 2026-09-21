@@ -232,6 +232,15 @@ export function Sidebar({
         );
       })}
 
+      {/*
+        The two that are not the work: the guide and the settings.
+        Pinned to the foot of the rail rather than trailing the nine sections —
+        a reader looking for "where do I go next" should stop at Telemetry, and
+        the two they open once a month should be where the eye goes when it has
+        run out of list. `marginTop: auto` is what puts them there at any
+        height, including the one where the sections already fill the column.
+      */}
+      <div style={{ marginTop: "auto" }} />
       <div style={{ height: 1, background: "var(--line)", margin: "8px 6px" }} />
 
       {(
