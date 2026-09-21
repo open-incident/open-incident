@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MEMBERS, signIn } from "./helpers";
+import { MEMBERS, signIn, telemetryInstalled } from "./helpers";
 
 /**
  * The Services tab of Telemetry — the list the screen opens on.
@@ -11,8 +11,8 @@ import { MEMBERS, signIn } from "./helpers";
  */
 test("the services list opens, on any window, with or without traffic", async ({ page }) => {
   await signIn(page, MEMBERS.owner);
+  test.skip(!(await telemetryInstalled(page)), "no telemetry module on this instance");
 
-  await page.goto("/app/telemetry");
   await expect(page.getByTestId("services-tab")).toBeVisible();
   await expect(page.locator("text=Application error")).toHaveCount(0);
 

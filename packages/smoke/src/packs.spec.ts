@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MEMBERS, signIn } from "./helpers";
+import { MEMBERS, signIn, telemetryInstalled } from "./helpers";
 
 /**
  * A collector pack's dashboard, placed from the screen that hands out the key.
@@ -13,8 +13,16 @@ import { MEMBERS, signIn } from "./helpers";
  */
 test.describe.configure({ mode: "serial" });
 
-test("the packs are listed with what they send and whether they are", async ({ page }) => {
+// Without a column store the whole Telemetry section is one card explaining
+// how to install the module, and none of this exists. Checked rather than
+// assumed: a suite that quietly passed here would be reporting on a screen it
+// never opened.
+test.beforeEach(async ({ page }) => {
   await signIn(page, MEMBERS.owner);
+  test.skip(!(await telemetryInstalled(page)), "no telemetry module on this instance");
+});
+
+test("the packs are listed with what they send and whether they are", async ({ page }) => {
   await page.goto("/app/telemetry?tab=connect");
 
   for (const pack of ["host", "postgres", "docker", "kubernetes"]) {
@@ -23,7 +31,6 @@ test("the packs are listed with what they send and whether they are", async ({ p
 });
 
 test("placing a pack's dashboard opens it, and only offers it once", async ({ page }) => {
-  await signIn(page, MEMBERS.owner);
   await page.goto("/app/telemetry?tab=connect");
 
   /*

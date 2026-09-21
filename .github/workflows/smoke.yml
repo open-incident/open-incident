@@ -22,8 +22,20 @@ jobs:
       # once it has finished: bring the long-running services up with it, then
       # run the initialiser to completion on its own.
       - run: docker compose -f docker/docker-compose.yml up -d --wait postgres redis mailpit minio
+      # The column store, behind its profile. Without it the whole Telemetry
+      # section is one card explaining how to install the module, and every
+      # test of those screens skips — which is how this suite spent its first
+      # night reporting on three screens it had never opened.
+      - run: docker compose -f docker/docker-compose.yml --profile telemetry up -d --wait clickhouse
       - run: docker compose -f docker/docker-compose.yml up minio-init
       - run: pnpm db:migrate && pnpm db:rls
+      - name: Migrate the column store
+        env:
+          CLICKHOUSE_URL: http://localhost:8143
+          CLICKHOUSE_USER: openincident
+          CLICKHOUSE_PASSWORD: openincident
+          CLICKHOUSE_DATABASE: openincident
+        run: pnpm ch:migrate
       - run: pnpm db:seed && pnpm db:seed:auth
       - run: pnpm --filter @openincident/web build
       - run: pnpm --filter @openincident/status build
@@ -74,6 +86,10 @@ jobs:
           TEAMS_OPENID_CONFIG: http://127.0.0.1:3196/openid
           TEAMS_SERVICE_URL_OVERRIDE: http://127.0.0.1:3196/connector
           INTERNAL_WEB_ORIGIN: http://127.0.0.1:3106
+          CLICKHOUSE_URL: http://localhost:8143
+          CLICKHOUSE_USER: openincident
+          CLICKHOUSE_PASSWORD: openincident
+          CLICKHOUSE_DATABASE: openincident
         # Logged to a file: a background process's output is lost once its step
         # ends, and the log is what explains a failure the runner cannot reproduce.
         run: pnpm --filter @openincident/worker start > worker.log 2>&1 &
@@ -116,6 +132,10 @@ jobs:
           TEAMS_OPENID_CONFIG: http://127.0.0.1:3196/openid
           TEAMS_SERVICE_URL_OVERRIDE: http://127.0.0.1:3196/connector
           INTERNAL_WEB_ORIGIN: http://127.0.0.1:3106
+          CLICKHOUSE_URL: http://localhost:8143
+          CLICKHOUSE_USER: openincident
+          CLICKHOUSE_PASSWORD: openincident
+          CLICKHOUSE_DATABASE: openincident
         run: |
           pnpm --filter @openincident/web exec next start --port 3106 > web.log 2>&1 &
           for i in $(seq 1 30); do

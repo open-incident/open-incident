@@ -15,6 +15,7 @@ export async function NotInstalled({ admin, endpoint }: { admin: boolean; endpoi
   return (
     <div
       className="oi-rise"
+      data-testid="telemetry-not-installed"
       style={{
         maxWidth: 720,
         margin: "60px auto 0",

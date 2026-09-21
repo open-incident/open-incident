@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { MEMBERS, signIn, signOut } from "./helpers";
+import { MEMBERS, signIn, signOut, telemetryInstalled } from "./helpers";
 
 /**
  * Objectives are a tab of Telemetry, not a section of their own.
@@ -13,9 +13,14 @@ import { MEMBERS, signIn, signOut } from "./helpers";
  */
 test.describe.configure({ mode: "serial" });
 
-test("the old objectives address lands on the tab, query and all", async ({ page }) => {
+// Objectives live in Telemetry, so they do not exist without the module —
+// which is the point of putting them there.
+test.beforeEach(async ({ page }) => {
   await signIn(page, MEMBERS.owner);
+  test.skip(!(await telemetryInstalled(page)), "no telemetry module on this instance");
+});
 
+test("the old objectives address lands on the tab, query and all", async ({ page }) => {
   await page.goto("/app/slos?new=1");
   await expect(page).toHaveURL(/\/app\/telemetry\?[^#]*tab=slos/);
   await expect(page.getByTestId("slo-tab")).toBeVisible();
@@ -29,6 +34,10 @@ test("the old objectives address lands on the tab, query and all", async ({ page
 });
 
 test("a responder can create an objective, a viewer only reads them", async ({ page }) => {
+  // The guard above left the owner signed in; `/login` on a live session goes
+  // straight through to the app, so signing in as somebody else has to start
+  // by signing out.
+  await signOut(page);
   await signIn(page, MEMBERS.responder);
   await page.goto("/app/telemetry?tab=slos");
   await expect(page.getByTestId("slo-new")).toBeVisible();

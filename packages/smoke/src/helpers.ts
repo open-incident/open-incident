@@ -36,6 +36,23 @@ export async function signInWith(page: Page, email: string, password: string): P
   }).toPass({ timeout: 60_000, intervals: [1_000, 3_000, 6_000, 12_000] });
 }
 
+/**
+ * Whether this instance has the telemetry module — a column store, in other
+ * words.
+ *
+ * The product supports both shapes on purpose: without ClickHouse the whole
+ * Telemetry section is one card explaining how to install it, and the tabs do
+ * not exist. A test of those tabs has to be able to tell that apart from a
+ * screen that broke, which is what the card's test id is for.
+ *
+ * Leaves the browser on the Telemetry screen, so a caller that got `true` can
+ * carry on from there.
+ */
+export async function telemetryInstalled(page: Page): Promise<boolean> {
+  await page.goto("/app/telemetry");
+  return (await page.getByTestId("telemetry-not-installed").count()) === 0;
+}
+
 export async function signOut(page: Page): Promise<void> {
   await page.request.post("/api/auth/sign-out");
   await page.context().clearCookies();
