@@ -60,6 +60,7 @@ export {
 } from "./promql/parse";
 export { evalPromql, type EvalOptions, type Sample, type Series } from "./promql/eval";
 export { servicesOverview, type ServiceRow } from "./services";
+export { facetsFor, attributeKeys, facetValuesOf, type Facet, type FacetValue } from "./facets";
 export {
   PACKS,
   allPackSignals,

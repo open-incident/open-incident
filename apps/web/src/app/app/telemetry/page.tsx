@@ -28,6 +28,7 @@ import { FilterError, QueryBar } from "./query-bar";
 import { RumTab } from "./rum-tab";
 import { SlosTab } from "./slos-tab";
 import { DashboardsTab } from "./dashboards-tab";
+import { FacetRail } from "./facet-rail";
 import { ServicesTab, serviceWindowOf } from "./services-tab";
 import { Waterfall } from "./waterfall";
 import { SERVICE_COLOURS } from "./trace-model";
@@ -401,44 +402,66 @@ export default async function TelemetryPage({
           </div>
         )}
 
-        {tab === "explore" && signal === "logs" && (
-          <LogsTab
-            tenantId={tenant.id}
-            service={sp.service}
-            filter={sp.q}
-            mayEdit={canRespond(member)}
-            patterns={sp.patterns === "1"}
-            from={win.from}
-            to={win.to}
-            before={sp.before}
-            link={link}
-          />
-        )}
-        {tab === "explore" && signal === "traces" && (
-          <TracesTab
-            tenantId={tenant.id}
-            open={sp.trace}
-            service={sp.service}
-            filter={sp.q}
-            mayEdit={canRespond(member)}
-            attached={sp.attached}
-            from={win.from}
-            to={win.to}
-            before={sp.before}
-            link={link}
-          />
-        )}
+        {/*
+          The three signals that are searches get a facet rail. Metrics have
+          PromQL, profiles have a flamegraph, SQL is its own thing, and RUM is
+          a small fixed set of screens — none of them is a haystack somebody
+          arrives at without knowing the field names.
+        */}
+        {tab === "explore" &&
+          (signal === "logs" || signal === "traces" || signal === "exceptions") && (
+            <div style={{ display: "grid", gridTemplateColumns: "196px minmax(0,1fr)", gap: 18 }}>
+              <FacetRail
+                kind={signal}
+                tenantId={tenant.id}
+                from={win.from}
+                to={win.to}
+                filter={sp.q}
+                service={sp.service}
+                link={link}
+              />
+              <div style={{ minWidth: 0 }}>
+                {signal === "logs" && (
+                  <LogsTab
+                    tenantId={tenant.id}
+                    service={sp.service}
+                    filter={sp.q}
+                    mayEdit={canRespond(member)}
+                    patterns={sp.patterns === "1"}
+                    from={win.from}
+                    to={win.to}
+                    before={sp.before}
+                    link={link}
+                  />
+                )}
+                {signal === "traces" && (
+                  <TracesTab
+                    tenantId={tenant.id}
+                    open={sp.trace}
+                    service={sp.service}
+                    filter={sp.q}
+                    mayEdit={canRespond(member)}
+                    attached={sp.attached}
+                    from={win.from}
+                    to={win.to}
+                    before={sp.before}
+                    link={link}
+                  />
+                )}
+                {signal === "exceptions" && (
+                  <ExceptionsTab
+                    tenantId={tenant.id}
+                    open={sp.fp}
+                    mayEdit={canRespond(member)}
+                    service={sp.service}
+                    filter={sp.q}
+                  />
+                )}
+              </div>
+            </div>
+          )}
         {tab === "explore" && signal === "metrics" && (
           <MetricsTab tenantId={tenant.id} open={sp.metric} />
-        )}
-        {tab === "explore" && signal === "exceptions" && (
-          <ExceptionsTab
-            tenantId={tenant.id}
-            open={sp.fp}
-            mayEdit={canRespond(member)}
-            service={sp.service}
-            filter={sp.q}
-          />
         )}
         {tab === "explore" && signal === "profiles" && (
           <ProfilesTab

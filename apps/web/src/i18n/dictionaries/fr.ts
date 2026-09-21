@@ -111,6 +111,10 @@ export const fr: Dictionary = {
   "telemetry.tab.dashboards": "Tableaux de bord",
   "telemetry.tab.setup": "Réglages",
   "telemetry.older": "Plus anciennes ›",
+  "facets.title": "Dans cette fenêtre",
+  "facets.total": "{count} lignes comptées",
+  "facets.attributes": "Attributs présents",
+  "facets.add": "Ajouter {field} = {value} au filtre",
   "dash.fromPack": "d’un pack Collector",
   "telemetry.tab.services": "Services",
   "telemetry.servicesHint":
@@ -869,7 +873,7 @@ export const fr: Dictionary = {
   "explorer.watch": "Surveiller ça →",
   "explorer.noMatch": "Rien ne correspond à ce filtre dans ce qui est conservé.",
   "explorer.fields":
-    "champ = valeur, reliés par AND. Champs : {fields}. Aussi attr:<nom> pour un attribut, contains pour une sous-chaîne, =~ pour une expression régulière — le même langage qu’un moniteur, pour qu’un filtre qui a trouvé un problème devienne celui qui le guette.",
+    "champ = valeur, reliés par AND, OR et NOT, groupés par des parenthèses. Aussi in (a, b), exists, missing, contains pour une sous-chaîne, =~ pour une expression régulière, et attr:<nom> pour n’importe quel attribut. Champs : {fields}. Le même langage qu’un moniteur, pour qu’un filtre qui a trouvé un problème devienne celui qui le guette.",
   "explorer.placeholder.logs": "severity_number >= 17 AND service_name = 'checkout-api'",
   "explorer.placeholder.traces": "status_code = 'error' AND duration_ms > 500",
   "explorer.placeholder.exceptions": "type =~ '.*Timeout' AND environment = 'production'",

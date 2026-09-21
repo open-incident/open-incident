@@ -110,6 +110,10 @@ export const de: Dictionary = {
   "telemetry.tab.dashboards": "Dashboards",
   "telemetry.tab.setup": "Einrichtung",
   "telemetry.older": "Älter ›",
+  "facets.title": "In diesem Zeitraum",
+  "facets.total": "{count} Zeilen gezählt",
+  "facets.attributes": "Vorhandene Attribute",
+  "facets.add": "{field} = {value} zum Filter hinzufügen",
   "dash.fromPack": "aus einem Collector-Pack",
   "telemetry.tab.services": "Dienste",
   "telemetry.servicesHint":
@@ -875,7 +879,7 @@ export const de: Dictionary = {
   "explorer.watch": "Darauf achten →",
   "explorer.noMatch": "Nichts entspricht diesem Filter in dem, was aufbewahrt wird.",
   "explorer.fields":
-    "feld = wert, verbunden mit AND. Felder: {fields}. Außerdem attr:<name> für ein Attribut, contains für eine Teilzeichenkette, =~ für einen regulären Ausdruck — dieselbe Sprache wie ein Monitor, damit ein Filter, der ein Problem fand, zu einem wird, der darauf achtet.",
+    "feld = wert, verbunden mit AND, OR und NOT, mit Klammern gruppiert. Außerdem in (a, b), exists, missing, contains für eine Teilzeichenkette, =~ für einen regulären Ausdruck und attr:<name> für jedes Attribut. Felder: {fields}. Dieselbe Sprache wie ein Monitor, damit ein Filter, der ein Problem fand, zu einem wird, der darauf achtet.",
   "explorer.placeholder.logs": "severity_number >= 17 AND service_name = 'checkout-api'",
   "explorer.placeholder.traces": "status_code = 'error' AND duration_ms > 500",
   "explorer.placeholder.exceptions": "type =~ '.*Timeout' AND environment = 'production'",

@@ -119,6 +119,10 @@ export const en = {
   "telemetry.tab.dashboards": "Dashboards",
   "telemetry.tab.setup": "Setup",
   "telemetry.older": "Older ›",
+  "facets.title": "In this window",
+  "facets.total": "{count} rows counted",
+  "facets.attributes": "Attributes here",
+  "facets.add": "Add {field} = {value} to the filter",
   "dash.fromPack": "from a collector pack",
   "telemetry.tab.services": "Services",
   "telemetry.servicesHint":
@@ -866,7 +870,7 @@ export const en = {
   "explorer.watch": "Watch this →",
   "explorer.noMatch": "Nothing matches this filter in what is kept.",
   "explorer.fields":
-    "field = value, joined by AND. Fields: {fields}. Also attr:<name> for an attribute, contains for a substring, =~ for a regular expression — the same language a monitor takes, so a filter that found a problem becomes one that watches for it.",
+    "field = value, joined by AND, OR and NOT, grouped with parentheses. Also in (a, b), exists, missing, contains for a substring, =~ for a regular expression, and attr:<name> for any attribute. Fields: {fields}. The same language a monitor takes, so a filter that found a problem becomes one that watches for it.",
   "explorer.placeholder.logs": "severity_number >= 17 AND service_name = 'checkout-api'",
   "explorer.placeholder.traces": "status_code = 'error' AND duration_ms > 500",
   "explorer.placeholder.exceptions": "type =~ '.*Timeout' AND environment = 'production'",
