@@ -13,7 +13,7 @@
  * ran the instant a minute closed would miss half its own edges.
  */
 import { clickhouse } from "./client";
-import { read, SPANS } from "./query";
+import { read, SPANS, chTime } from "./query";
 
 export { EDGES, EDGE_RUNS } from "./views";
 import { EDGES, EDGE_RUNS } from "./views";
@@ -269,10 +269,6 @@ export async function servicesSeen(
       LIMIT 200`,
     { params: { since: sinceMinutes } },
   );
-}
-
-function chTime(d: Date): string {
-  return d.toISOString().replace("T", " ").replace("Z", "");
 }
 
 /**

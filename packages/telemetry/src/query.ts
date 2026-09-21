@@ -15,7 +15,15 @@
  */
 import { clickhouse, telemetryInstalled } from "./client";
 import { compileFilter } from "./filter";
-import { EXCEPTIONS, EXCEPTION_GROUPS, LOGS, MINUTES, SERIES, SPANS, TRACES } from "./views";
+import {
+  EXCEPTIONS,
+  EXCEPTION_GROUPS,
+  LOGS,
+  MINUTES,
+  SERIES,
+  SPANS,
+  TRACES_WINDOW,
+} from "./views";
 
 /**
  * The sources a query may name.
@@ -30,6 +38,7 @@ export {
   LOGS,
   SPANS,
   TRACES,
+  TRACES_WINDOW,
   SERIES,
   MINUTES,
   EXCEPTIONS,
@@ -153,15 +162,60 @@ export type LogRow = {
  * it, and a language that behaves differently in the two places is a language
  * nobody trusts in either.
  */
+export type LogPage = {
+  rows: LogRow[];
+  /** Where the next page starts, or null at the end of the window. */
+  older: string | null;
+};
+
+/** `<epoch nanoseconds>|<trace id>|<span id>` — enough to be unique in the sort. */
+function logCursor(row: LogRow): string {
+  return `${row.ts}|${row.trace_id}|${row.span_id}`;
+}
+
+/**
+ * The log list: one page, inside a window.
+ *
+ * Same fix as the trace list and the same reason. `otel_logs` is partitioned
+ * by day and sorted by `(tenant_id, service_name, ts)`, so a query with no
+ * time predicate reads every partition the workspace has — and one without a
+ * service reads every service's range inside each of them. The window prunes
+ * the partitions; the cursor replaces an OFFSET that would re-read and
+ * re-sort everything it skipped.
+ *
+ * A trace id is the exception that keeps no window: the correlated lines of a
+ * trace somebody opened are a bounded set found through the bloom filter, and
+ * a trace from last week must still show its logs.
+ */
 export async function recentLogs(
   tenantId: string,
-  opts: { limit?: number; traceId?: string; service?: string; filter?: string } = {},
-): Promise<LogRow[]> {
+  opts: {
+    from?: Date;
+    to?: Date;
+    limit?: number;
+    traceId?: string;
+    spanId?: string;
+    service?: string;
+    filter?: string;
+    before?: string;
+  } = {},
+): Promise<LogPage> {
+  const limit = opts.limit ?? 100;
   const where = ["1 = 1"];
-  const params: Record<string, unknown> = { limit: opts.limit ?? 100 };
+  const params: Record<string, unknown> = { limit: limit + 1 };
+
+  if (opts.from && opts.to) {
+    where.push("ts >= {fromTs:DateTime64(9)}", "ts <= {toTs:DateTime64(9)}");
+    params.fromTs = chTime(opts.from);
+    params.toTs = chTime(opts.to);
+  }
   if (opts.traceId) {
     where.push("trace_id = {traceId:String}");
     params.traceId = opts.traceId;
+  }
+  if (opts.spanId) {
+    where.push("span_id = {spanId:String}");
+    params.spanId = opts.spanId;
   }
   if (opts.service) {
     where.push("service_name = {service:String}");
@@ -172,15 +226,27 @@ export async function recentLogs(
     where.push(compiled.sql);
     Object.assign(params, compiled.params);
   }
-  return read<LogRow>(
+  const cursor = parseCursor(opts.before);
+  if (cursor) {
+    where.push("(ts, trace_id) < ({cursorTs:DateTime64(9)}, {cursorId:String})");
+    params.cursorTs = cursor.ts;
+    params.cursorId = cursor.id;
+  }
+
+  const rows = await read<LogRow>(
     tenantId,
     `SELECT ts, service_name, environment, severity_number, severity_text, body, trace_id, span_id
        FROM ${LOGS}
       WHERE ${where.join(" AND ")}
-      ORDER BY ts DESC
+      ORDER BY ts DESC, trace_id DESC
       LIMIT {limit:UInt32}`,
     { params },
   );
+  const page = rows.slice(0, limit);
+  return {
+    rows: page,
+    older: rows.length > limit && page.length > 0 ? logCursor(page[page.length - 1]!) : null,
+  };
 }
 
 export type TraceRow = {
@@ -198,40 +264,169 @@ export type TraceRow = {
 };
 
 /** The Traces screen: one line per trace, newest first. */
+/**
+ * A ClickHouse DateTime64 literal, from a Date.
+ *
+ * Four modules had a private copy of this line; the fifth one that needed it
+ * is where they became one. ClickHouse reads `2026-09-21 19:04:00.000` and not
+ * an ISO string with its `T` and its `Z`.
+ */
+export function chTime(at: Date): string {
+  return at.toISOString().replace("T", " ").replace("Z", "");
+}
+
+/** A window, in whole days for the partition predicate and exact for the rows. */
+export type Window = { from: Date; to: Date };
+
+export type TracePage = {
+  rows: TraceRow[];
+  /**
+   * Where the next page starts, or null at the end of the window.
+   *
+   * A cursor and not an offset: OFFSET re-reads and re-sorts everything it
+   * skips, and on a list that is still receiving traces it also shows a row
+   * twice or never — the two pages are computed from two different sets.
+   */
+  older: string | null;
+};
+
+/** `<epoch nanoseconds>|<trace id>` — the sort key of the list, exactly. */
+function cursorOf(row: TraceRow): string {
+  return `${row.start_ts}|${row.trace_id}`;
+}
+
+function parseCursor(value: string | undefined): { ts: string; id: string } | null {
+  if (!value) return null;
+  const at = value.lastIndexOf("|");
+  if (at <= 0) return null;
+  return { ts: value.slice(0, at), id: value.slice(at + 1) };
+}
+
+/** Whole days, because that is what prunes partitions. */
+function dayOf(at: Date): string {
+  return at.toISOString().slice(0, 10);
+}
+
+/**
+ * The trace list: one page, inside a window.
+ *
+ * The window is not optional and not a detail. Measured on ten million spans,
+ * the same hundred lines cost 1 833 649 rows read and 373 MiB of RAM without
+ * one, and 48 406 rows and 21 MiB with a day — and it is the memory that gives
+ * way first. See sql/0011_trace_window.sql.
+ *
+ * Two steps, and the second is the expensive half: merging a trace's aggregate
+ * states — above all `services`, a groupUniqArray — costs three times what
+ * finding it does. On a day of ten million spans, one query for everything is
+ * 114 ms; the same page in two steps is 36 ms, and the merge now runs on the
+ * hundred rows of the page rather than on the window's forty-eight thousand
+ * traces. Only the first number grows with the window.
+ *
+ * A service or a filter sends the first step to the spans table, where
+ * `(tenant_id, service_name, start_ts)` is the sort key — so "this service's
+ * traces" is an index range rather than a scan of merged arrays, and a filter
+ * over span fields is applied where those fields live. The page carries at
+ * most its own hundred ids back, never every match: twenty thousand of them
+ * in one query parameter is 680 kB, which ClickHouse refuses outright with
+ * "Field value too long" — found by running it.
+ */
 export async function recentTraces(
   tenantId: string,
-  opts: { limit?: number; service?: string; filter?: string } = {},
-): Promise<TraceRow[]> {
-  // Any trace the service took part in, not only the ones it started: during
-  // an incident the interesting trace is usually one this service was called
-  // from, and filtering on the root would hide every one of them.
-  const where: string[] = [];
-  const params: Record<string, unknown> = { limit: opts.limit ?? 100 };
-  if (opts.service) {
-    where.push("has(services, {service:String})");
-    params.service = opts.service;
-  }
-  if (opts.filter?.trim()) {
+  opts: {
+    from: Date;
+    to: Date;
+    limit?: number;
+    service?: string;
+    filter?: string;
+    /** A cursor from a previous page's `older`. */
+    before?: string;
+  },
+): Promise<TracePage> {
+  const limit = opts.limit ?? 100;
+  const day = { from: dayOf(opts.from), to: dayOf(opts.to) };
+  const ts = { fromTs: chTime(opts.from), toTs: chTime(opts.to) };
+  const cursor = parseCursor(opts.before);
+  const bySpan = Boolean(opts.service || opts.filter?.trim());
+
+  let ids: string[] | null = null;
+  if (bySpan) {
+    const where = ["s.start_ts >= {fromTs:DateTime64(9)}", "s.start_ts <= {toTs:DateTime64(9)}"];
+    const params: Record<string, unknown> = { ...ts, limit: limit + 1 };
+    if (opts.service) {
+      where.push("s.service_name = {service:String}");
+      params.service = opts.service;
+    }
+    if (opts.filter?.trim()) {
+      const compiled = compileFilter("traces", opts.filter);
+      where.push(compiled.sql);
+      Object.assign(params, compiled.params);
+    }
     /*
-     * The filter names span fields, and this table is one row per trace. So it
-     * is applied as "a trace with at least one span that matches", through a
-     * subquery on the spans — which is what somebody typing
-     * `status_code = 'error'` into a trace list means.
+     * `min(start_ts)` and not `max`, because the list is ordered by when a
+     * trace began: ordering the ids one way and the rows another would make
+     * the cursor skip rows. A trace that began before the window is ordered
+     * by its first span *inside* it, which is the only start this query can
+     * see — and the honest one to sort a windowed list by.
      */
-    const compiled = compileFilter("traces", opts.filter);
-    where.push(`trace_id IN (SELECT trace_id FROM ${SPANS} WHERE ${compiled.sql} LIMIT 10000)`);
-    Object.assign(params, compiled.params);
+    const having = cursor
+      ? "HAVING (ts, trace_id) < ({cursorTs:DateTime64(9)}, {cursorId:String})"
+      : "";
+    if (cursor) {
+      params.cursorTs = cursor.ts;
+      params.cursorId = cursor.id;
+    }
+    const matches = await read<{ trace_id: string }>(
+      tenantId,
+      `SELECT s.trace_id AS trace_id, min(s.start_ts) AS ts
+         FROM ${SPANS} AS s
+        WHERE ${where.join(" AND ")}
+        GROUP BY trace_id
+        ${having}
+        ORDER BY ts DESC, trace_id DESC
+        LIMIT {limit:UInt32}`,
+      { params, maxRows: limit + 1 },
+    );
+    if (matches.length === 0) return { rows: [], older: null };
+    ids = matches.map((m) => m.trace_id);
   }
-  return read<TraceRow>(
+
+  const params: Record<string, unknown> = { ...day, ...ts, limit: limit + 1 };
+  const pageWhere = ["i.start_ts >= {fromTs:DateTime64(9)}", "i.start_ts <= {toTs:DateTime64(9)}"];
+  if (ids) {
+    pageWhere.push("i.trace_id IN {ids:Array(String)}");
+    params.ids = ids;
+  }
+  if (cursor && !bySpan) {
+    pageWhere.push("(i.start_ts, i.trace_id) < ({cursorTs:DateTime64(9)}, {cursorId:String})");
+    params.cursorTs = cursor.ts;
+    params.cursorId = cursor.id;
+  }
+
+  const rows = await read<TraceRow>(
     tenantId,
-    `SELECT trace_id, start_ts, duration_ns, root_service, root_name, root_status,
+    `WITH page AS (
+       SELECT i.trace_id AS trace_id
+         FROM ${TRACES_WINDOW} AS i
+        WHERE ${pageWhere.join(" AND ")}
+        ORDER BY i.start_ts DESC, i.trace_id DESC
+        LIMIT {limit:UInt32}
+     )
+     SELECT trace_id, start_ts, duration_ns, root_service, root_name, root_status,
             span_count, error_count, services, has_exception
-       FROM ${TRACES}
-      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-      ORDER BY start_ts DESC
+       FROM ${TRACES_WINDOW}
+      WHERE trace_id IN (SELECT trace_id FROM page)
+      ORDER BY start_ts DESC, trace_id DESC
       LIMIT {limit:UInt32}`,
     { params },
   );
+
+  // One more than asked for is how the end of the window is told apart from a
+  // full page: a cursor handed out at the end sends the reader to an empty one.
+  const page = rows.slice(0, limit);
+  return {
+    rows: page,
+    older: rows.length > limit && page.length > 0 ? cursorOf(page[page.length - 1]!) : null,
+  };
 }
 
 export type SpanEventRow = { ts: string; name: string; attributes: Record<string, string> };

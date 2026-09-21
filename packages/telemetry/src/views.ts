@@ -17,6 +17,18 @@
 export const LOGS = "otel_logs_t(tenant = {tenant:UUID})";
 export const SPANS = "otel_spans_t(tenant = {tenant:UUID})";
 export const TRACES = "otel_traces_t(tenant = {tenant:UUID})";
+/**
+ * The trace list's source, and the window is part of the spelling.
+ *
+ * `TRACES` groups a workspace's whole history before the outer query can
+ * discard any of it: on ten million spans that is 1.8 million rows and 373 MiB
+ * of RAM to show a hundred lines. This one takes the window as parameters, so
+ * a query against it can no more forget the window than it can forget the
+ * tenant — and `day` is the partition key, so the pruning happens before
+ * anything is merged. See sql/0011_trace_window.sql for the measurements.
+ */
+export const TRACES_WINDOW =
+  "otel_traces_window_t(tenant = {tenant:UUID}, from = {from:Date}, to = {to:Date})";
 export const SERIES = "metric_series_t(tenant = {tenant:UUID})";
 export const MINUTES = "metric_1m_t(tenant = {tenant:UUID})";
 export const EXCEPTIONS = "otel_exceptions_t(tenant = {tenant:UUID})";

@@ -124,24 +124,57 @@ afterAll(async () => {
   await closeClickhouse();
 });
 
+const DAY_AGO = new Date(Date.now() - 86_400_000);
+/** A moment ahead, so a span written a second ago is inside the window. */
+const SOON = new Date(Date.now() + 60_000);
+
 describeWithClickhouse("a workspace reads its telemetry and only its telemetry", () => {
   it("sees its own logs, and not the other workspace's", async () => {
     const mine = await recentLogs(A);
-    expect(mine.map((l) => l.body)).toContain("checkout completed for order 42");
-    expect(mine.map((l) => l.body)).not.toContain("invoice issued");
+    expect(mine.rows.map((l) => l.body)).toContain("checkout completed for order 42");
+    expect(mine.rows.map((l) => l.body)).not.toContain("invoice issued");
 
     const theirs = await recentLogs(B);
-    expect(theirs.map((l) => l.body)).toEqual(["invoice issued"]);
+    expect(theirs.rows.map((l) => l.body)).toEqual(["invoice issued"]);
   });
 
   it("summarises its own trace, with both spans and both services", async () => {
-    const traces = await recentTraces(A);
-    const t = traces.find((x) => x.trace_id === traceA);
+    const page = await recentTraces(A, { from: DAY_AGO, to: SOON });
+    const t = page.rows.find((x) => x.trace_id === traceA);
     expect(t).toBeDefined();
     expect(Number(t!.span_count)).toBe(2);
     expect(t!.root_name).toBe("GET /checkout");
     expect([...t!.services].sort()).toEqual(["checkout-api", "orders-db"]);
-    expect(traces.map((x) => x.trace_id)).not.toContain(traceB);
+    expect(page.rows.map((x) => x.trace_id)).not.toContain(traceB);
+  });
+
+  /*
+   * The window is the whole point of the new list, and it is also a second
+   * fence around a workspace: a cursor from one tenant's page names a time and
+   * a trace id, and handing it to another tenant's query still only reads that
+   * tenant's rows.
+   */
+  it("returns nothing outside the window, and pages inside it", async () => {
+    const before = await recentTraces(A, {
+      from: new Date(Date.now() - 40 * 86_400_000),
+      to: new Date(Date.now() - 30 * 86_400_000),
+    });
+    expect(before.rows).toEqual([]);
+    expect(before.older).toBeNull();
+
+    const one = await recentTraces(A, { from: DAY_AGO, to: SOON, limit: 1 });
+    expect(one.rows.length).toBe(1);
+    const ids = new Set(one.rows.map((r) => r.trace_id));
+    if (one.older) {
+      const next = await recentTraces(A, {
+        from: DAY_AGO,
+        to: SOON,
+        limit: 1,
+        before: one.older,
+      });
+      // A cursor never repeats the row it was taken from.
+      for (const row of next.rows) expect(ids.has(row.trace_id)).toBe(false);
+    }
   });
 
   it("cannot open the other workspace's trace by knowing its id", async () => {

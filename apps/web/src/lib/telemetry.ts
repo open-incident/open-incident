@@ -29,6 +29,8 @@ import {
   metricSeries,
   recentLogs,
   recentTraces,
+  type LogPage,
+  type TracePage,
   seriesLabels,
   spansOfTrace,
   telemetryInstalled,
@@ -161,17 +163,33 @@ export async function usageToday(tenantId: string): Promise<UsageToday> {
 /** The Logs screen. Empty when nothing has arrived — which is a fact, not an error. */
 export async function logs(
   tenantId: string,
-  opts: { traceId?: string; service?: string; limit?: number; filter?: string } = {},
-): Promise<LogRow[]> {
-  if (!telemetryInstalled()) return [];
+  opts: {
+    from?: Date;
+    to?: Date;
+    traceId?: string;
+    spanId?: string;
+    service?: string;
+    limit?: number;
+    filter?: string;
+    before?: string;
+  } = {},
+): Promise<LogPage> {
+  if (!telemetryInstalled()) return { rows: [], older: null };
   return recentLogs(tenantId, opts);
 }
 
 export async function traces(
   tenantId: string,
-  opts: { limit?: number; service?: string; filter?: string } = {},
-): Promise<TraceRow[]> {
-  if (!telemetryInstalled()) return [];
+  opts: {
+    from: Date;
+    to: Date;
+    limit?: number;
+    service?: string;
+    filter?: string;
+    before?: string;
+  },
+): Promise<TracePage> {
+  if (!telemetryInstalled()) return { rows: [], older: null };
   return recentTraces(tenantId, { limit: opts.limit ?? 60, ...opts });
 }
 

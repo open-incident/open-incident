@@ -128,17 +128,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       labelKey: "nav.telemetry",
       ...(telemetryInstalled() ? {} : { tag: "nav.notInstalled" as const }),
     },
-    // Only when there is something to put on one. A dashboards entry on an
-    // instance with no column store leads to a screen that can only apologise.
-    ...(telemetryInstalled()
-      ? [
-          {
-            id: "dashboards" as const,
-            href: "/app/dashboards",
-            labelKey: "nav.dashboards" as const,
-          },
-        ]
-      : []),
   ];
 
   // The first schedule that actually has someone is the one the rail names:

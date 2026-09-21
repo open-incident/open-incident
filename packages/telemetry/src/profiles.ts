@@ -12,7 +12,7 @@
  * function went from 3 % to 41 % between these two releases" is the sentence
  * that ends the investigation.
  */
-import { read } from "./query";
+import { read, chTime } from "./query";
 
 export { PROFILES, PROFILE_STACKS } from "./views";
 import { PROFILES, PROFILE_STACKS } from "./views";
@@ -314,8 +314,4 @@ export async function profileKinds(
       ORDER BY service_name, profile_type != 'cpu', profile_type`,
     { params: { since: sinceHours } },
   );
-}
-
-function chTime(d: Date): string {
-  return d.toISOString().replace("T", " ").replace("Z", "");
 }

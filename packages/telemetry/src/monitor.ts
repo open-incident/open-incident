@@ -12,7 +12,7 @@
  * for `for` evaluations and posting the alert belong to the sweep, which lives
  * with the other monitors in `@openincident/oncall`.
  */
-import { read } from "./query";
+import { read, chTime } from "./query";
 import { evalPromql } from "./promql/eval";
 import { SOURCES, columnOf, compileFilter, fieldsOf, TelemetryFilterError } from "./filter";
 
@@ -128,8 +128,8 @@ async function evaluateRows(
   ];
 
   const from = new Date(at.getTime() - q.windowMinutes * 60_000);
-  params.from = clickhouseTime(from);
-  params.to = clickhouseTime(at);
+  params.from = chTime(from);
+  params.to = chTime(at);
 
   const rows = await read<Record<string, string>>(
     tenantId,
@@ -194,8 +194,8 @@ export async function baselines(
     return { alias: `g${i}`, field, sql: column.sql };
   });
 
-  params.from = clickhouseTime(new Date(at.getTime() - BASELINE_DAYS * 86_400_000));
-  params.to = clickhouseTime(at);
+  params.from = chTime(new Date(at.getTime() - BASELINE_DAYS * 86_400_000));
+  params.to = chTime(at);
   params.window = q.windowMinutes;
   params.dow = at.getUTCDay() === 0 ? 7 : at.getUTCDay();
   params.hour = at.getUTCHours();
@@ -369,9 +369,4 @@ function compare(value: number, op: string, against: number): boolean {
 function round(n: number): string {
   if (!Number.isFinite(n)) return String(n);
   return Math.abs(n) >= 100 ? n.toFixed(0) : Number(n.toFixed(3)).toString();
-}
-
-/** ClickHouse reads `YYYY-MM-DD hh:mm:ss.SSS` for a DateTime64; a `T` it does not. */
-function clickhouseTime(d: Date): string {
-  return d.toISOString().replace("T", " ").replace("Z", "");
 }

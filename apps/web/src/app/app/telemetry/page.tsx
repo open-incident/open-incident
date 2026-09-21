@@ -27,6 +27,7 @@ import { ProfilesTab } from "./profiles-tab";
 import { FilterError, QueryBar } from "./query-bar";
 import { RumTab } from "./rum-tab";
 import { SlosTab } from "./slos-tab";
+import { DashboardsTab } from "./dashboards-tab";
 import { ServicesTab, serviceWindowOf } from "./services-tab";
 import { Waterfall } from "./waterfall";
 import { SERVICE_COLOURS } from "./trace-model";
@@ -41,20 +42,73 @@ import { SERVICE_COLOURS } from "./trace-model";
  * and the screen says that instead.
  */
 
-const TABS = [
-  "services",
-  "logs",
-  "traces",
-  "metrics",
-  "exceptions",
-  "profiles",
-  "rum",
-  "slos",
-  "map",
-  "sql",
-  "connect",
-] as const;
+/**
+ * Five questions, not eleven signals.
+ *
+ * The screen used to be one tab per signal — logs, traces, metrics,
+ * exceptions, profiles, real users, SQL — plus services, the map, objectives
+ * and the setup: eleven, in a row, each with its own time control and its own
+ * filter box. Nobody arrives asking "I would like some metrics". They arrive
+ * asking which service is unhealthy, or what happened in the last ten minutes,
+ * and the signal is the tool they reach for once they are inside that
+ * question.
+ *
+ * So: what is the state of things, look for something, what I have pinned,
+ * what I promised, and how it is plugged in.
+ */
+const TABS = ["overview", "explore", "dashboards", "slos", "setup"] as const;
 type Tab = (typeof TABS)[number];
+
+/**
+ * What the Explorer can look at — and the whole point is that the window and
+ * the filter do not change when this does.
+ *
+ * Finding a failing trace and then reading that service's logs for the same
+ * ten minutes is one motion, not a retyped filter and a re-picked range.
+ */
+const SIGNALS = ["logs", "traces", "metrics", "exceptions", "profiles", "rum", "sql"] as const;
+type Signal = (typeof SIGNALS)[number];
+
+/**
+ * Where the eleven old tabs went.
+ *
+ * `?tab=logs` is in runbooks, in bookmarks, in alert bodies the product has
+ * already sent, and in every screenshot anybody has taken of it. Each one
+ * still lands where its content now lives.
+ */
+const MOVED: Record<string, { tab: Tab; signal?: Signal }> = {
+  services: { tab: "overview" },
+  map: { tab: "overview" },
+  logs: { tab: "explore", signal: "logs" },
+  traces: { tab: "explore", signal: "traces" },
+  metrics: { tab: "explore", signal: "metrics" },
+  exceptions: { tab: "explore", signal: "exceptions" },
+  profiles: { tab: "explore", signal: "profiles" },
+  rum: { tab: "explore", signal: "rum" },
+  sql: { tab: "explore", signal: "sql" },
+  connect: { tab: "setup" },
+};
+
+/**
+ * The window, once, for every signal that has one.
+ *
+ * Minutes rather than a label, because that is what the queries take — and the
+ * queries take one because without it a trace list reads every trace the
+ * workspace has ever kept (sql/0011_trace_window.sql has the measurements).
+ */
+const RANGES = { "15m": 15, "1h": 60, "6h": 360, "24h": 1440, "7d": 10080 } as const;
+type RangeKey = keyof typeof RANGES;
+const DEFAULT_RANGE: RangeKey = "1h";
+
+function rangeOf(value: string | undefined): RangeKey {
+  return value && value in RANGES ? (value as RangeKey) : DEFAULT_RANGE;
+}
+
+function windowFor(range: RangeKey): { from: Date; to: Date; minutes: number } {
+  const minutes = RANGES[range];
+  const to = new Date();
+  return { from: new Date(to.getTime() - minutes * 60_000), to, minutes };
+}
 
 const CARD: React.CSSProperties = {
   background: "var(--panel)",
@@ -125,6 +179,11 @@ export default async function TelemetryPage({
     new?: string;
 
     attached?: string;
+    /** The Explorer's signal, and the window every signal shares. */
+    signal?: string;
+    range?: string;
+    /** A page cursor from a list's "older" link. */
+    before?: string;
   }>;
 }) {
   const { member } = await requireMember();
@@ -137,12 +196,39 @@ export default async function TelemetryPage({
     return <NotInstalled admin={admin} endpoint={otlpEndpoints(hostOf(tenant)).grpc} />;
   }
 
-  // Services first, as the design has it: the screen opens on "which one is
-  // unhealthy", not on a log stream nobody has filtered yet.
-  const tab: Tab = (TABS as readonly string[]).includes(sp.tab ?? "")
-    ? (sp.tab as Tab)
-    : "services";
+  /*
+   * The tab, the signal and the window, in that order.
+   *
+   * An old address names a signal where a group is expected — `?tab=logs` —
+   * and is read as the group that now holds it rather than redirected: a
+   * redirect would lose the rest of the query, which is usually the filter
+   * somebody was in the middle of.
+   */
+  const asked = sp.tab ?? "";
+  const moved = MOVED[asked];
+  const tab: Tab = (TABS as readonly string[]).includes(asked)
+    ? (asked as Tab)
+    : (moved?.tab ?? "overview");
+  const signal: Signal = (SIGNALS as readonly string[]).includes(sp.signal ?? "")
+    ? (sp.signal as Signal)
+    : (moved?.signal ?? "traces");
+  const range = rangeOf(sp.range ?? sp.since);
+  const win = windowFor(range);
   const endpoints = otlpEndpoints(hostOf(tenant));
+
+  /** Every link out of the controls keeps everything else. */
+  const link = (over: Record<string, string | undefined>) => {
+    const q = new URLSearchParams();
+    const base: Record<string, string | undefined> = {
+      tab,
+      signal: tab === "explore" ? signal : undefined,
+      range: range === DEFAULT_RANGE ? undefined : range,
+      service: sp.service,
+      q: sp.q,
+    };
+    for (const [k, v] of Object.entries({ ...base, ...over })) if (v) q.set(k, v);
+    return `/app/telemetry?${q.toString()}`;
+  };
 
   return (
     <div style={{ maxWidth: 1200, margin: "0 auto", padding: "22px 28px 60px" }}>
@@ -171,7 +257,7 @@ export default async function TelemetryPage({
             <Link
               key={x}
               data-testid={`telemetry-tab-${x}`}
-              href={`/app/telemetry?tab=${x}${sp.service && x !== "connect" ? `&service=${encodeURIComponent(sp.service)}` : ""}`}
+              href={link({ tab: x, signal: x === "explore" ? signal : undefined })}
               style={{
                 height: 28,
                 padding: "0 12px",
@@ -195,9 +281,9 @@ export default async function TelemetryPage({
           will read as "there is nothing else". The chip says which service,
           and removing it is one click.
         */}
-        {sp.service && tab !== "connect" && (
+        {sp.service && tab !== "setup" && (
           <Link
-            href={`/app/telemetry?tab=${tab}`}
+            href={link({ service: undefined })}
             data-testid="telemetry-service-filter"
             title={t("telemetry.clearService")}
             aria-label={t("telemetry.clearService")}
@@ -225,17 +311,110 @@ export default async function TelemetryPage({
         <Usage tenantId={tenant.id} label={t("telemetry.todayRows")} />
       </div>
 
+      {/*
+        The Explorer's two controls, above everything it can look at: the
+        signal, and the window. They are one row because they are one thought
+        — "traces, last hour" — and because the window is the thing that keeps
+        a list of traces from reading a month of them.
+      */}
+      {tab === "explore" && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+            marginTop: 16,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 2,
+              background: "var(--sunk)",
+              borderRadius: 9,
+              padding: 3,
+            }}
+          >
+            {SIGNALS.map((x) => (
+              <Link
+                key={x}
+                data-testid={`telemetry-signal-${x}`}
+                href={link({ signal: x, before: undefined })}
+                style={{
+                  height: 26,
+                  padding: "0 10px",
+                  borderRadius: 7,
+                  background: signal === x ? "var(--panel)" : "transparent",
+                  color: signal === x ? "var(--ink)" : "var(--ink-3)",
+                  boxShadow: signal === x ? "var(--shadow-card)" : "none",
+                  display: "flex",
+                  alignItems: "center",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  textDecoration: "none",
+                }}
+              >
+                {t(`telemetry.tab.${x}`)}
+              </Link>
+            ))}
+          </div>
+          <span style={{ flex: 1 }} />
+          {/* The window. `sql` writes its own time bounds, and metrics carry
+              their own longer horizon, so neither is offered one here. */}
+          {signal !== "sql" && signal !== "metrics" && (
+            <div style={{ display: "flex", gap: 2 }}>
+              {(Object.keys(RANGES) as RangeKey[]).map((k) => (
+                <Link
+                  key={k}
+                  data-testid={`telemetry-range-${k}`}
+                  href={link({ range: k, before: undefined })}
+                  style={{
+                    fontFamily: "var(--mono)",
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    padding: "3px 8px",
+                    borderRadius: 7,
+                    textDecoration: "none",
+                    color: range === k ? "var(--ink)" : "var(--ink-3)",
+                    background: range === k ? "var(--panel)" : "transparent",
+                    border: `1px solid ${range === k ? "var(--line)" : "transparent"}`,
+                  }}
+                >
+                  {k}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ marginTop: 18 }}>
-        {tab === "logs" && (
+        {tab === "overview" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <ServicesTab tenantId={tenant.id} sinceMinutes={serviceWindowOf(String(win.minutes))} />
+            <MapTab
+              tenantId={tenant.id}
+              sinceMinutes={windowOf(String(win.minutes))}
+              highlight={sp.service}
+            />
+          </div>
+        )}
+
+        {tab === "explore" && signal === "logs" && (
           <LogsTab
             tenantId={tenant.id}
             service={sp.service}
             filter={sp.q}
             mayEdit={canRespond(member)}
             patterns={sp.patterns === "1"}
+            from={win.from}
+            to={win.to}
+            before={sp.before}
+            link={link}
           />
         )}
-        {tab === "traces" && (
+        {tab === "explore" && signal === "traces" && (
           <TracesTab
             tenantId={tenant.id}
             open={sp.trace}
@@ -243,10 +422,16 @@ export default async function TelemetryPage({
             filter={sp.q}
             mayEdit={canRespond(member)}
             attached={sp.attached}
+            from={win.from}
+            to={win.to}
+            before={sp.before}
+            link={link}
           />
         )}
-        {tab === "metrics" && <MetricsTab tenantId={tenant.id} open={sp.metric} />}
-        {tab === "exceptions" && (
+        {tab === "explore" && signal === "metrics" && (
+          <MetricsTab tenantId={tenant.id} open={sp.metric} />
+        )}
+        {tab === "explore" && signal === "exceptions" && (
           <ExceptionsTab
             tenantId={tenant.id}
             open={sp.fp}
@@ -255,28 +440,27 @@ export default async function TelemetryPage({
             filter={sp.q}
           />
         )}
-        {tab === "map" && (
-          <MapTab tenantId={tenant.id} sinceMinutes={windowOf(sp.since)} highlight={sp.service} />
-        )}
-        {tab === "profiles" && (
+        {tab === "explore" && signal === "profiles" && (
           <ProfilesTab
             tenantId={tenant.id}
             service={sp.service}
             type={sp.type}
-            sinceMinutes={profileWindowOf(sp.since)}
+            sinceMinutes={profileWindowOf(String(win.minutes))}
             compare={sp.compare === "1"}
           />
         )}
-        {tab === "rum" && (
+        {tab === "explore" && signal === "rum" && (
           <RumTab
             tenantId={tenant.id}
             view={rumViewOf(sp.view)}
-            sinceHours={rumWindowOf(sp.since)}
+            sinceHours={rumWindowOf(String(Math.max(1, Math.round(win.minutes / 60))))}
             session={sp.session}
           />
         )}
-        {tab === "services" && (
-          <ServicesTab tenantId={tenant.id} sinceMinutes={serviceWindowOf(sp.since)} />
+        {tab === "explore" && signal === "sql" && <SqlTab tenantId={tenant.id} query={sp.q} />}
+
+        {tab === "dashboards" && (
+          <DashboardsTab tenantId={tenant.id} admin={admin} error={sp.error} />
         )}
         {tab === "slos" && (
           <SlosTab
@@ -287,8 +471,7 @@ export default async function TelemetryPage({
             openNew={!!sp.new}
           />
         )}
-        {tab === "sql" && <SqlTab tenantId={tenant.id} query={sp.q} />}
-        {tab === "connect" && (
+        {tab === "setup" && (
           <ConnectTab tenantId={tenant.id} admin={admin} issued={sp.issued} http={endpoints.http} />
         )}
       </div>
@@ -399,6 +582,10 @@ async function LogsTab({
   filter,
   mayEdit,
   patterns,
+  from,
+  to,
+  before,
+  link,
 }: {
   tenantId: string;
   service?: string;
@@ -406,30 +593,40 @@ async function LogsTab({
   mayEdit: boolean;
   /** The same stream, folded into the shapes of line it contains. */
   patterns?: boolean;
+  from: Date;
+  to: Date;
+  before?: string;
+  link: (over: Record<string, string | undefined>) => string;
 }) {
   const t = await getT();
   // The filter is compiled here rather than validated first: the compiler is
   // the only thing that knows what is valid, and running it twice to ask the
   // same question would be two places for the answer to differ.
-  let rows: Awaited<ReturnType<typeof logs>> = [];
+  let page: Awaited<ReturnType<typeof logs>> = { rows: [], older: null };
   let shapes: Awaited<ReturnType<typeof logPatterns>> = [];
   let error: string | null = null;
   try {
-    if (patterns) shapes = await logPatterns(tenantId, { sinceHours: 24, service, filter });
-    else rows = await logs(tenantId, { limit: 200, ...(service ? { service } : {}), filter });
+    if (patterns)
+      shapes = await logPatterns(tenantId, {
+        sinceHours: Math.max(1, Math.round((to.getTime() - from.getTime()) / 3_600_000)),
+        service,
+        filter,
+      });
+    else
+      page = await logs(tenantId, {
+        from,
+        to,
+        limit: 200,
+        ...(service ? { service } : {}),
+        filter,
+        before,
+      });
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
+  const rows = page.rows;
 
-  const modeHref = (on: boolean) => {
-    const p = new URLSearchParams({
-      tab: "logs",
-      ...(service ? { service } : {}),
-      ...(filter ? { q: filter } : {}),
-      ...(on ? { patterns: "1" } : {}),
-    });
-    return `/app/telemetry?${p.toString()}`;
-  };
+  const modeHref = (on: boolean) => link({ patterns: on ? "1" : undefined, before: undefined });
   const bar = (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <QueryBar
@@ -503,11 +700,11 @@ async function LogsTab({
                   key={i}
                   href={
                     literal
-                      ? `/app/telemetry?${new URLSearchParams({
-                          tab: "logs",
-                          ...(service ? { service } : {}),
+                      ? link({
                           q: `body contains '${literal}'`,
-                        }).toString()}`
+                          patterns: undefined,
+                          before: undefined,
+                        })
                       : modeHref(false)
                   }
                   style={{
@@ -632,7 +829,7 @@ async function LogsTab({
           return l.trace_id ? (
             <Link
               key={`${l.ts}-${i}`}
-              href={`/app/telemetry?tab=traces&trace=${l.trace_id}`}
+              href={link({ signal: "traces", trace: l.trace_id, before: undefined })}
               style={{ ...shared, cursor: "pointer" }}
               title={t("telemetry.openTrace")}
             >
@@ -644,8 +841,27 @@ async function LogsTab({
             </div>
           );
         })}
-        <div style={{ padding: "8px 16px", color: "#6F7E89", fontSize: 11 }}>
-          {t("telemetry.logsFoot", { count: rows.length })}
+        <div
+          style={{
+            padding: "8px 16px",
+            color: "#6F7E89",
+            fontSize: 11,
+            display: "flex",
+            gap: 12,
+          }}
+        >
+          <span>{t("telemetry.logsFoot", { count: rows.length })}</span>
+          <span style={{ flex: 1 }} />
+          {/* A cursor, not an offset: see recentLogs. */}
+          {page.older && (
+            <Link
+              href={link({ before: page.older })}
+              data-testid="logs-older"
+              style={{ color: "var(--code-blue)", fontWeight: 600, textDecoration: "none" }}
+            >
+              {t("telemetry.older")}
+            </Link>
+          )}
         </div>
       </div>
       <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{t("telemetry.logsNote")}</div>
@@ -660,6 +876,10 @@ async function TracesTab({
   filter,
   mayEdit,
   attached,
+  from,
+  to,
+  before,
+  link,
 }: {
   tenantId: string;
   open?: string;
@@ -668,15 +888,20 @@ async function TracesTab({
   mayEdit: boolean;
   /** The incident this trace was just attached to, to say so once. */
   attached?: string;
+  from: Date;
+  to: Date;
+  before?: string;
+  link: (over: Record<string, string | undefined>) => string;
 }) {
   const t = await getT();
-  let rows: Awaited<ReturnType<typeof traces>> = [];
+  let page: Awaited<ReturnType<typeof traces>> = { rows: [], older: null };
   let error: string | null = null;
   try {
-    rows = await traces(tenantId, { service, filter });
+    page = await traces(tenantId, { from, to, service, filter, before });
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
+  const rows = page.rows;
 
   const bar = (
     <QueryBar
@@ -704,7 +929,7 @@ async function TracesTab({
     );
   }
   const spans = open ? await trace(tenantId, open) : [];
-  const correlated = open ? await logs(tenantId, { traceId: open, limit: 50 }) : [];
+  const correlated = open ? (await logs(tenantId, { traceId: open, limit: 50 })).rows : [];
   // The incidents a trace can be hung on: the open ones, newest first. Read
   // only when a trace is open — the list itself has nothing to attach.
   const attachable = open
@@ -745,7 +970,8 @@ async function TracesTab({
           {rows.map((r, i) => (
             <Link
               key={r.trace_id}
-              href={`/app/telemetry?tab=traces&trace=${r.trace_id}`}
+              data-testid="trace-row"
+              href={link({ trace: r.trace_id })}
               style={{
                 display: "grid",
                 gridTemplateColumns: "76px 52px minmax(0,1fr) auto 76px 66px",
@@ -820,6 +1046,22 @@ async function TracesTab({
             </Link>
           ))}
         </div>
+        {page.older && (
+          <div style={{ display: "flex" }}>
+            <Link
+              href={link({ before: page.older })}
+              data-testid="traces-older"
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--brand)",
+                textDecoration: "none",
+              }}
+            >
+              {t("telemetry.older")}
+            </Link>
+          </div>
+        )}
 
         {open && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>

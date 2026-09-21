@@ -106,6 +106,12 @@ export const fr: Dictionary = {
   "telemetry.tab.connect": "Brancher",
   "telemetry.tab.metrics": "Métriques",
   "telemetry.tab.slos": "Objectifs",
+  "telemetry.tab.overview": "Vue d’ensemble",
+  "telemetry.tab.explore": "Explorer",
+  "telemetry.tab.dashboards": "Tableaux de bord",
+  "telemetry.tab.setup": "Réglages",
+  "telemetry.older": "Plus anciennes ›",
+  "dash.fromPack": "d’un pack Collector",
   "telemetry.tab.services": "Services",
   "telemetry.servicesHint":
     "Classés par trafic. Un service apparaît dès qu’il envoie un span — rien à déclarer avant.",

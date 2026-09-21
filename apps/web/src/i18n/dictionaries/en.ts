@@ -114,6 +114,12 @@ export const en = {
   "telemetry.tab.connect": "Connect",
   "telemetry.tab.metrics": "Metrics",
   "telemetry.tab.slos": "Objectives",
+  "telemetry.tab.overview": "Overview",
+  "telemetry.tab.explore": "Explore",
+  "telemetry.tab.dashboards": "Dashboards",
+  "telemetry.tab.setup": "Setup",
+  "telemetry.older": "Older ›",
+  "dash.fromPack": "from a collector pack",
   "telemetry.tab.services": "Services",
   "telemetry.servicesHint":
     "Ordered by traffic. A service appears here as soon as it sends a span — nothing to declare first.",

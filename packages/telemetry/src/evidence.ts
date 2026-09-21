@@ -11,7 +11,7 @@
  * number on its own says nothing. "Four hundred errors" is either a catastrophe
  * or a Tuesday, and only the comparison tells you which.
  */
-import { read, EXCEPTION_GROUPS, LOGS, SPANS } from "./query";
+import { read, EXCEPTION_GROUPS, LOGS, SPANS, chTime } from "./query";
 import { EDGES } from "./service-map";
 
 const DAY_MS = 86_400_000;
@@ -36,10 +36,10 @@ export async function serviceWindow(
 ): Promise<ServiceWindow> {
   const params = {
     service,
-    from: ch(from),
-    to: ch(to),
-    fromBefore: ch(new Date(from.getTime() - DAY_MS)),
-    toBefore: ch(new Date(to.getTime() - DAY_MS)),
+    from: chTime(from),
+    to: chTime(to),
+    fromBefore: chTime(new Date(from.getTime() - DAY_MS)),
+    toBefore: chTime(new Date(to.getTime() - DAY_MS)),
   };
 
   const [logs] = await read<{ now: string; before: string }>(
@@ -130,8 +130,8 @@ export async function newExceptions(
       LIMIT 8`,
     {
       params: {
-        from: ch(from).slice(0, 19),
-        to: ch(to).slice(0, 19),
+        from: chTime(from).slice(0, 19),
+        to: chTime(to).slice(0, 19),
         ...(service ? { service } : {}),
       },
     },
@@ -203,10 +203,10 @@ export async function neighbours(
     {
       params: {
         service,
-        from: ch(from).slice(0, 19),
-        to: ch(to).slice(0, 19),
-        fromBefore: ch(new Date(from.getTime() - DAY_MS)).slice(0, 19),
-        toBefore: ch(new Date(to.getTime() - DAY_MS)).slice(0, 19),
+        from: chTime(from).slice(0, 19),
+        to: chTime(to).slice(0, 19),
+        fromBefore: chTime(new Date(from.getTime() - DAY_MS)).slice(0, 19),
+        toBefore: chTime(new Date(to.getTime() - DAY_MS)).slice(0, 19),
       },
     },
   );
@@ -223,10 +223,6 @@ export async function neighbours(
 
 function finite(n: number | undefined): number {
   return Number.isFinite(n) ? Math.round(Number(n) * 10) / 10 : 0;
-}
-
-function ch(d: Date): string {
-  return d.toISOString().replace("T", " ").replace("Z", "");
 }
 
 export type GroupRate = {
