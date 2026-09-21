@@ -111,7 +111,22 @@ export const de: Dictionary = {
   "telemetry.tab.setup": "Einrichtung",
   "telemetry.older": "Älter ›",
   "facets.title": "In diesem Zeitraum",
+  "logs.perBar": "{minutes} min pro Balken",
+  "logs.barTitle": "{time} — {total} Zeilen, {errors} Fehler",
+  "traces.scatterHint":
+    "{traces} Traces in diesem Zeitraum · {dots} gezeichnet, darunter die langsamsten und alle Fehler",
+  "traces.failed": "gescheitert",
+  "traces.bandsHint": "{traces} Anfragen in diesem Zeitraum, {errors} davon gescheitert",
+  "traces.bandTitle": "{time} — {traces} Anfragen, {errors} gescheitert, p99 {p99}",
+  "traces.perBar": "{minutes} min pro Balken",
+  "traces.peak": "{n} Spitze",
+  "traces.worstErrors": "{n} gescheitert im schlimmsten",
+  "metrics.groupBy": "Aufteilen nach",
+  "metrics.groupNone": "nichts",
+  "traces.bandsUnfiltered":
+    "Die Form oben gilt für das ganze Fenster: Ein Feldfilter lässt sich nicht auf eine vorab aggregierte Minute anwenden. Die Liste darunter ist gefiltert. Auf sechs Stunden oder weniger eingrenzen, um die gefilterten Anfragen als Punkte zu sehen.",
   "facets.total": "{count} Zeilen gezählt",
+  "facets.totalPartial": "{count} Zeilen über die letzten {hours} h gezählt",
   "facets.attributes": "Vorhandene Attribute",
   "facets.add": "{field} = {value} zum Filter hinzufügen",
   "dash.fromPack": "aus einem Collector-Pack",
@@ -135,7 +150,7 @@ export const de: Dictionary = {
     "Ein Ziel ist ein Verhältnis zweier PromQL-Ausdrücke über die Metriken nebenan. Nach verbleibendem Budget sortiert.",
   "telemetry.noMetrics":
     "Noch keine Metrik eingegangen. Ein Dienst, der OpenTelemetry-Metriken exportiert, zeigt hier seine Serien.",
-  "telemetry.seriesCount": "{n} Serien",
+  "telemetry.seriesCount": { one: "{count} Reihe", other: "{count} Reihen" },
   "telemetry.lastHours": "Letzte {n} Stunden, ein Punkt pro Minute",
   "telemetry.noPoints": "Diese Metrik hat im Zeitfenster keinen Punkt.",
   "telemetry.seriesCapped":

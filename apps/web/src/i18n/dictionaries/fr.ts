@@ -112,7 +112,22 @@ export const fr: Dictionary = {
   "telemetry.tab.setup": "Réglages",
   "telemetry.older": "Plus anciennes ›",
   "facets.title": "Dans cette fenêtre",
+  "logs.perBar": "{minutes} min par barre",
+  "logs.barTitle": "{time} — {total} lignes, {errors} erreurs",
+  "traces.scatterHint":
+    "{traces} traces dans cette fenêtre · {dots} dessinées, dont les plus lentes et tous les échecs",
+  "traces.failed": "en échec",
+  "traces.bandsHint": "{traces} requêtes dans cette fenêtre, dont {errors} en échec",
+  "traces.bandTitle": "{time} — {traces} requêtes, {errors} en échec, p99 {p99}",
+  "traces.perBar": "{minutes} min par barre",
+  "traces.peak": "{n} au pic",
+  "traces.worstErrors": "{n} en échec au pire",
+  "metrics.groupBy": "Séparer par",
+  "metrics.groupNone": "rien",
+  "traces.bandsUnfiltered":
+    "La forme ci-dessus porte sur toute la fenêtre : un filtre sur un champ ne s’applique pas à une minute déjà agrégée. La liste en dessous est filtrée. Resserrez à six heures ou moins pour voir les requêtes filtrées en points.",
   "facets.total": "{count} lignes comptées",
+  "facets.totalPartial": "{count} lignes comptées sur les {hours} dernières heures",
   "facets.attributes": "Attributs présents",
   "facets.add": "Ajouter {field} = {value} au filtre",
   "dash.fromPack": "d’un pack Collector",
@@ -136,7 +151,7 @@ export const fr: Dictionary = {
     "Un objectif est un rapport entre deux expressions PromQL sur les métriques d’à côté. Triés par budget restant.",
   "telemetry.noMetrics":
     "Aucune métrique n’est encore arrivée. Un service qui exporte des métriques OpenTelemetry affiche ses séries ici.",
-  "telemetry.seriesCount": "{n} séries",
+  "telemetry.seriesCount": { one: "{count} série", other: "{count} séries" },
   "telemetry.lastHours": "Dernières {n} heures, un point par minute",
   "telemetry.noPoints": "Cette métrique n’a aucun point sur la fenêtre.",
   "telemetry.seriesCapped":

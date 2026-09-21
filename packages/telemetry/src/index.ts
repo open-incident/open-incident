@@ -60,6 +60,21 @@ export {
 } from "./promql/parse";
 export { evalPromql, type EvalOptions, type Sample, type Series } from "./promql/eval";
 export { servicesOverview, type ServiceRow } from "./services";
+export {
+  logHistogram,
+  traceScatter,
+  latencyBands,
+  metricGraph,
+  metricSparklines,
+  type LogShape,
+  type SeverityBucket,
+  type LatencyShape,
+  type ScatterPoint,
+  type BandShape,
+  type LatencyBand,
+  type MetricGraph,
+  type MetricLine,
+} from "./explore";
 export { facetsFor, attributeKeys, facetValuesOf, type Facet, type FacetValue } from "./facets";
 export {
   PACKS,

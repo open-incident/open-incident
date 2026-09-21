@@ -29,6 +29,15 @@ import {
   metricSeries,
   recentLogs,
   recentTraces,
+  logHistogram,
+  traceScatter,
+  latencyBands,
+  metricGraph,
+  metricSparklines,
+  type LogShape,
+  type LatencyShape,
+  type BandShape,
+  type MetricGraph,
   type LogPage,
   type TracePage,
   seriesLabels,
@@ -176,6 +185,69 @@ export async function logs(
 ): Promise<LogPage> {
   if (!telemetryInstalled()) return { rows: [], older: null };
   return recentLogs(tenantId, opts);
+}
+
+/** One metric as one chart: every series on one scale, grouped as asked. */
+export async function metricGraphFor(
+  tenantId: string,
+  opts: {
+    metric: string;
+    from: Date;
+    to: Date;
+    groupBy?: string;
+    agg?: "avg" | "sum" | "max";
+  },
+): Promise<MetricGraph> {
+  if (!telemetryInstalled())
+    return { lines: [], stepMs: 60_000, groupBy: null, labelKeys: [], agg: "avg" };
+  return metricGraph(tenantId, opts);
+}
+
+/** A sparkline per metric, so a catalogue of forty names can be scanned. */
+export async function metricSparks(
+  tenantId: string,
+  opts: { from: Date; to: Date },
+): Promise<Map<string, number[]>> {
+  if (!telemetryInstalled()) return new Map();
+  return metricSparklines(tenantId, opts);
+}
+
+/** The histogram above the log list: when the lines happened, and how bad. */
+export async function logShape(
+  tenantId: string,
+  opts: { from: Date; to: Date; filter?: string; service?: string },
+): Promise<LogShape> {
+  if (!telemetryInstalled())
+    return { buckets: [], stepMs: 60_000, totals: { error: 0, warn: 0, info: 0 } };
+  return logHistogram(tenantId, opts);
+}
+
+/**
+ * The shape of the window for the trace screen.
+ *
+ * Bands at every width, and dots only when the window is short enough for a
+ * cloud to be worth its cost — six hours, measured: a day of dots is five
+ * seconds and a week is twenty-two, because one dot is one trace. The bands
+ * come from the per-minute rollup and cost the same at any width.
+ */
+export const SCATTER_MAX_MINUTES = 360;
+
+/** Bands: traffic, p50/p95/p99 and the failed share, per bucket. */
+export async function traceBands(
+  tenantId: string,
+  opts: { from: Date; to: Date; service?: string },
+): Promise<BandShape> {
+  if (!telemetryInstalled()) return { bands: [], stepMs: 60_000 };
+  return latencyBands(tenantId, opts);
+}
+
+/** The scatter above the trace list: every request as a dot. */
+export async function traceShape(
+  tenantId: string,
+  opts: { from: Date; to: Date; filter?: string; service?: string },
+): Promise<LatencyShape> {
+  if (!telemetryInstalled()) return { points: [], p50Ms: 0, p95Ms: 0, p99Ms: 0, traces: 0 };
+  return traceScatter(tenantId, opts);
 }
 
 export async function traces(

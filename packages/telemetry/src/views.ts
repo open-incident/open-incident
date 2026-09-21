@@ -32,6 +32,17 @@ export const TRACES_WINDOW =
 export const SERIES = "metric_series_t(tenant = {tenant:UUID})";
 export const MINUTES = "metric_1m_t(tenant = {tenant:UUID})";
 export const EXCEPTIONS = "otel_exceptions_t(tenant = {tenant:UUID})";
+/**
+ * Latency and traffic per bucket, from the per-minute rollup.
+ *
+ * The window and the bucket are parameters for the same reason the tenant is:
+ * the bucketing has to happen while the quantile states are still states.
+ * Merging a minute's p99 into a number and then averaging those numbers gives
+ * the mean of a hundred p99s, which is always lower than the p99 and lower by
+ * an amount nobody can estimate. See sql/0014_trace_bands.sql.
+ */
+export const TRACE_BANDS =
+  "trace_bands_t(tenant = {tenant:UUID}, from = {from:DateTime}, to = {to:DateTime}, step = {step:UInt32})";
 export const EXCEPTION_GROUPS = "exception_groups_t(tenant = {tenant:UUID})";
 export const EXCEPTION_HOURS = "exception_groups_1h_t(tenant = {tenant:UUID})";
 export const EDGES = "service_edges_t(tenant = {tenant:UUID})";

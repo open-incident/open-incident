@@ -14,6 +14,10 @@ import {
   trace,
   traces,
   usageToday,
+  logShape,
+  traceShape,
+  traceBands,
+  SCATTER_MAX_MINUTES,
 } from "@/lib/telemetry";
 import { packsReporting, type PackId } from "@openincident/telemetry";
 import { packDashboardSlugs } from "@openincident/oncall";
@@ -29,6 +33,9 @@ import { RumTab } from "./rum-tab";
 import { SlosTab } from "./slos-tab";
 import { DashboardsTab } from "./dashboards-tab";
 import { FacetRail } from "./facet-rail";
+import { LogHistogram } from "./log-histogram";
+import { LatencyScatter } from "./latency-scatter";
+import { LatencyBands } from "./latency-bands";
 import { ServicesTab, serviceWindowOf } from "./services-tab";
 import { Waterfall } from "./waterfall";
 import { SERVICE_COLOURS } from "./trace-model";
@@ -111,6 +118,26 @@ function windowFor(range: RangeKey): { from: Date; to: Date; minutes: number } {
   return { from: new Date(to.getTime() - minutes * 60_000), to, minutes };
 }
 
+/**
+ * The window a reader zoomed into, from the histogram or the scatter.
+ *
+ * Two epoch milliseconds in the address rather than a named range, because
+ * "the four minutes where it broke" has no name — and because a window in the
+ * URL is a window somebody can send to a colleague.
+ */
+function customWindow(
+  from: string | undefined,
+  to: string | undefined,
+): { from: Date; to: Date; minutes: number } | null {
+  const a = Number(from);
+  const b = Number(to);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return null;
+  // A sane floor: a window of nothing is a screen of nothing, and a bar click
+  // on a very wide range can land on a bucket a few seconds long.
+  const span = Math.max(60_000, b - a);
+  return { from: new Date(a), to: new Date(a + span), minutes: Math.round(span / 60_000) };
+}
+
 const CARD: React.CSSProperties = {
   background: "var(--panel)",
   border: "1px solid var(--line)",
@@ -185,6 +212,12 @@ export default async function TelemetryPage({
     range?: string;
     /** A page cursor from a list's "older" link. */
     before?: string;
+    /** An explicit window, from a click on the histogram or the scatter. */
+    from?: string;
+    to?: string;
+    /** The metric chart's split and reduction. */
+    group?: string;
+    agg?: string;
   }>;
 }) {
   const { member } = await requireMember();
@@ -214,8 +247,18 @@ export default async function TelemetryPage({
     ? (sp.signal as Signal)
     : (moved?.signal ?? "traces");
   const range = rangeOf(sp.range ?? sp.since);
-  const win = windowFor(range);
+  const zoomed = customWindow(sp.from, sp.to);
+  const win = zoomed ?? windowFor(range);
   const endpoints = otlpEndpoints(hostOf(tenant));
+
+  /**
+   * The window a bar, or a half of the scatter, covers.
+   *
+   * A click on a picture is the fastest way anybody has narrowed a search, and
+   * it costs two numbers in the address — which also makes it shareable.
+   */
+  const zoom = (a: Date, b: Date) =>
+    link({ from: String(a.getTime()), to: String(b.getTime()), before: undefined });
 
   /** Every link out of the controls keeps everything else. */
   const link = (over: Record<string, string | undefined>) => {
@@ -224,8 +267,14 @@ export default async function TelemetryPage({
       tab,
       signal: tab === "explore" ? signal : undefined,
       range: range === DEFAULT_RANGE ? undefined : range,
+      // A zoom outlives a click on anything but the range chips, which clear it.
+      from: zoomed ? String(zoomed.from.getTime()) : undefined,
+      to: zoomed ? String(zoomed.to.getTime()) : undefined,
       service: sp.service,
       q: sp.q,
+      metric: sp.metric,
+      group: sp.group,
+      agg: sp.agg,
     };
     for (const [k, v] of Object.entries({ ...base, ...over })) if (v) q.set(k, v);
     return `/app/telemetry?${q.toString()}`;
@@ -361,15 +410,45 @@ export default async function TelemetryPage({
             ))}
           </div>
           <span style={{ flex: 1 }} />
-          {/* The window. `sql` writes its own time bounds, and metrics carry
-              their own longer horizon, so neither is offered one here. */}
-          {signal !== "sql" && signal !== "metrics" && (
+          {/*
+            A zoom is shown as a chip of its own, with the way out: a reader
+            who clicked a bar must be able to see that the window is no longer
+            the one the chips describe.
+          */}
+          {zoomed && (
+            <Link
+              href={link({ from: undefined, to: undefined, before: undefined })}
+              data-testid="telemetry-zoom"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                height: 24,
+                padding: "0 9px",
+                borderRadius: 7,
+                border: "1px solid var(--line)",
+                background: "var(--sunk)",
+                fontFamily: "var(--mono)",
+                fontSize: 11,
+                color: "var(--ink)",
+                textDecoration: "none",
+              }}
+            >
+              {zoomed.from.toISOString().slice(11, 16)}–{zoomed.to.toISOString().slice(11, 16)}
+              <span style={{ color: "var(--ink-3)" }} aria-hidden>
+                ✕
+              </span>
+            </Link>
+          )}
+          {/* The window, for every signal but SQL — which writes its own time
+              bounds in the query the reader typed. */}
+          {signal !== "sql" && (
             <div style={{ display: "flex", gap: 2 }}>
               {(Object.keys(RANGES) as RangeKey[]).map((k) => (
                 <Link
                   key={k}
                   data-testid={`telemetry-range-${k}`}
-                  href={link({ range: k, before: undefined })}
+                  href={link({ range: k, from: undefined, to: undefined, before: undefined })}
                   style={{
                     fontFamily: "var(--mono)",
                     fontSize: 11.5,
@@ -432,6 +511,7 @@ export default async function TelemetryPage({
                     to={win.to}
                     before={sp.before}
                     link={link}
+                    zoom={zoom}
                   />
                 )}
                 {signal === "traces" && (
@@ -446,6 +526,7 @@ export default async function TelemetryPage({
                     to={win.to}
                     before={sp.before}
                     link={link}
+                    zoom={zoom}
                   />
                 )}
                 {signal === "exceptions" && (
@@ -461,7 +542,15 @@ export default async function TelemetryPage({
             </div>
           )}
         {tab === "explore" && signal === "metrics" && (
-          <MetricsTab tenantId={tenant.id} open={sp.metric} />
+          <MetricsTab
+            tenantId={tenant.id}
+            open={sp.metric}
+            from={win.from}
+            to={win.to}
+            groupBy={sp.group}
+            agg={sp.agg === "sum" || sp.agg === "max" ? sp.agg : "avg"}
+            link={link}
+          />
         )}
         {tab === "explore" && signal === "profiles" && (
           <ProfilesTab
@@ -609,6 +698,7 @@ async function LogsTab({
   to,
   before,
   link,
+  zoom,
 }: {
   tenantId: string;
   service?: string;
@@ -620,6 +710,7 @@ async function LogsTab({
   to: Date;
   before?: string;
   link: (over: Record<string, string | undefined>) => string;
+  zoom: (from: Date, to: Date) => string;
 }) {
   const t = await getT();
   // The filter is compiled here rather than validated first: the compiler is
@@ -627,8 +718,12 @@ async function LogsTab({
   // same question would be two places for the answer to differ.
   let page: Awaited<ReturnType<typeof logs>> = { rows: [], older: null };
   let shapes: Awaited<ReturnType<typeof logPatterns>> = [];
+  let shape: Awaited<ReturnType<typeof logShape>> | null = null;
   let error: string | null = null;
   try {
+    // The picture and the rows are one question asked twice; asked together so
+    // a spike and the lines under it arrive in the same render.
+    shape = await logShape(tenantId, { from, to, filter, service });
     if (patterns)
       shapes = await logPatterns(tenantId, {
         sinceHours: Math.max(1, Math.round((to.getTime() - from.getTime()) / 3_600_000)),
@@ -650,6 +745,28 @@ async function LogsTab({
   const rows = page.rows;
 
   const modeHref = (on: boolean) => link({ patterns: on ? "1" : undefined, before: undefined });
+  /*
+   * One severity term at a time.
+   *
+   * Clicking ERROR after WARN must mean "errors", not "errors and warnings",
+   * which is what appending would produce — and an expression nobody can undo
+   * is an expression people retype from scratch.
+   */
+  const withSeverity = (band: "error" | "warn" | null) => {
+    const rest = (filter ?? "")
+      .split(/\s+AND\s+/i)
+      .filter((term) => term.trim() && !/^severity_number\s/i.test(term.trim()))
+      .join(" AND ");
+    const term =
+      band === "error"
+        ? "severity_number >= 17"
+        : band === "warn"
+          ? "severity_number >= 13 AND severity_number < 17"
+          : "";
+    const next = [rest, term].filter(Boolean).join(" AND ");
+    return link({ q: next || undefined, before: undefined });
+  };
+
   const bar = (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <QueryBar
@@ -659,6 +776,9 @@ async function LogsTab({
         service={service}
         mayEdit={mayEdit}
       />
+      {shape && !patterns && (
+        <LogHistogram shape={shape} from={from} to={to} zoom={zoom} onSeverity={withSeverity} />
+      )}
       <div style={{ display: "flex", gap: 6 }}>
         {[false, true].map((on) => (
           <Link
@@ -903,6 +1023,7 @@ async function TracesTab({
   to,
   before,
   link,
+  zoom,
 }: {
   tenantId: string;
   open?: string;
@@ -915,25 +1036,72 @@ async function TracesTab({
   to: Date;
   before?: string;
   link: (over: Record<string, string | undefined>) => string;
+  zoom: (from: Date, to: Date) => string;
 }) {
   const t = await getT();
+  /*
+   * Which drawing, and why it is a choice rather than a preference.
+   *
+   * A dot is one trace, so a cloud costs the window: measured on 22 million
+   * spans, a day of dots is five seconds and a week is twenty-two. The bands
+   * come from the per-minute rollup and cost the same at any width. So the
+   * cloud is drawn while it is affordable — six hours — and the bands
+   * otherwise, which is also the more readable of the two over a week.
+   */
+  const minutes = Math.round((to.getTime() - from.getTime()) / 60_000);
+  const dots = minutes <= SCATTER_MAX_MINUTES;
+
   let page: Awaited<ReturnType<typeof traces>> = { rows: [], older: null };
+  let shape: Awaited<ReturnType<typeof traceShape>> | null = null;
+  let bands: Awaited<ReturnType<typeof traceBands>> | null = null;
   let error: string | null = null;
   try {
-    page = await traces(tenantId, { from, to, service, filter, before });
+    // The shape and the list are the same window asked two ways, in parallel:
+    // the dot somebody clicks and the row they would otherwise have scrolled
+    // to are the same trace.
+    [page, shape, bands] = await Promise.all([
+      traces(tenantId, { from, to, service, filter, before }),
+      dots ? traceShape(tenantId, { from, to, service, filter }) : Promise.resolve(null),
+      dots ? Promise.resolve(null) : traceBands(tenantId, { from, to, service }),
+    ]);
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
   }
   const rows = page.rows;
 
   const bar = (
-    <QueryBar
-      tenantId={tenantId}
-      signal="traces"
-      query={filter}
-      service={service}
-      mayEdit={mayEdit}
-    />
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <QueryBar
+        tenantId={tenantId}
+        signal="traces"
+        query={filter}
+        service={service}
+        mayEdit={mayEdit}
+      />
+      {shape && shape.points.length > 0 && (
+        <div style={{ ...CARD, padding: "12px 14px 8px" }}>
+          <LatencyScatter
+            shape={shape}
+            from={from}
+            to={to}
+            open={open}
+            href={(traceId) => link({ trace: traceId })}
+            zoom={zoom}
+          />
+        </div>
+      )}
+      {bands && bands.bands.length > 0 && (
+        <div style={{ ...CARD, padding: "12px 14px 8px" }}>
+          <LatencyBands
+            shape={bands}
+            from={from}
+            to={to}
+            zoom={zoom}
+            note={filter?.trim() ? t("traces.bandsUnfiltered") : undefined}
+          />
+        </div>
+      )}
+    </div>
   );
   if (error) {
     return (

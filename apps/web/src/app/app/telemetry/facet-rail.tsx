@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { attributeKeys, facetsFor, type Facet, type FacetValue } from "@openincident/telemetry";
+import { attributeKeys, facetsFor, type FacetValue } from "@openincident/telemetry";
 import { getT } from "@/i18n/server";
 
 /**
@@ -39,7 +39,11 @@ export async function FacetRail({
   link: (over: Record<string, string | undefined>) => string;
 }) {
   const t = await getT();
-  let data: { total: number; facets: Facet[] } = { total: 0, facets: [] };
+  let data: Awaited<ReturnType<typeof facetsFor>> = {
+    total: 0,
+    facets: [],
+    scanned: { from, to, whole: true },
+  };
   let attrs: FacetValue[] = [];
   try {
     [data, attrs] = await Promise.all([
@@ -69,7 +73,20 @@ export async function FacetRail({
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         <span className="oi-eyebrow">{t("facets.title")}</span>
         <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
-          {t("facets.total", { count: data.total })}
+          {data.scanned.whole
+            ? t("facets.total", { count: data.total })
+            : /*
+               * Said, never silently. Counting a week of 22 million spans
+               * exactly is 4.6 s, so past six hours the rail counts the most
+               * recent six — which is a true answer to "what is in here", as
+               * long as it says which "here".
+               */
+              t("facets.totalPartial", {
+                count: data.total,
+                hours: Math.round(
+                  (data.scanned.to.getTime() - data.scanned.from.getTime()) / 3_600_000,
+                ),
+              })}
         </span>
       </div>
 

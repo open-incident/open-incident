@@ -340,7 +340,46 @@ export async function recentTraces(
   const cursor = parseCursor(opts.before);
   const bySpan = Boolean(opts.service || opts.filter?.trim());
 
+  /*
+   * Which traces are on this page.
+   *
+   * With no filter the ids come from the **root spans** — `parent_span_id =
+   * ''` — because a root span already carries the trace's start and the list
+   * is ordered by it. The first version asked the trace index instead, which
+   * has to merge `min(start_ts)` for every trace in the window before it can
+   * sort: measured over seven days of 22 million spans, 9.9 million rows and
+   * 1.41 GiB of RAM for a hundred lines, against 439 ms and 18 MiB here.
+   *
+   * With a filter or a service the ids still come from the spans, grouped by
+   * trace — because "a trace with at least one span that matches" is what
+   * somebody typing `status_code = 'error'` into a list of traces means, and
+   * the root span alone would answer a different question.
+   */
   let ids: string[] | null = null;
+  if (!bySpan) {
+    const where = [
+      "s.parent_span_id = ''",
+      "s.start_ts >= {fromTs:DateTime64(9)}",
+      "s.start_ts <= {toTs:DateTime64(9)}",
+    ];
+    const params: Record<string, unknown> = { ...ts, limit: limit + 1 };
+    if (cursor) {
+      where.push("(s.start_ts, s.trace_id) < ({cursorTs:DateTime64(9)}, {cursorId:String})");
+      params.cursorTs = cursor.ts;
+      params.cursorId = cursor.id;
+    }
+    const roots = await read<{ trace_id: string }>(
+      tenantId,
+      `SELECT s.trace_id AS trace_id
+         FROM ${SPANS} AS s
+        WHERE ${where.join(" AND ")}
+        ORDER BY s.start_ts DESC, s.trace_id DESC
+        LIMIT {limit:UInt32}`,
+      { params, maxRows: limit + 1 },
+    );
+    if (roots.length === 0) return { rows: [], older: null };
+    ids = roots.map((r) => r.trace_id);
+  }
   if (bySpan) {
     const where = ["s.start_ts >= {fromTs:DateTime64(9)}", "s.start_ts <= {toTs:DateTime64(9)}"];
     const params: Record<string, unknown> = { ...ts, limit: limit + 1 };
@@ -382,34 +421,20 @@ export async function recentTraces(
     ids = matches.map((m) => m.trace_id);
   }
 
-  const params: Record<string, unknown> = { ...day, ...ts, limit: limit + 1 };
-  const pageWhere = ["i.start_ts >= {fromTs:DateTime64(9)}", "i.start_ts <= {toTs:DateTime64(9)}"];
-  if (ids) {
-    pageWhere.push("i.trace_id IN {ids:Array(String)}");
-    params.ids = ids;
-  }
-  if (cursor && !bySpan) {
-    pageWhere.push("(i.start_ts, i.trace_id) < ({cursorTs:DateTime64(9)}, {cursorId:String})");
-    params.cursorTs = cursor.ts;
-    params.cursorId = cursor.id;
-  }
-
+  /*
+   * What those traces contain, merged for the page's hundred ids and nothing
+   * else. This is the expensive half — `services` is a groupUniqArray — and
+   * it is now bounded by the page rather than by the window.
+   */
   const rows = await read<TraceRow>(
     tenantId,
-    `WITH page AS (
-       SELECT i.trace_id AS trace_id
-         FROM ${TRACES_WINDOW} AS i
-        WHERE ${pageWhere.join(" AND ")}
-        ORDER BY i.start_ts DESC, i.trace_id DESC
-        LIMIT {limit:UInt32}
-     )
-     SELECT trace_id, start_ts, duration_ns, root_service, root_name, root_status,
+    `SELECT trace_id, start_ts, duration_ns, root_service, root_name, root_status,
             span_count, error_count, services, has_exception
        FROM ${TRACES_WINDOW}
-      WHERE trace_id IN (SELECT trace_id FROM page)
+      WHERE trace_id IN {ids:Array(String)}
       ORDER BY start_ts DESC, trace_id DESC
       LIMIT {limit:UInt32}`,
-    { params },
+    { params: { ...day, ...ts, ids: ids ?? [], limit: limit + 1 } },
   );
 
   // One more than asked for is how the end of the window is told apart from a

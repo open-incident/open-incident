@@ -17,7 +17,8 @@
     "db:rls": "tsx src/apply-rls.ts",
     "db:seed": "tsx src/seed/demo.ts",
     "workspace:create": "tsx src/cli/create-workspace.ts",
-    "workspace:purge": "tsx src/cli/purge-workspace.ts"
+    "workspace:purge": "tsx src/cli/purge-workspace.ts",
+    "telemetry:load": "tsx src/cli/telemetry-load.ts"
   },
   "dependencies": {
     "@openincident/config": "workspace:*",
