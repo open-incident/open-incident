@@ -23,8 +23,17 @@ test.describe("Status pages", () => {
     expect(rss.status()).toBe(200);
     expect(await rss.text()).toContain("<rss");
     expect((await api.get(`${STATUS_BASE_URL}/atom.xml`)).status()).toBe(200);
-    // An unknown host is a 404, never a page.
-    expect((await api.get(`http://nobody.status.localhost:3107/`)).status()).toBe(404);
+    /*
+     * An unknown host is a 404, never a page.
+     *
+     * Derived from the base URL rather than written out: the same suite runs
+     * against `next start` in the clear and against the production topology
+     * behind Caddy, and a literal `http://…:3107` answers 400 on the second
+     * one — the TLS terminator rejecting a plaintext request, which says
+     * nothing about what the status app does with a host it does not know.
+     */
+    const unknownHost = STATUS_BASE_URL.replace(/\/\/[^./]+\./, "//nobody.");
+    expect((await api.get(unknownHost)).status()).toBe(404);
     // Subscribe → confirmation email → confirmed.
     const email = `visitor.${stamp}@example.com`;
     const since = Date.now();
