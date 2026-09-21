@@ -15,15 +15,7 @@
  */
 import { clickhouse, telemetryInstalled } from "./client";
 import { compileFilter } from "./filter";
-import {
-  EXCEPTIONS,
-  EXCEPTION_GROUPS,
-  LOGS,
-  MINUTES,
-  SERIES,
-  SPANS,
-  TRACES_WINDOW,
-} from "./views";
+import { EXCEPTIONS, EXCEPTION_GROUPS, LOGS, MINUTES, SERIES, SPANS, TRACES_WINDOW } from "./views";
 
 /**
  * The sources a query may name.
