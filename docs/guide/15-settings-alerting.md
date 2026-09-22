@@ -2,21 +2,21 @@
 title: Alerting settings
 section: configuration
 order: 15
-summary: Alert configuration in four steps; sources with their page, attributes, priorities, routes, heartbeats — the Alerting group of the settings.
+summary: Alert configuration in four steps; sources with their page, attributes, priorities, rules, heartbeats — the Alerting group of the settings.
 ---
 
 ## Alert configuration
 
 **Settings → Alert configuration** is the one screen that says where the alerting stands, and gets a workspace from nothing to "an alert paged someone" in four steps. Each step is real; nothing is simulated.
 
-1. **Decide who gets paged.** **Page me** creates a published escalation path that pages you — one level, five minutes to acknowledge, two retries — and names it on the route that catches every alert. **Page whoever is on call…** does the same for a schedule, **Page someone…** for a colleague, **Use an existing path…** for one you built. Refine it later in **On-call → Paths**.
+1. **Decide who gets paged.** **Page me** creates a published escalation path that pages you — one level, five minutes to acknowledge, two retries — and names it on the rule that catches every alert. **Page whoever is on call…** does the same for a schedule, **Page someone…** for a colleague, **Use an existing path…** for one you built. Refine it later in **On-call → Paths**.
 2. **Connect an alert source.** The tool grid, a name, then the endpoint and the secret shown once.
 3. **Receive a first alert.** **Test** sends a real alert through the whole pipeline in test mode; or send one from the tool — the source page waits for it live.
 4. **Check that an alert paged someone.** The step turns green when an alert started an escalation.
 
-Under the steps: tiles for sources, routes, paths, priorities and attributes; the sources with their last day (alerts, firing) and their last alert; the routes in order, each in one line — _when_ and _then_.
+Under the steps: tiles for sources, rules, paths, priorities and attributes; the sources with their last day (alerts, firing) and their last alert; the rules in order, each in one line — _if_ and _then_.
 
-Nothing has to be declared beforehand. Every new workspace starts with three priorities (P1–P3 with the usual aliases), five attributes (service, team, environment, region, the tool's severity) and one route — **Every alert** — that catches everything and opens a triage incident when the priority pages. Name who to page and it is live.
+Nothing has to be declared beforehand. Every new workspace starts with three priorities (P1–P3 with the usual aliases), five attributes (service, team, environment, region, the tool's severity) and one rule — **Every alert** — that catches everything and opens a triage incident when the priority pages. Name who to page and it is live.
 
 ## Alert sources
 
@@ -32,8 +32,8 @@ Each source has a page — **Configure** — with everything about it:
 - **Attributes**: how this source's payload becomes the workspace's attributes. One row per attribute: the payload field (picked from the fields of a real alert the source sent, or a fixed value), a light transform (lower case, after the colon, first word…), an optional guard (keep the value only if it matches a regular expression), and the value that comes out of the chosen sample. **Suggest from the payload** proposes fields for the attributes not yet mapped, from the names tools usually use. Required attributes the source does not map are flagged.
 - **Priority**: none (the payload's own label, else the default), always the same, or from a field with a value map — `critical → P1` — and a fallback. Labels not listed still match a priority by its name or aliases.
 - **Filter incoming alerts**: only alerts matching the conditions are ingested; resolutions always pass, so nothing stays firing forever.
-- **Preview and test**: paste a payload and read what the pipeline would do — attributes, priority, the route that catches it, who it pages, the incident it opens, the group it would join — then **Send as a test alert** (routed, nobody paged) or **Send for real**.
-- The **routes** reading this source, in order.
+- **Preview and test**: paste a payload and read what the pipeline would do — attributes, priority, the rule that catches it, who it pages, the incident it opens, the group it would join — then **Send as a test alert** (routed, nobody paged) or **Send for real**.
+- The **rules** that apply to this source, in order.
 
 ### Per tool
 
@@ -51,9 +51,9 @@ Adding a dedicated tool is a parser plus default mappings, not a connector — t
 
 ## Attributes
 
-**Settings → Attributes** is the vocabulary every source maps its payload onto and every route reasons about — so a route says _environment is production_ without knowing which tool said `env=prod`. Each attribute has a **key** (fixed once created), a label, a **type** — text, list, alert priority, **service** or **team** — whether it is **required** on every alert (sources missing it are flagged, alerts lacking it say so in their history), and what a **repeat** of the same alert does to its value: first wins, last wins, accumulate (lists), highest priority wins. The **coverage** column says how many of the last 200 alerts carry it and how many sources map it.
+**Settings → Attributes** is the vocabulary every source maps its payload onto and every rule reasons about — so a rule says _environment is production_ without knowing which tool said `env=prod`. Each attribute has a **key** (fixed once created), a label, a **type** — text, list, alert priority, **service** or **team** — whether it is **required** on every alert (sources missing it are flagged, alerts lacking it say so in their history), and what a **repeat** of the same alert does to its value: first wins, last wins, accumulate (lists), highest priority wins. The **coverage** column says how many of the last 200 alerts carry it and how many sources map it.
 
-**Service** and **team** are the two types that name a real row: the value is matched against the workspace's services and teams, and a route can then page _the path that row leads to_. Every other attribute — environment, region, tier, customer — is a plain label: a route reads it, a screen filters on it, and nothing else is stored about it.
+**Service** and **team** are the two types that name a real row: the value is matched against the workspace's services and teams, and a rule can then page _the path that row leads to_. Every other attribute — environment, region, tier, customer — is a plain label: a rule reads it, a screen filters on it, and nothing else is stored about it.
 
 ## Priorities
 
@@ -61,23 +61,25 @@ Priorities qualify the alert and choose the urgency of the page (high pages now;
 
 ![Priorities](img/settings-priorities.png "Four priorities, their colour, their aliases and which one is the default.")
 
-## Routes
+## Rules
 
-![Routes](img/settings-routes.png "Ordered routes, each in one line — what it catches, what it does.")
+![Rules](img/settings-rules.png "Ordered rules, each in one line — what it catches, what it does.")
 
-Routes are tried **in order**; the first whose conditions hold decides. Keep the one that catches everything last; the arrows on the list reorder them. No route matching means the alert is logged and nobody is paged — and the alert's history says so.
+**Settings → Rules** holds the exceptions to what your sources already decide. Every source carries three choices of its own — who to page, whether an incident opens, whether recovery closes it — and an alert that matches no rule follows them. That is why a workspace with no rule at all still pages somebody.
 
-Each route is edited on a page of its own:
+Rules are tried **in order** and the **first matching rule wins**. A rule with no condition catches everything it sees, which makes it a default rather than an exception: anything below it never runs for those alerts, and the screen marks it _default_ and says so. A new workspace starts with exactly one, **Every alert**; the arrows on the list reorder them.
+
+Each rule is edited on a page of its own:
 
 - **Sources**: every source, or only some.
 - **Which alerts**: conditions on any attribute, or on the source, its name, the priority, the title — _is, is not, is one of, is none of, contains, matches (regex), is set, is missing_. Lines in a group are ANDed; groups are ORed. No condition catches everything.
 - **Who to page**: rules that stack. **Page a path** names one; **Page from an attribute** follows a `service` or `team` attribute to the escalation path it leads to — the service's owner team, or the team itself — with a fallback when the chain does not resolve. **Page me**, a schedule or a colleague make a published one-level path in one click.
 - **Incident**: never, always, or when the priority pages; the type, whether it starts in triage or active, the severity (from the priority, fixed, or none), private or not, custom fields filled from attributes, and whether a triage incident is declined when the alert resolves.
 - **Grouping**: the attributes the key is built from, the window in minutes — fixed, or restarting at each alert that joins — what a joining alert does to paging (nothing, page again, page again if the priority rises), and a grace before the first page.
-- **Slack channel**: where every alert this route catches is posted, with its attributes and the way in.
+- **Slack channel**: where every alert this rule catches is posted, with its attributes and the way in.
 - **Options**: a priority when the source decides none, an urgency override, a wait before the first page, whether the escalation is cancelled when the alert resolves, **test mode** (logs everything, pages nobody, opens no incident), active.
 
-On the right, **Against the last alerts** previews the draft: which recent alerts it would catch and who it would page — before saving.
+On the right, **Against the last alerts** previews the draft: which recent alerts it would catch and who it would page — before saving. The list also says how many alerts each rule matched over the last ninety days, which is how a rule nobody needs any more becomes visible.
 
 ## Heartbeats
 

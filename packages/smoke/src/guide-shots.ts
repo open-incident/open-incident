@@ -87,8 +87,10 @@ async function main() {
       },
     },
     {
+      // INC-220, not the reference incident: 217 is resolved and a resolved
+      // incident has nothing left to escalate, so the button is not drawn.
       file: "incident-escalate-dialog.png",
-      path: "/app/incidents/217",
+      path: "/app/incidents/220",
       act: async (p) => {
         await p
           .getByRole("button", { name: /^Escalate$/ })
@@ -112,8 +114,15 @@ async function main() {
       file: "alert-detail.png",
       path: "/app/alerts",
       act: async (p) => {
-        await p.locator("a[href^='/app/alerts/']").first().click();
-        await p.waitForURL(/\/app\/alerts\/[0-9a-f-]+/);
+        // An alert, not the sources screen: `/app/alerts/sources` comes first
+        // in the markup and matches any looser selector.
+        await p
+          .locator(
+            "a[href^='/app/alerts/']:not([href*='sources']):not([href*='routes']):not([href*='priorities'])",
+          )
+          .first()
+          .click();
+        await p.waitForURL(/\/app\/alerts\/[0-9a-f-]{8}/);
         await p.waitForLoadState("networkidle");
       },
     },
@@ -208,7 +217,7 @@ async function main() {
     { file: "settings-announcements.png", path: "/app/settings/announcements" },
     { file: "settings-post-incident.png", path: "/app/settings/post-incident" },
     { file: "settings-alert-sources.png", path: "/app/settings/alert-sources" },
-    { file: "settings-routes.png", path: "/app/settings/alert-routes" },
+    { file: "settings-rules.png", path: "/app/settings/alert-routes" },
     { file: "settings-priorities.png", path: "/app/settings/alert-priorities" },
     { file: "settings-heartbeats.png", path: "/app/settings/heartbeats" },
     { file: "settings-integrations.png", path: "/app/settings/integrations" },

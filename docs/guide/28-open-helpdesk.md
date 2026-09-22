@@ -215,7 +215,7 @@ In the workers, one line per processor: `await fetch(process.env.HEARTBEAT_SLA_T
 
 Heartbeat alerts carry the heartbeat's service and the workspace's environment: give the _Heartbeats_ source's alerts `environment: production` through the source's mappings on the production instance, so route 1 pages for a dead worker.
 
-![Routes](img/settings-routes.png "Filters, escalation, incident rule, deferral, test mode.")
+![Rules](img/settings-rules.png "Filters, escalation, incident rule, deferral, test mode.")
 
 ## 7. Incident types, severities, announcements
 

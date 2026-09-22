@@ -34,6 +34,8 @@ A **service** is never created by hand: it appears under **Services** the first 
 
 A **team** is a row of its own: its members, a chat channel, and the escalation path it is paged through. Teams live in the **Services** area, and the enterprise edition mirrors your identity provider's groups onto them through [provisioning](scim).
 
+![Services](img/services.png "One row per service the signals named, its owner team, what watches it — and the ones still waiting for an owner.")
+
 That chain is what lets a route page the right people without naming them: bind an alert attribute to the type `service` or `team` and a route can page _the path the named row leads to_ — the service's owner team, or the team itself — with a fallback when the chain does not resolve:
 
 ```
