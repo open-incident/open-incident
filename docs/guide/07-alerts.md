@@ -16,6 +16,8 @@ summary: What your monitoring sent, how the route treated it, who was paged — 
 
 Nothing has to be declared first. Services appear on their own, the moment an alert or a monitor names one; giving one an owner team in **Services** is what later lets a route page _the team that owns the service_ rather than a fixed path.
 
+If no tool is sending anything yet — or if what you want watched is a URL, a certificate, a purchase flow or a query over your own logs — the product can produce the alert itself. See [Monitors](monitors): a monitor posts to this same pipeline through a managed source, so everything in this chapter applies to it unchanged.
+
 ## From a webhook to an alert
 
 Every monitoring tool posts to its own **alert source**: one endpoint and one secret per source (Datadog, Prometheus/Alertmanager, Grafana, Sentry, CloudWatch, Uptime Kuma, generic HTTP). The payload is stored raw and parsed by the source's **mappings** into the workspace's **attributes** — service, team, environment, region, the tool's own severity, and any you add in **Settings → Attributes**. An attribute typed `service` or `team` is resolved against the workspace's real services and teams — an unknown service name is recorded as a new one, seen in traffic, and the team is derived from the service's owner when the payload gives none. Every other attribute is just a label carried by the alert. The source then decides the **priority** — the same for every alert, or read from a payload field with a value map; a label the tools use (_critical_, _warning_) matches a priority by its aliases — and may **filter** out what it does not want (resolutions always pass).
@@ -67,7 +69,7 @@ Every source has a **Test** button that sends a real alert end to end in test mo
 
 ## Heartbeats
 
-A cron that stops pinging is an alert too: **Settings → Heartbeats** gives each job a URL; silence beyond the interval plus the grace raises an alert through the workspace's own managed _Heartbeats_ source, routed like any other. See [Alerting settings](settings-alerting).
+A cron that stops pinging is an alert too: **Settings → Heartbeats** gives each job a URL; silence beyond the interval plus the grace raises an alert through the workspace's own managed _Heartbeats_ source, routed like any other. See [Alerting settings](settings-alerting) and [Monitors](monitors).
 
 ## Reading the noise
 
