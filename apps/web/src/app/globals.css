@@ -235,6 +235,28 @@ button {
   display: block;
 }
 
+/*
+  Vendor marks.
+
+  Each one carries its own hex, which is the point of drawing them at all — a
+  logo is recognised by its colour before its shape. A handful are black or
+  near-black by design — Slack's aubergine, GitHub's, Notion's — and those on a
+  dark panel are an absence rather than a mark. They fall back to the
+  interface's ink, which the dark theme has already made legible. Every other
+  brand keeps its colour: a mid purple or a deep teal still reads on a dark
+  background, and lightening it would be inventing a colour the vendor does
+  not use.
+*/
+[data-theme="dark"] .oi-brand[data-brand="github"],
+[data-theme="dark"] .oi-brand[data-brand="slack"],
+[data-theme="dark"] .oi-brand[data-brand="notion"],
+[data-theme="dark"] .oi-brand[data-brand="confluence"],
+[data-theme="dark"] .oi-brand[data-brand="opsgenie"],
+[data-theme="dark"] .oi-brand[data-brand="elastic"],
+[data-theme="dark"] .oi-brand[data-brand="sentry"] {
+  color: var(--ink) !important;
+}
+
 /* ---------- User guide prose ---------- */
 .oi-prose {
   font-size: 14.5px;

@@ -195,6 +195,11 @@ export function ConnectTool({
                   padding: "18px 22px",
                   display: "grid",
                   gridTemplateColumns: "repeat(4,1fr)",
+                  // Equal rows. Without it each row is as tall as its own
+                  // tallest tile, so "Prometheus / Alertmanager" on two lines
+                  // made the first row taller than the second and the grid
+                  // read as broken rather than as two rows of the same thing.
+                  gridAutoRows: "1fr",
                   gap: 8,
                 }}
               >
@@ -213,7 +218,7 @@ export function ConnectTool({
                       flexDirection: "column",
                       alignItems: "center",
                       gap: 7,
-                      padding: "14px 8px",
+                      padding: "14px 8px 12px",
                       border: "1px solid var(--line)",
                       borderRadius: 12,
                       background: "var(--panel)",
@@ -221,20 +226,27 @@ export function ConnectTool({
                       color: "inherit",
                     }}
                   >
+                    {/* Bigger than a row's mark: a logo is what the reader
+                        is scanning for here, and these are dense drawings. */}
                     <span
                       style={{
-                        width: 26,
-                        height: 26,
+                        width: 30,
+                        height: 30,
                         display: "grid",
                         placeItems: "center",
                         color: "var(--ink)",
                       }}
                     >
-                      <IntegrationIcon id={k.icon} />
+                      <IntegrationIcon id={k.icon} size={26} />
                     </span>
-                    <span style={{ fontSize: 12.5, fontWeight: 600 }}>{k.label}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, textAlign: "center" }}>
+                      {k.label}
+                    </span>
+                    {/* Pinned to the foot, so every hint sits on the same line
+                        whether the name above it took one or two. */}
                     <span
                       style={{
+                        marginTop: "auto",
                         fontSize: 10.5,
                         color: "var(--ink-3)",
                         textAlign: "center",

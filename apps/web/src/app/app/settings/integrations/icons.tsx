@@ -8,9 +8,13 @@
  *
  * Inlined, not fetched. A settings screen that waits on a dozen remote logos
  * leaks its visitors to a dozen third parties, and shows a broken image the
- * day one of them moves. Each mark is a single path in a 24x24 viewBox filled
- * with `currentColor`, so a tile dims it the same way it dimmed the drawings:
- * the shape is the vendor's, the colour is ours.
+ * day one of them moves. Each mark is a single path in a 24x24 viewBox.
+ *
+ * In the vendor's own colour. These marks used to be drawn in the interface's
+ * ink, which is tidy and answers the tile's question badly: at twenty pixels
+ * the Datadog dog and the CloudWatch cloud are both a dark smudge, and colour
+ * is the first thing anybody recognises a logo by. A mark too dark to read on
+ * a dark background falls back to the ink — see `.oi-brand` in globals.css.
  *
  * The logos are the trademarks of their owners and are used here only to name
  * the product a tile connects to.
@@ -21,23 +25,67 @@
  */
 import type { ReactNode } from "react";
 
-/** A vendor's own mark: one path, filled, no stroke. */
-function Brand({ d }: { d: string }) {
+/** A vendor's own mark: one path, filled, no stroke, in the vendor's colour. */
+function Brand({ id, d, size }: { id: string; d: string; size: number }) {
   return (
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="currentColor">
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      aria-hidden="true"
+      fill="currentColor"
+      className="oi-brand"
+      data-brand={id}
+      style={{ color: BRAND_COLOR[id] ?? "currentColor" }}
+    >
       <path d={d} />
     </svg>
   );
 }
 
-/** Ours: a 24x24 outline, so a concept never passes for a logo. */
-function Glyph({ children }: { children: ReactNode }) {
+/** Ours: a 24x24 outline in the interface's ink, so a concept never passes for a logo. */
+function Glyph({ children, size = 20 }: { children: ReactNode; size?: number }) {
   return (
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none">
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true" fill="none">
       {children}
     </svg>
   );
 }
+
+/**
+ * Each vendor's own hex, from Simple Icons — with two exceptions.
+ *
+ * Simple Icons has normalised several marks to black, Prometheus and Grafana
+ * among them. Black is right for a monochrome icon set and wrong here: both
+ * products are known by an orange, and a row of black logos is the thing this
+ * change exists to stop being.
+ */
+const BRAND_COLOR: Record<string, string> = {
+  datadog: "#632CA6",
+  prometheus: "#E6522C",
+  grafana: "#F46800",
+  sentry: "#362D59",
+  cloudwatch: "#FF9900",
+  uptime_kuma: "#5CDD8B",
+  newrelic: "#008C44",
+  elastic: "#120078",
+  slack: "#4A154B",
+  teams: "#6264A7",
+  meet: "#00BFA5",
+  zoom: "#0B5CFF",
+  github: "#181717",
+  gitlab: "#FC6D26",
+  jira: "#0052CC",
+  linear: "#5E6AD2",
+  confluence: "#172B4D",
+  notion: "#000000",
+  google: "#4285F4",
+  microsoft: "#00A4EF",
+  terraform: "#7B42BC",
+  pagerduty: "#06AC38",
+  opsgenie: "#172B4D",
+  statuspage: "#108889",
+};
 
 const S = { stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round" as const };
 
@@ -127,17 +175,11 @@ const BRAND: Record<string, string> = {
 };
 
 /** Observability, and the fallback: a signal that spikes. */
-const Monitor = (
-  <Glyph>
-    <path d="M2.5 15h3.2l2.4-8 3 12 2.6-9 1.8 5h6" {...S} strokeLinejoin="round" />
-  </Glyph>
-);
+const Monitor = <path d="M2.5 15h3.2l2.4-8 3 12 2.6-9 1.8 5h6" {...S} strokeLinejoin="round" />;
 
 /** A webhook: no logo of its own, and the arrows say "something posts here". */
 const Webhook = (
-  <Glyph>
-    <path d="M9.5 5.5 6 12l3.5 6.5M14.5 5.5 18 12l-3.5 6.5" {...S} strokeLinejoin="round" />
-  </Glyph>
+  <path d="M9.5 5.5 6 12l3.5 6.5M14.5 5.5 18 12l-3.5 6.5" {...S} strokeLinejoin="round" />
 );
 
 const DRAWN: Record<string, ReactNode> = {
@@ -146,23 +188,23 @@ const DRAWN: Record<string, ReactNode> = {
   // integrations tile asks for `webhook`.
   http: Webhook,
   email: (
-    <Glyph>
+    <>
       <rect x="3" y="5.5" width="18" height="13" rx="2.5" {...S} />
       <path d="m4.5 8 6.6 4.6a1.6 1.6 0 0 0 1.8 0L19.5 8" {...S} strokeLinejoin="round" />
-    </Glyph>
+    </>
   ),
   saml: (
-    <Glyph>
+    <>
       <path
         d="M12 2.8 19.5 6v6c0 4.2-3 7.4-7.5 9.2C7.5 19.4 4.5 16.2 4.5 12V6z"
         {...S}
         strokeLinejoin="round"
       />
       <path d="M9 12.2l2.2 2.3L15.5 10" {...S} strokeLinejoin="round" />
-    </Glyph>
+    </>
   ),
   scim: (
-    <Glyph>
+    <>
       <circle cx="9" cy="8.5" r="3" {...S} />
       <path
         d="M3.5 19v-.8A4.2 4.2 0 0 1 7.7 14h2.6a4.2 4.2 0 0 1 3.5 1.9"
@@ -170,10 +212,10 @@ const DRAWN: Record<string, ReactNode> = {
         strokeLinejoin="round"
       />
       <path d="M16 8.5h5M18.5 6v5M16.5 18.5h5" {...S} />
-    </Glyph>
+    </>
   ),
   hris: (
-    <Glyph>
+    <>
       <circle cx="12" cy="7.5" r="3.2" {...S} />
       <path
         d="M5 20v-1a4.5 4.5 0 0 1 4.5-4.5h5A4.5 4.5 0 0 1 19 19v1"
@@ -181,22 +223,26 @@ const DRAWN: Record<string, ReactNode> = {
         strokeLinejoin="round"
       />
       <path d="M16.5 4.5h4M18.5 2.5v4" {...S} />
-    </Glyph>
+    </>
   ),
   siem: (
-    <Glyph>
+    <>
       <ellipse cx="12" cy="6" rx="7.5" ry="3" {...S} />
       <path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6" {...S} />
       <path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3" {...S} />
-    </Glyph>
+    </>
   ),
   /** The catch-all, so a new card is never iconless. */
   generic: Monitor,
 };
 
-/** The mark of an integration; a product we have no mark for falls back to a signal. */
-export function IntegrationIcon({ id }: { id: string }) {
+/**
+ * The mark of an integration; a product we have no mark for falls back to a
+ * signal. `size` is for the screens that give a mark more room than a row does
+ * — a dense logo at twenty pixels is a smudge whatever colour it is.
+ */
+export function IntegrationIcon({ id, size = 20 }: { id: string; size?: number }) {
   const brand = BRAND[id];
-  if (brand) return <Brand d={brand} />;
-  return <>{DRAWN[id] ?? DRAWN.generic}</>;
+  if (brand) return <Brand id={id} d={brand} size={size} />;
+  return <Glyph size={size}>{DRAWN[id] ?? DRAWN.generic}</Glyph>;
 }
