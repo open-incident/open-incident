@@ -59,6 +59,8 @@ Adding a dedicated tool is a parser plus default mappings, not a connector — t
 
 Priorities qualify the alert and choose the urgency of the page (high pages now; low notifies quietly). Each has a name, a colour, a description, **aliases** — what the tools call it, `critical`, `sev1`, `warning`… matched case-insensitively — and one is the **default**, given to alerts nothing names. Escalation paths branch on priority.
 
+![Priorities](img/settings-priorities.png "Four priorities, their colour, their aliases and which one is the default.")
+
 ## Routes
 
 ![Routes](img/settings-routes.png "Ordered routes, each in one line — what it catches, what it does.")

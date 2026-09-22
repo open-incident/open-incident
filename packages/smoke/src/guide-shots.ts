@@ -121,7 +121,79 @@ async function main() {
     { file: "oncall-paths.png", path: "/app/on-call/paths" },
     { file: "oncall-notifications.png", path: "/app/on-call/notifications" },
     { file: "services.png", path: "/app/services" },
+    { file: "monitors.png", path: "/app/monitors" },
+    {
+      file: "monitor-new.png",
+      path: "/app/monitors",
+      act: async (p) => {
+        await p.getByTestId("monitor-new").click();
+        await p.getByTestId("monitor-form").waitFor();
+      },
+    },
+    {
+      // The synthetic one, because its page carries the journey card as well
+      // as everything the others have.
+      file: "monitor-detail.png",
+      path: "/app/monitors",
+      act: async (p) => {
+        const journey = p.locator("a[href^='/app/monitors/']").filter({ hasText: /SYNTHETIC/ });
+        await ((await journey.count()) ? journey : p.locator("a[href^='/app/monitors/']"))
+          .first()
+          .click();
+        await p.waitForURL(/\/app\/monitors\/[0-9a-f-]+/);
+        await p.waitForLoadState("networkidle");
+      },
+      fullPage: true,
+    },
     { file: "status-pages-admin.png", path: "/app/status-pages" },
+    {
+      file: "status-page-correct.png",
+      path: "/app/status-pages",
+      act: async (p) => {
+        const updates = p.getByTestId("public-updates").first();
+        if (await updates.count()) {
+          await updates.locator("summary").click();
+          await p.waitForTimeout(200);
+          await updates.scrollIntoViewIfNeeded();
+        }
+      },
+    },
+    // Telemetry: one shot per tab, on a window that has something in it. Each
+    // one is skipped without complaint on an instance with no column store —
+    // `shoot` waits for the marker and gives up rather than failing the run.
+    { file: "telemetry-overview.png", path: "/app/telemetry?tab=overview&range=6h" },
+    {
+      file: "telemetry-logs.png",
+      path: "/app/telemetry?tab=explore&signal=logs&range=6h",
+      ready: "[data-testid=log-histogram]",
+    },
+    {
+      file: "telemetry-traces.png",
+      path: "/app/telemetry?tab=explore&signal=traces&range=1h",
+      ready: "[data-testid=latency-scatter]",
+    },
+    {
+      file: "telemetry-metrics.png",
+      path: "/app/telemetry?tab=explore&signal=metrics&range=6h",
+      act: async (p) => {
+        const first = p.getByTestId("metric-row").first();
+        if (await first.count()) {
+          await first.click();
+          await p.waitForURL(/metric=/);
+          await p.waitForLoadState("networkidle");
+          // Split by whichever label the metric has: one line is not what the
+          // chart is for.
+          const split = p.locator('[data-testid^="metric-group-"]').nth(1);
+          if (await split.count()) {
+            await split.click();
+            await p.waitForURL(/group=/);
+            await p.waitForLoadState("networkidle");
+          }
+        }
+      },
+    },
+    { file: "telemetry-dashboards.png", path: "/app/telemetry?tab=dashboards" },
+    { file: "telemetry-setup.png", path: "/app/telemetry?tab=setup" },
     { file: "insights-incidents.png", path: "/app/insights?tab=incidents&days=90" },
     { file: "insights-alerts.png", path: "/app/insights?tab=alerts&days=90" },
     { file: "insights-pager.png", path: "/app/insights?tab=pager&days=90" },

@@ -211,6 +211,8 @@ not yet recovered.
 
 ## Sending
 
+![Setup](img/telemetry-setup.png "The four lines, the collector packs, and the keys — everything that is configured rather than read.")
+
 **Telemetry → Connect** issues an ingestion key. It is shown once and stored as
 a digest: there is no screen that can show it again, and the page says so
 before the button rather than after.
@@ -287,24 +289,111 @@ meanwhile. Answering 500 there loses them.
    next; shortening it does not retroactively rewrite what is already stored,
    and lengthening it cannot bring back what is gone. The screen says so.
 
-## Reading
+## Five tabs, and a window
 
-**Logs** is the stream, newest first, with the severity and the service. A line
-that carries a trace id links to it.
+Telemetry is one screen with five tabs, and every one of them reads the same
+**time window** — fifteen minutes, an hour, six hours, a day, a week, or an
+explicit range something you clicked put in the address.
 
-**Traces** lists the traces, and opening one draws the waterfall with the logs
-of that same trace beside it. The tree comes from `parent_span_id`, not from
-arrival order — spans reach the store from several services and in no
-particular sequence. A span whose parent never arrived is drawn at the root
-rather than hidden.
+**Overview** is what you open first: the services sorted by traffic, with their
+rate, their error share, their p99 and how many incidents they have had, and
+the **service map** under them. A service appears the first time it sends a
+span; nothing is declared in advance.
 
-**Metrics** browses the series a workspace keeps, with their labels and their
-last points. **Exceptions** shows one row per bug rather than one per
-occurrence: the grouping key is a fingerprint computed at ingestion from the
-type, the message with its variable parts removed, and the first three frames
-of your own code — so the same failure at ten thousand occurrences is one line
-with a count and a first-seen, and two callers of the same library failure are
-two lines.
+![Overview](img/telemetry-overview.png "Services by traffic, with their rate, their error share, their p99 and their incidents — and the map under them.")
+
+**Explore** is the seven signals — Logs, Traces, Metrics, Exceptions, Profiles,
+Real users and SQL — sharing one filter box, one window and one facet rail.
+
+**Dashboards**, **Objectives** and **Setup** are the three things that are
+configured rather than read, and they are the last three tabs for that reason.
+
+> The addresses the old layout used still work: a link to
+> `/app/telemetry?tab=logs` lands on the explorer with Logs selected, and a
+> bookmark to the dashboards or the SLOs lands on their tab.
+
+## The explorer
+
+Three things sit above every signal, and they are the whole interaction: the
+**window**, the **filter**, and — for logs, traces and exceptions — the **facet
+rail** down the left.
+
+### The facet rail
+
+The rail counts what is actually in the window: every field, its distinct
+values, and the share of rows each one holds. `service_name · 6 · storefront
+28 % · orders-db 24 % …`. Clicking a value adds it to the filter; clicking it
+again takes it out. Under the fields it lists the **attributes present** — the
+keys your own services send, which no fixed list could know.
+
+It is a rail and not a sidebar of saved filters because the question it answers
+is the one nobody can ask in a query language: _what is in here?_ A filter
+narrows what you already suspect; the rail tells you what you did not.
+
+![Logs, with the facet rail](img/telemetry-logs.png "The rail counts the window; the histogram draws it by severity; both are filters.")
+
+Counting is not free, so the rail scans at most **six hours** whatever the
+window, and says so — `963 844 rows counted over the last six hours` — rather
+than quietly sampling. A percentage from a stated slice is usable; one from an
+unstated one is not.
+
+### The drawings
+
+Each signal opens on a picture of the window, and every picture is a **zoom**:
+clicking a bar, a bucket or a band puts an explicit range in the address, which
+is what makes a spike into a link you can paste into an incident.
+
+**Logs** draw a histogram by severity, with the counts per level as chips above
+it. Clicking `ERROR` filters; clicking a bar narrows the window to that bar.
+
+**Traces** draw one of two shapes, and which one depends on the window. Up to
+six hours you get the **scatter**: one dot per trace, positioned by time and
+duration, with the window's real p50, p95 and p99 drawn across it — so the
+outlier is a dot you can click. Beyond six hours you get the **bands**:
+requests as bars, p50/p95/p99 as lines, and the failures in a lane of their
+own along the floor.
+
+That switch is arithmetic, not taste. A dot is a trace, so a cloud costs the
+window: on twenty-two million spans, a day of dots took five seconds and a week
+took twenty-two, while the same week read from a per-minute rollup is ten
+thousand rows and a fifth of a second. The dots stay where clicking one is
+worth its price.
+
+![Traces over an hour](img/telemetry-traces.png "One dot per trace, the window's real quantiles drawn across them, and the list under it.")
+
+> A rolled-up p99 is a real p99. The rollup keeps quantile _states_ and merges
+> them, so a seven-day p99 is the p99 of the seven days — not the average of
+> seven daily p99s, which is always lower, lower by an amount nobody can
+> estimate, and the most common way a latency chart lies.
+
+**Metrics** list the series a workspace keeps, and opening one draws **one
+chart with every series on it** — same box, same scale, split by whichever
+label you pick, reduced by average, sum or maximum, both stated above the
+drawing. A gauge averaged and a counter summed are different questions, and a
+chart that picks silently is a chart whose numbers nobody can reproduce.
+
+![One metric, split by a label of its own](img/telemetry-metrics.png "Every series in one box and on one scale; the split and the reduction are stated above the chart.")
+
+**Exceptions** show one row per bug rather than one per occurrence: the
+grouping key is a fingerprint computed at ingestion from the type, the message
+with its variable parts removed, and the first three frames of your own code —
+so the same failure at ten thousand occurrences is one line with a count and a
+first-seen, and two callers of the same library failure are two lines.
+
+### Traces at millions of rows
+
+The trace list is read from the **root spans** of the window, not from the
+index of everything: a root span is one row per request, which is the unit the
+list is about, and it is two orders of magnitude fewer rows. Then the details —
+span count, services touched, whether anything failed — are fetched for the
+hundred traces actually on the page and for no others.
+
+The window is a partition boundary, so narrowing it is not a filter, it is less
+data read. Measured on the same dataset: the same list with no window read 1.8
+million rows and 373 MiB; with a day it read 48 000 rows and 21 MiB.
+
+Paging is by **cursor** and not by offset, because page 400 of an offset query
+costs four hundred pages of work to skip them.
 
 ## When a bug is news
 
@@ -450,11 +539,18 @@ per-minute rollup, where a point is a minute.
 
 ## Dashboards
 
-**Dashboards** holds grids of PromQL panels. Every panel is a query against the
+The **Dashboards** tab holds grids of PromQL panels. Every panel is a query against the
 same subset the Prometheus API answers — a panel cannot show something PromQL
 cannot express, so a dashboard never becomes a second, quieter query language
 with its own rules. A panel whose query fails says why, in its own tile, and
 leaves the others alone.
+
+Installing a collector pack brings its dashboard with it — Hosts, Containers,
+Kubernetes and PostgreSQL each arrive as a grid that already matches what the
+pack collects, so a fresh instance has something to look at before anybody has
+written a panel.
+
+![A collector pack's dashboard](img/telemetry-dashboards.png "Four dashboards: one imported from Grafana, three that came with their collector pack.")
 
 A window selector covers one hour to three days, and TV mode drops the chrome
 for a wall display. Sharing a dashboard publicly issues an unguessable token
@@ -595,7 +691,7 @@ diff, ranked on self alone, showed nothing.
 
 ## Service level objectives
 
-An SLO turns "is it slow?" into a decision. You name what counts as a good
+The **Objectives** tab, sorted by what is left of each budget. An SLO turns "is it slow?" into a decision. You name what counts as a good
 event and what counts as an event at all — two PromQL expressions — and say
 what fraction has to be good. What is left of the difference is the **error
 budget**, and how fast it is being spent is the **burn rate**.
@@ -692,10 +788,29 @@ half of it would be worse than none.
 ## Filtering, saving, and watching
 
 Logs, Traces and Exceptions each take a filter, and it is the **same one-line
-language the monitors take**: `field = value`, joined by `AND`, with
-`contains` for a substring, `=~` for a regular expression and `attr:<name>` to
-reach an attribute. One compiler serves both, so a filter that behaves one way
-in the explorer cannot behave another way in the alert.
+language the monitors take**. One compiler serves both, so a filter that
+behaves one way in the explorer cannot behave another way in the alert.
+
+    field = value                      an exact match
+    a AND b   ·   a OR b   ·   NOT a   joined, and negated
+    ( … )                              grouped
+    field in (a, b, c)                 any of
+    exists field · missing field       present, or not
+    field contains "text"              a substring
+    field =~ "regex"                   a regular expression
+    attr:user.tier = "gold"            any attribute your services send
+
+The fields are the columns of the signal you are looking at, and the box lists
+them under itself rather than making you guess: a log line has
+`service_name, environment, severity_number, severity_text, body, trace_id,
+span_id, scope_name`; a span adds `name, kind, status_code, status_message,
+duration_ms, http_method, http_route, http_status_code, db_system,
+rpc_service, peer_service, service_version, has_exception` and the three ids.
+
+This is deliberately what an APM or a SIEM gives you rather than a search box:
+`service_name = "checkout-api" AND (http_route in ("/checkout", "/cart") OR
+has_exception = true) AND NOT http_status_code = 404` is one question, and a
+tool that cannot express it makes you ask four and join them by hand.
 
 That is what makes the last button on the bar honest. **Watch this** opens the
 monitor form with the type already chosen and the exact text already in the
@@ -802,10 +917,6 @@ what is left. A purge that emptied PostgreSQL and kept a month of spans would
 satisfy nobody.
 
 ## What is not here yet
-
-Session replay, queue-based sampling, syslog and Fluent reception, mobile RUM
-and log patterns are later milestones. They are absent from the screens rather
-than present and empty.
 
 The map feeds no `DEPENDS_ON` facts yet, because the context graph they belong
 to is not built. The edges are there and queryable the day it is.

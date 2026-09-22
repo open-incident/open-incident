@@ -17,19 +17,25 @@ The [Use cases](use-cases) chapter walks through complete scenarios, from a Data
 
 ## How the product is organised
 
-A signed-in member sees a rail on the left with seven sections. Each one is a chapter of this guide.
+A signed-in member sees a rail on the left. Each section of it is a chapter of this guide.
 
 | Section          | What lives there                                                              | Chapter                                                |
 | ---------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------ |
+| **Home**         | What is open, what is yours, what happened while you were away                | [Incidents](incidents)                                 |
 | **Incidents**    | Declaring, triaging and running incidents; follow-ups; the post-incident flow | [Incidents](incidents), [Post-incident](post-incident) |
 | **Alerts**       | What monitoring tools sent, how it was routed, who was paged                  | [Alerts](alerts)                                       |
+| **Monitors**     | The checks the product runs itself, and what they do when they fail           | [Monitors](monitors)                                   |
 | **On-call**      | Schedules, overrides, escalation paths, your own notification rules           | [On-call](on-call)                                     |
 | **Status pages** | Public or internal pages, components, maintenances, subscribers               | [Status pages](status-pages)                           |
 | **Services**     | The services your signals name, their owner teams, what watches them          | [Alerts](alerts), [On-call](on-call)                   |
 | **Reports**      | Incidents, alerts, on-call load, follow-ups and on-call pay over a period     | [Reports](reports)                                     |
-| **Settings**     | Everything an administrator configures                                        | [Configuration](settings-workspace)                    |
+| **Telemetry**    | Your own logs, traces, metrics and exceptions, when the module is installed   | [Telemetry](telemetry)                                 |
 
-![The incidents list, the first screen after sign-in](img/shell-incidents.png "The shell: top bar with the command palette, the rail on the left, the screen in the middle.")
+**Guide** and **Settings** sit at the foot of the rail, away from the daily work: one is read once, the other is opened by one person in ten.
+
+The header carries the things that are true of you rather than of the screen you are on — who is **on call** right now with a **Page me** button beside them, the **bell** with what happened while you were away, and your own avatar, which opens your account.
+
+![The incidents list, the first screen after sign-in](img/shell-incidents.png "The shell: the rail on the left, who is on call and your account in the header, the screen in the middle.")
 
 ## Conventions in this guide
 
@@ -49,6 +55,10 @@ A signed-in member sees a rail on the left with seven sections. Each one is a ch
 ## The demo workspace
 
 A fresh instance can start with the demo workspace **Skylark Systems** (`SEED_DEMO=true`, the default of `.env.example`): teams, services, an on-call rotation, a reference incident INC-217 with its full history, alerts, a status page. Sign in as `amelie@skylark.dev` with the password `demo-openincident`. Every screenshot of this guide was taken there. Once your own workspace exists, set `SEED_DEMO=false` and remove the demo with the purge command described in [Operations](operations).
+
+The guide you are reading is served by the instance itself, under **Guide** at the foot of the rail: the same chapters, searchable, with the images above.
+
+![The guide, inside the product](img/guide.png "Chapters on the left, the one you are reading in the middle, its headings on the right.")
 
 ## Where else to look
 

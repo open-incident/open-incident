@@ -51,9 +51,27 @@ From the incident's **Share an update** dialog, tick **Status page — <page>** 
 
 ![The public page](img/status-page-public.png "Overall state, components with their bars, the current incident with its updates, past incidents and maintenances.")
 
+### Correcting an update
+
+A public update goes out to every subscriber the moment it is published, and some of them go out wrong: the service named is the wrong one, the time is off by an hour, a sentence says the opposite of what it meant.
+
+Each published incident on the admin screen opens on its **public updates**, one form per update. Edit the text and press **Correct**. The newest update can also change its public status — **Investigating**, **Identified**, **Monitoring**, **Resolved** — and doing so moves the incident's public status with it; the older ones can only be reworded, because a timeline whose middle entries change status afterwards is a timeline nobody can read.
+
+Two things a correction deliberately does not do. **It does not notify again**: the email went out with the old words, and a second one that says almost the same thing costs more trust than the mistake did. And **it does not hide itself** — the update carries _corrected at <time>_ on the public page and in the history, because a page that silently rewrites its own past is worth less than one that admits an edit.
+
+![Correcting a published update](img/status-page-correct.png "One form per published update: the text, the public status on the newest one, and the note that nobody is notified again.")
+
 ## Maintenances
 
 **Schedule a maintenance** with a title (the subject of the emails), a message, a period, and the components. Subscribers are told once at scheduling; with **automatic transitions**, the maintenance moves to _in progress_ at the start and _completed_ at the end without emailing anyone again. It appears on the page under **Maintenance in progress** and stays in the history for 90 days.
+
+### Moving one
+
+A window that has not started can move: the pencil beside a **scheduled** maintenance reopens the same form — title, message, dates, components — filled in.
+
+Until this existed, the only way to move a window was to cancel it and schedule another, which tells every subscriber the maintenance was cancelled and then tells them about a new one, for what is the same maintenance.
+
+Changing the **dates** adds one line to the public timeline, because a window nobody was told had moved is a window people will be surprised by. Rewording the **message** does not: the page already shows it. Nobody is emailed again either way. A maintenance that has started or finished is not edited — its own updates are the record of what happened, and moving the start of something that already started is a statement nobody can act on.
 
 ## Feeds and API
 

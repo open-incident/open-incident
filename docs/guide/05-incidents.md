@@ -23,6 +23,8 @@ Each card shows the reference (`INC-217`), the title, the severity and status ch
 
 Press <kbd>⌘K</kbd> / <kbd>Ctrl K</kbd> anywhere to open the **command palette**: search incidents, services and people; jump to a screen; declare an incident; share an update on the incident you are viewing.
 
+![The command palette](img/command-palette.png "One box: incidents, services, people and the actions of the screen you are on.")
+
 ## Declaring an incident
 
 **+ Declare an incident** in the top bar, or <kbd>⌘K</kbd> → _Declare an incident_.
@@ -71,6 +73,8 @@ The reference and title (rename with the pencil), the chips (severity, status, m
 | **Create the chat channel**  | When channels are not automatic.                                                                                                                  |
 | **Join the war room**        | The video link when a template is configured.                                                                                                     |
 | **Open the post-incident →** | Once resolved.                                                                                                                                    |
+
+![Escalating](img/incident-escalate-dialog.png "The path, and who it will reach right now — before you send it.")
 
 ### Sharing an update
 
