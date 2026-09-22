@@ -13,7 +13,15 @@ test.describe("Internal status page", () => {
   }) => {
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/status-pages");
-    const openLink = page.locator('a[href$="/open"], a[href*="status.localhost"]').first();
+    /*
+     * The link out to the public page, whatever host this instance serves it
+     * on. Written out as `status.localhost` it matched only the plain local
+     * topology and missed the one behind a proxy, where the same page answers
+     * on `<slug>.status.<domain>` — a test that passes because it is looking
+     * at the wrong environment.
+     */
+    const statusOrigin = new URL(STATUS_BASE_URL).origin;
+    const openLink = page.locator(`a[href$="/open"], a[href^="${statusOrigin}"]`).first();
     await expect(openLink).toBeVisible();
     const anon = await request.newContext();
     expect((await anon.get(STATUS_BASE_URL)).status()).toBe(200);

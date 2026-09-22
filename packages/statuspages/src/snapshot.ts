@@ -70,7 +70,7 @@ export type Snapshot = {
     components: string[];
     startedAt: string;
     resolvedAt: string | null;
-    updates: Array<{ status: string; body: string; at: string }>;
+    updates: Array<{ status: string; body: string; at: string; correctedAt?: string }>;
   }>;
   maintenances: Array<{
     id: string;
@@ -364,7 +364,14 @@ export async function buildSnapshot(
       resolvedAt: i.resolvedAt?.toISOString() ?? null,
       updates: updates
         .filter((u) => u.statusPageIncidentId === i.id)
-        .map((u) => ({ status: u.status, body: u.body, at: u.publishedAt.toISOString() })),
+        .map((u) => ({
+          status: u.status,
+          body: u.body,
+          at: u.publishedAt.toISOString(),
+          // Only when it happened: an undefined key keeps every unedited
+          // snapshot byte-identical to what it was before corrections existed.
+          ...(u.correctedAt ? { correctedAt: u.correctedAt.toISOString() } : {}),
+        })),
     })),
     maintenances: maints.map((m) => ({
       id: m.id,

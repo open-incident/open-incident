@@ -1,0 +1,1 @@
+ALTER TABLE "app"."status_page_incident_updates" ADD COLUMN "corrected_at" timestamp with time zone;

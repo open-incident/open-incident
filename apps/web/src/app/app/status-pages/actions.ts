@@ -4,13 +4,15 @@ import { promises as dns } from "node:dns";
 import { randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   componentImpactHistory,
   deleteStatusSnapshot,
   monitors,
   statusPageComponents,
+  statusPageIncidentUpdates,
+  statusPageIncidents,
   statusPageMaintenanceUpdates,
   statusPageMaintenances,
   statusPageSubscribers,
@@ -20,7 +22,7 @@ import {
 } from "@openincident/db";
 import { refreshStatusSnapshot, setComponentState } from "@openincident/statuspages";
 import { recordAudit } from "@/lib/audit";
-import { requireManager, requireMember } from "@/lib/session";
+import { requireManager, requireMember, requireResponder } from "@/lib/session";
 
 const PAGE = "/app/status-pages";
 const uuid = z.string().uuid();
@@ -298,8 +300,15 @@ export async function updateComponent(formData: FormData) {
   redirect(`${PAGE}?page=${pageId}`);
 }
 
+/*
+ * What follows acts on what the public sees — a component's state, a
+ * maintenance, the wording of a published update — and every one of these is
+ * drawn only for a member who may respond. `requireResponder` is that same
+ * gate on the server: a screen that hides a button and an action that accepts
+ * it from anyone is a screen that hides nothing.
+ */
 export async function updateComponentState(formData: FormData) {
-  const current = await requireMember();
+  const current = await requireResponder();
   const id = uuid.parse(formData.get("id"));
   const state = z
     .enum(["operational", "degraded", "partial_outage", "major_outage", "maintenance"])
@@ -347,7 +356,7 @@ export async function deleteComponent(formData: FormData) {
 
 /** "Schedule a maintenance": components, window, automatic transitions. Subscribers are told once. */
 export async function createMaintenance(formData: FormData) {
-  const current = await requireMember();
+  const current = await requireResponder();
   const parsed = z
     .object({
       pageId: uuid,
@@ -402,7 +411,7 @@ export async function createMaintenance(formData: FormData) {
 }
 
 export async function cancelMaintenance(formData: FormData) {
-  const current = await requireMember();
+  const current = await requireResponder();
   const id = uuid.parse(formData.get("id"));
   const pageId = await withTenant(current.tenant.id, async (tx) => {
     const [m] = await tx
@@ -542,4 +551,165 @@ export async function importSubscribers(formData: FormData) {
   await refreshStatusSnapshot(current.tenant.id, pageId);
   revalidatePath(PAGE);
   redirect(`${PAGE}?page=${pageId}&imported=${imported}`);
+}
+
+/**
+ * Corrects the wording of an update that is already public.
+ *
+ * The one thing a status page could not do. A published sentence with the
+ * wrong service in it, or the wrong hour, stayed wrong: the only way out was
+ * another update contradicting the first, which reads as a second incident.
+ *
+ * What a correction does not do, and the screen says so: it does not
+ * re-notify. The subscribers were emailed the old words and an email cannot be
+ * recalled — a silent second send would be a different message arriving with
+ * the same timestamp. It also keeps the publication time: the page says the
+ * text was corrected and when, because somebody read the first version.
+ *
+ * The status of an update can only be changed on the **latest** one, which is
+ * the page's current state. Changing the status of an older update rewrites
+ * what the page said at a moment that has passed.
+ */
+export async function correctIncidentUpdate(formData: FormData) {
+  const current = await requireResponder();
+  const parsed = z
+    .object({
+      id: uuid,
+      pageId: uuid,
+      body: z.string().trim().min(2).max(4000),
+      status: z.enum(["investigating", "identified", "monitoring", "resolved"]).optional(),
+    })
+    .safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect(`${PAGE}?error=invalid`);
+  const input = parsed.data;
+
+  await withTenant(current.tenant.id, async (tx) => {
+    const [update] = await tx
+      .select()
+      .from(statusPageIncidentUpdates)
+      .where(
+        and(
+          eq(statusPageIncidentUpdates.tenantId, current.tenant.id),
+          eq(statusPageIncidentUpdates.id, input.id),
+        ),
+      );
+    if (!update) return;
+
+    // Is this the newest update of its incident? Only that one owns the
+    // status the page is currently showing.
+    const [newest] = await tx
+      .select({ id: statusPageIncidentUpdates.id })
+      .from(statusPageIncidentUpdates)
+      .where(eq(statusPageIncidentUpdates.statusPageIncidentId, update.statusPageIncidentId))
+      .orderBy(desc(statusPageIncidentUpdates.publishedAt))
+      .limit(1);
+    const isNewest = newest?.id === update.id;
+    const status = isNewest && input.status ? input.status : update.status;
+    const changed = update.body !== input.body || status !== update.status;
+    if (!changed) return;
+
+    await tx
+      .update(statusPageIncidentUpdates)
+      .set({ body: input.body, status, correctedAt: new Date() })
+      .where(eq(statusPageIncidentUpdates.id, update.id));
+
+    // The incident carries the status the page shows; it follows the newest
+    // update and nothing else.
+    if (isNewest) {
+      await tx
+        .update(statusPageIncidents)
+        .set({
+          status,
+          resolvedAt: status === "resolved" ? (update.publishedAt ?? new Date()) : null,
+        })
+        .where(eq(statusPageIncidents.id, update.statusPageIncidentId));
+    }
+    await recordAudit(tx, current, "config", "status_page.update_corrected", {
+      updateId: update.id,
+      status,
+    });
+  });
+
+  await refreshStatusSnapshot(current.tenant.id, input.pageId);
+  revalidatePath(PAGE);
+  redirect(`${PAGE}?page=${input.pageId}&corrected=1`);
+}
+
+/**
+ * Moves or rewords a maintenance window that has not started.
+ *
+ * Scheduling one and then having the date move is the ordinary case, and the
+ * only answer the product had was to cancel it and schedule another — which
+ * tells every subscriber the window was cancelled and then tells them about a
+ * new one, for what is the same maintenance.
+ *
+ * A window that has started or finished is not edited: its own updates are the
+ * record of what happened, and moving the start of something that already
+ * started is a statement nobody can act on.
+ */
+export async function editMaintenance(formData: FormData) {
+  const current = await requireResponder();
+  const parsed = z
+    .object({
+      id: uuid,
+      pageId: uuid,
+      title: z.string().trim().min(2).max(140),
+      body: z.string().trim().max(2000),
+      startAt: z.string().datetime(),
+      endAt: z.string().datetime(),
+    })
+    .safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect(`${PAGE}?error=invalid`);
+  const input = parsed.data;
+  const componentIds = formData
+    .getAll("componentIds")
+    .map(String)
+    .filter((x) => uuid.safeParse(x).success);
+  const start = new Date(input.startAt);
+  const end = new Date(input.endAt);
+  if (end <= start) redirect(`${PAGE}?page=${input.pageId}&error=invalid`);
+
+  await withTenant(current.tenant.id, async (tx) => {
+    const [m] = await tx
+      .select()
+      .from(statusPageMaintenances)
+      .where(
+        and(
+          eq(statusPageMaintenances.tenantId, current.tenant.id),
+          eq(statusPageMaintenances.id, input.id),
+        ),
+      );
+    if (!m || m.status !== "scheduled") return;
+    const moved = m.startAt.getTime() !== start.getTime() || m.endAt.getTime() !== end.getTime();
+    await tx
+      .update(statusPageMaintenances)
+      .set({
+        title: input.title,
+        body: input.body,
+        componentIds,
+        startAt: start,
+        endAt: end,
+        updatedAt: new Date(),
+      })
+      .where(eq(statusPageMaintenances.id, m.id));
+    // A move is worth an update on the public timeline; a reworded body is
+    // not — the body is what the page already shows.
+    if (moved) {
+      await tx.insert(statusPageMaintenanceUpdates).values({
+        tenantId: current.tenant.id,
+        maintenanceId: m.id,
+        status: "scheduled",
+        body: input.body || input.title,
+        publishedAt: new Date(),
+      });
+    }
+    await recordAudit(tx, current, "config", "maintenance.edited", {
+      title: input.title,
+      moved,
+    });
+  });
+
+  await refreshStatusSnapshot(current.tenant.id, input.pageId);
+  revalidatePath(PAGE);
+  redirect(`${PAGE}?page=${input.pageId}&maintenance=edited`);
 }

@@ -21,6 +21,7 @@ import { listMonitors } from "@/lib/monitors";
 import {
   EditComponentDialog,
   MaintenanceDialog,
+  MaintenanceEditDialog,
   NewComponentDialog,
   NewPageDialog,
 } from "./dialogs";
@@ -34,6 +35,7 @@ import {
   saveStatusPage,
   saveTemplate,
   updateComponentState,
+  correctIncidentUpdate,
 } from "./actions";
 
 /** A day's bar. The green is the design's — `--ok` at 55 %, so a good month reads as texture. */
@@ -159,6 +161,7 @@ export default async function StatusPagesPage({
       webhookCount,
       counts: new Map(compCounts.map((c) => [c.pageId, c.n])),
       updatesCount: new Map<string, number>(),
+      updateRows: [] as Array<typeof statusPageIncidentUpdates.$inferSelect>,
       linked: new Map<string, number>(),
     };
     if (!page) return empty;
@@ -174,12 +177,17 @@ export default async function StatusPagesPage({
       .where(eq(statusPageIncidents.pageId, page.id))
       .orderBy(desc(statusPageIncidents.startedAt))
       .limit(8);
-    const updates = publicIncidents.length
+    /*
+     * The updates themselves, not only how many.
+     *
+     * The screen showed a count, which is enough to say "three updates" and
+     * not enough to correct the one with the wrong service in it. Eight
+     * incidents' worth of updates is a small read, and it is what makes the
+     * text on the public page reachable from the screen that publishes it.
+     */
+    const updateRows = publicIncidents.length
       ? await tx
-          .select({
-            id: statusPageIncidentUpdates.statusPageIncidentId,
-            n: sql<number>`count(*)`.mapWith(Number),
-          })
+          .select()
           .from(statusPageIncidentUpdates)
           .where(
             inArray(
@@ -187,7 +195,7 @@ export default async function StatusPagesPage({
               publicIncidents.map((i) => i.id),
             ),
           )
-          .groupBy(statusPageIncidentUpdates.statusPageIncidentId)
+          .orderBy(desc(statusPageIncidentUpdates.publishedAt))
       : [];
     const linkedIds = publicIncidents
       .map((i) => i.incidentId)
@@ -235,7 +243,13 @@ export default async function StatusPagesPage({
       subs: subs?.n ?? 0,
       services,
       monitors: await listMonitors(tx, tenant.id),
-      updatesCount: new Map(updates.map((u) => [u.id, u.n])),
+      updatesCount: new Map(
+        publicIncidents.map((i) => [
+          i.id,
+          updateRows.filter((u) => u.statusPageIncidentId === i.id).length,
+        ]),
+      ),
+      updateRows,
       linked: new Map(linked.map((l) => [l.id, l.number])),
     };
   });
@@ -474,6 +488,8 @@ export default async function StatusPagesPage({
         <>
           {q.created === "1" && notice(t("statusPages.createdNote", { url: statusPageUrl(page) }))}
           {q.maintenance === "1" && notice(t("statusPages.maintenanceScheduled"))}
+          {q.maintenance === "edited" && notice(t("sp2.maintenanceMoved"))}
+          {q.corrected === "1" && notice(t("sp2.updateCorrected"))}
           {q.imported !== undefined &&
             notice(t("statusPages.imported", { count: Number(q.imported) }))}
           {q.domain &&
@@ -839,65 +855,191 @@ export default async function StatusPagesPage({
                   const resolvedIn = i.resolvedAt
                     ? Math.round((i.resolvedAt.getTime() - i.startedAt.getTime()) / 60_000)
                     : null;
+                  const mine = data.updateRows.filter((u) => u.statusPageIncidentId === i.id);
                   return (
                     <div
                       key={i.id}
                       data-testid="public-incident"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        padding: "11px 16px",
-                        borderBottom: "1px solid var(--line-2)",
-                      }}
+                      style={{ borderBottom: "1px solid var(--line-2)" }}
                     >
-                      <span
+                      <div
                         style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: i.status === "resolved" ? "var(--ok)" : "var(--wait)",
-                          flex: "none",
-                        }}
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>{i.title}</div>
-                        <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                          {t("statusPages.incidentMeta", {
-                            date: t.fmt.dayMonth(i.startedAt),
-                            count: data.updatesCount.get(i.id) ?? 0,
-                          })}
-                          {n ? (
-                            <>
-                              {" · "}
-                              {t("statusPages.linkedTo")}{" "}
-                              <Link
-                                href={`/app/incidents/${n}`}
-                                className="oi-link"
-                                style={{ fontFamily: "var(--mono)", fontSize: 11 }}
-                              >
-                                INC-{n}
-                              </Link>
-                            </>
-                          ) : null}
-                          {resolvedIn !== null
-                            ? ` · ${t("statusPages.resolvedIn", { duration: t.fmt.duration(resolvedIn) })}`
-                            : ""}
-                        </div>
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 600,
-                          color: i.status === "resolved" ? "var(--ok)" : "var(--wait)",
-                          background: i.status === "resolved" ? "var(--ok-t)" : "var(--wait-t)",
-                          borderRadius: 999,
-                          padding: "2px 9px",
-                          flex: "none",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 12,
+                          padding: "11px 16px",
                         }}
                       >
-                        {t(`statusPages.publicStatus.${i.status}`)}
-                      </span>
+                        <span
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            background: i.status === "resolved" ? "var(--ok)" : "var(--wait)",
+                            flex: "none",
+                          }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{i.title}</div>
+                          <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                            {t("statusPages.incidentMeta", {
+                              date: t.fmt.dayMonth(i.startedAt),
+                              count: data.updatesCount.get(i.id) ?? 0,
+                            })}
+                            {n ? (
+                              <>
+                                {" · "}
+                                {t("statusPages.linkedTo")}{" "}
+                                <Link
+                                  href={`/app/incidents/${n}`}
+                                  className="oi-link"
+                                  style={{ fontFamily: "var(--mono)", fontSize: 11 }}
+                                >
+                                  INC-{n}
+                                </Link>
+                              </>
+                            ) : null}
+                            {resolvedIn !== null
+                              ? ` · ${t("statusPages.resolvedIn", { duration: t.fmt.duration(resolvedIn) })}`
+                              : ""}
+                          </div>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: i.status === "resolved" ? "var(--ok)" : "var(--wait)",
+                            background: i.status === "resolved" ? "var(--ok-t)" : "var(--wait-t)",
+                            borderRadius: 999,
+                            padding: "2px 9px",
+                            flex: "none",
+                          }}
+                        >
+                          {t(`statusPages.publicStatus.${i.status}`)}
+                        </span>
+                      </div>
+                      {/*
+                        The words, where they were published from.
+                        A `details` rather than a dialog: it is server-rendered,
+                        it works without JavaScript, and correcting a sentence
+                        is something somebody does while reading it.
+                      */}
+                      {mine.length > 0 && (
+                        <details data-testid="public-updates">
+                          <summary
+                            style={{
+                              cursor: "pointer",
+                              fontSize: 11.5,
+                              color: "var(--ink-3)",
+                              padding: "0 16px 10px 36px",
+                            }}
+                          >
+                            {t("statusPages.readUpdates")}
+                          </summary>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 10,
+                              padding: "0 16px 14px 36px",
+                            }}
+                          >
+                            {mine.map((u, k) => (
+                              <form
+                                key={u.id}
+                                action={correctIncidentUpdate}
+                                data-testid="update-form"
+                                style={{ display: "flex", flexDirection: "column", gap: 5 }}
+                              >
+                                <input type="hidden" name="id" value={u.id} />
+                                <input type="hidden" name="pageId" value={page.id} />
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "baseline",
+                                    gap: 8,
+                                    fontSize: 11.5,
+                                    color: "var(--ink-3)",
+                                  }}
+                                >
+                                  <strong style={{ color: "var(--ink-2)" }}>
+                                    {t(`statusPages.publicStatus.${u.status}`)}
+                                  </strong>
+                                  <span>{t.fmt.dateTime(u.publishedAt)}</span>
+                                  {u.notifiedCount > 0 && (
+                                    <span>
+                                      {t("statusPages.notifiedCount", { n: u.notifiedCount })}
+                                    </span>
+                                  )}
+                                  {u.correctedAt && (
+                                    <span style={{ color: "var(--wait)" }}>
+                                      {t("statusPages.correctedAt", {
+                                        when: t.fmt.dateTime(u.correctedAt),
+                                      })}
+                                    </span>
+                                  )}
+                                </div>
+                                <textarea
+                                  name="body"
+                                  defaultValue={u.body}
+                                  rows={2}
+                                  readOnly={!acts}
+                                  className="oi-field"
+                                  style={{ width: "100%", fontSize: 12.5, lineHeight: 1.5 }}
+                                />
+                                {acts && (
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    {/* Only the newest update owns the status the
+                                        page is showing; an older one's status is
+                                        what the page said at a moment that has
+                                        passed. */}
+                                    {k === 0 && (
+                                      <select
+                                        name="status"
+                                        defaultValue={u.status}
+                                        className="oi-field"
+                                        style={{ fontSize: 12, height: 28 }}
+                                      >
+                                        {(
+                                          [
+                                            "investigating",
+                                            "identified",
+                                            "monitoring",
+                                            "resolved",
+                                          ] as const
+                                        ).map((x) => (
+                                          <option key={x} value={x}>
+                                            {t(`statusPages.publicStatus.${x}`)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    )}
+                                    <button
+                                      type="submit"
+                                      data-testid="correct-update"
+                                      style={{
+                                        height: 28,
+                                        padding: "0 10px",
+                                        border: "1px solid var(--line)",
+                                        borderRadius: 8,
+                                        background: "var(--panel)",
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      {t("statusPages.correct")}
+                                    </button>
+                                    <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                                      {t("statusPages.correctNote")}
+                                    </span>
+                                  </div>
+                                )}
+                              </form>
+                            ))}
+                          </div>
+                        </details>
+                      )}
                     </div>
                   );
                 })}
@@ -946,6 +1088,25 @@ export default async function StatusPagesPage({
                     >
                       {t(`statusPages.maintenanceStatus.${m.status}`)}
                     </span>
+                    {/*
+                      A window that has not started can still move, and until
+                      now the only way to move one was to cancel it and
+                      schedule another — which tells every subscriber the
+                      maintenance was cancelled and then tells them about a new
+                      one, for what is the same maintenance.
+                    */}
+                    {acts && m.status === "scheduled" && (
+                      <MaintenanceEditDialog
+                        id={m.id}
+                        pageId={page.id}
+                        title={m.title}
+                        body={m.body}
+                        startAt={m.startAt.toISOString()}
+                        endAt={m.endAt.toISOString()}
+                        componentIds={m.componentIds}
+                        components={data.comps.map((c) => ({ id: c.id, name: c.name }))}
+                      />
+                    )}
                     {acts && (m.status === "scheduled" || m.status === "in_progress") && (
                       <form action={cancelMaintenance}>
                         <input type="hidden" name="id" value={m.id} />

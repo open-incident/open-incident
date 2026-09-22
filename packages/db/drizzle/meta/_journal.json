@@ -351,6 +351,13 @@
       "when": 1789944180631,
       "tag": "0049_pack_dashboards",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1790033029691,
+      "tag": "0050_update_corrections",
+      "breakpoints": true
     }
   ]
 }

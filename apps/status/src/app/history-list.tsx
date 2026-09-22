@@ -10,7 +10,20 @@ import { useState } from "react";
  * reads is what was said while it was happening.
  */
 
-export type HistoryUpdate = { status: string; label: string; at: string; body: string };
+export type HistoryUpdate = {
+  status: string;
+  label: string;
+  at: string;
+  body: string;
+  /**
+   * When the wording was corrected, if it was.
+   *
+   * Said rather than hidden: somebody read the first version and a subscriber
+   * was emailed it, so a public statement that changes silently is the one
+   * thing a status page must not do.
+   */
+  correctedAt?: string | null;
+};
 
 export type HistoryItem = {
   id: string;
@@ -129,6 +142,7 @@ export function HistoryList({ months }: { months: HistoryMonth[] }) {
                             {u.label}
                           </strong>
                           <span>{u.at}</span>
+                          {u.correctedAt && <span>· {u.correctedAt}</span>}
                         </div>
                         <div style={{ fontSize: 13.5, lineHeight: 1.6, marginTop: 2 }}>
                           {u.body}

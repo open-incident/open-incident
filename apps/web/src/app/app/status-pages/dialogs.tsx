@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import { useT } from "@/i18n/client";
-import { createComponent, createMaintenance, createStatusPage, updateComponent } from "./actions";
+import {
+  createComponent,
+  createMaintenance,
+  createStatusPage,
+  editMaintenance,
+  updateComponent,
+} from "./actions";
 
 /** A monitor as the "add a component" choice needs it: a name and how it is. */
 export type MonitorChoice = {
@@ -648,4 +654,163 @@ export function EditComponentDialog({
       )}
     </>
   );
+}
+
+/**
+ * Moving a maintenance window that has not started yet.
+ *
+ * The same fields as scheduling one, filled in — and the same client-side
+ * conversion, because a `datetime-local` value carries no zone and the only
+ * machine that knows which zone the reader meant is the one they typed it on.
+ * The server would guess its own, which in production is UTC.
+ */
+export function MaintenanceEditDialog({
+  id,
+  pageId,
+  title,
+  body,
+  startAt,
+  endAt,
+  componentIds,
+  components,
+}: {
+  id: string;
+  pageId: string;
+  title: string;
+  body: string;
+  /** ISO, because a Date cannot cross into a client component. */
+  startAt: string;
+  endAt: string;
+  componentIds: string[];
+  components: Array<{ id: string; name: string }>;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [start, setStart] = useState(() => local(startAt));
+  const [end, setEnd] = useState(() => local(endAt));
+  const iso = (v: string) => (v ? new Date(v).toISOString() : "");
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="maintenance-edit"
+        onClick={() => setOpen(true)}
+        aria-label={t("common.edit")}
+        title={t("common.edit")}
+        className="oi-hover"
+        style={{
+          width: 26,
+          height: 26,
+          border: "1px solid var(--line)",
+          borderRadius: 8,
+          background: "var(--panel)",
+          display: "grid",
+          placeItems: "center",
+          fontSize: 11,
+          cursor: "pointer",
+          color: "inherit",
+          flex: "none",
+        }}
+      >
+        ✎
+      </button>
+      {open && (
+        <Frame
+          title={t("sp2.editMaintenanceTitle")}
+          testId="maintenance-edit-form"
+          action={editMaintenance}
+          onClose={() => setOpen(false)}
+          submit={t("common.save")}
+        >
+          <input type="hidden" name="id" value={id} />
+          <input type="hidden" name="pageId" value={pageId} />
+          <label style={field}>
+            <span style={label}>{t("statusPages.maintenanceTitle")}</span>
+            <input
+              name="title"
+              required
+              autoFocus
+              maxLength={140}
+              defaultValue={title}
+              className="oi-field"
+              style={control}
+            />
+          </label>
+          <label style={field}>
+            <span style={label}>{t("statusPages.message")}</span>
+            <textarea
+              name="body"
+              rows={3}
+              maxLength={2000}
+              defaultValue={body}
+              className="oi-field"
+              style={{ ...control, height: "auto", padding: "10px 12px", resize: "vertical" }}
+            />
+          </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <label style={field}>
+              <span style={label}>{t("oncall.from")}</span>
+              <input
+                type="datetime-local"
+                required
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+                className="oi-field"
+                style={control}
+              />
+              <input type="hidden" name="startAt" value={iso(start)} />
+            </label>
+            <label style={field}>
+              <span style={label}>{t("oncall.to")}</span>
+              <input
+                type="datetime-local"
+                required
+                value={end}
+                onChange={(e) => setEnd(e.target.value)}
+                className="oi-field"
+                style={control}
+              />
+              <input type="hidden" name="endAt" value={iso(end)} />
+            </label>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={label}>{t("statusPages.components")}</span>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {components.map((c) => (
+                <label
+                  key={c.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "4px 10px",
+                    border: "1px solid var(--line)",
+                    borderRadius: 999,
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    name="componentIds"
+                    value={c.id}
+                    defaultChecked={componentIds.includes(c.id)}
+                  />{" "}
+                  {c.name}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div style={note}>{t("sp2.editMaintenanceNote")}</div>
+        </Frame>
+      )}
+    </>
+  );
+}
+
+/** ISO → what a `datetime-local` input wants, in the reader's own zone. */
+function local(iso: string): string {
+  const at = new Date(iso);
+  const shifted = new Date(at.getTime() - at.getTimezoneOffset() * 60_000);
+  return shifted.toISOString().slice(0, 16);
 }

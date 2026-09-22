@@ -38,6 +38,11 @@ const en = {
   "sp2.openPage": "Open →",
   "sp2.addComponentTitle": "Add a component",
   "sp2.editComponentTitle": "Edit the component",
+  "sp2.editMaintenanceTitle": "Move the maintenance",
+  "sp2.maintenanceMoved": "Maintenance updated. Subscribers were not emailed again.",
+  "sp2.updateCorrected": "Update corrected. The page says so; nobody was notified again.",
+  "sp2.editMaintenanceNote":
+    "Only a window that has not started can move. Changing the dates adds one line to the public timeline; rewording the message does not — the page already shows it.",
   "sp2.publicName": "Public name",
   "sp2.descriptionLabel": "One public line",
   "sp2.descriptionHint": "What a visitor needs to recognise the thing",
@@ -87,6 +92,11 @@ export const statusPagesPart = {
     "sp2.openPage": "Ouvrir →",
     "sp2.addComponentTitle": "Ajouter un composant",
     "sp2.editComponentTitle": "Modifier le composant",
+    "sp2.editMaintenanceTitle": "Déplacer la maintenance",
+    "sp2.maintenanceMoved": "Maintenance mise à jour. Les abonnés n'ont pas été renotifiés.",
+    "sp2.updateCorrected": "Mise à jour corrigée. La page le dit ; personne n'a été renotifié.",
+    "sp2.editMaintenanceNote":
+      "Seule une fenêtre qui n'a pas commencé peut être déplacée. Changer les dates ajoute une ligne à la chronologie publique ; reformuler le message non — la page l'affiche déjà.",
     "sp2.publicName": "Nom public",
     "sp2.descriptionLabel": "Une ligne publique",
     "sp2.descriptionHint": "Ce qu'il faut à un visiteur pour reconnaître la chose",
@@ -131,6 +141,12 @@ export const statusPagesPart = {
     "sp2.openPage": "Öffnen →",
     "sp2.addComponentTitle": "Komponente hinzufügen",
     "sp2.editComponentTitle": "Komponente bearbeiten",
+    "sp2.editMaintenanceTitle": "Wartung verschieben",
+    "sp2.maintenanceMoved": "Wartung aktualisiert. Abonnenten wurden nicht erneut benachrichtigt.",
+    "sp2.updateCorrected":
+      "Meldung korrigiert. Die Seite weist darauf hin; niemand wurde erneut benachrichtigt.",
+    "sp2.editMaintenanceNote":
+      "Nur ein Fenster, das noch nicht begonnen hat, lässt sich verschieben. Geänderte Termine ergänzen eine Zeile in der öffentlichen Chronik; ein umformulierter Text nicht — die Seite zeigt ihn bereits.",
     "sp2.publicName": "Öffentlicher Name",
     "sp2.descriptionLabel": "Eine öffentliche Zeile",
     "sp2.descriptionHint": "Woran ein Besucher die Sache erkennt",

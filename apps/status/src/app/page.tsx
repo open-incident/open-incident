@@ -171,6 +171,7 @@ export default async function StatusPage({
           label: t(u.status as "resolved"),
           at: since(u.at, i.startedAt),
           body: u.body,
+          correctedAt: u.correctedAt ? t("corrected", { time: time(u.correctedAt) }) : null,
         })),
       },
     })),
@@ -546,6 +547,9 @@ export default async function StatusPage({
                       >
                         <strong style={{ color: tone.ink }}>{t(u.status as "resolved")}</strong>
                         <span>{since(u.at, i.startedAt)}</span>
+                        {u.correctedAt && (
+                          <span>· {t("corrected", { time: time(u.correctedAt) })}</span>
+                        )}
                       </div>
                       <div style={{ fontSize: 14, lineHeight: 1.6, marginTop: 2 }}>{u.body}</div>
                     </div>

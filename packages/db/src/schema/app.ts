@@ -1977,6 +1977,16 @@ export const statusPageIncidentUpdates = app.table(
       onDelete: "set null",
     }),
     notifiedCount: integer("notified_count").notNull().default(0),
+    /**
+     * When the wording was corrected after publication, if it ever was.
+     *
+     * A public statement that changes silently is the one thing a status page
+     * cannot do: somebody read the first version, and a subscriber was emailed
+     * it. So a correction keeps the original publication time, says on the
+     * page that the text was corrected and when, and never re-notifies —
+     * the notification went out with the old words and cannot be recalled.
+     */
+    correctedAt: timestamp("corrected_at", { withTimezone: true }),
   },
   (t) => [index("status_page_incident_updates_incident").on(t.statusPageIncidentId, t.publishedAt)],
 );

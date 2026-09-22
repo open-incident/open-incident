@@ -111,7 +111,7 @@ test.describe("Status pages", () => {
     await page
       .getByTestId("maintenance-row")
       .filter({ hasText: title })
-      .getByRole("button")
+      .getByRole("button", { name: /Annuler|Cancel|Abbrechen/ })
       .click();
     await signOut(page);
   });
@@ -139,6 +139,96 @@ test.describe("Status pages", () => {
       await page.goto(STATUS_BASE_URL);
       await expect(page.getByText(message)).toBeVisible({ timeout: 2_000 });
     }).toPass({ timeout: 30_000 });
+    await signOut(page);
+  });
+
+  /**
+   * A published update goes out with the words it had. Correcting one changes
+   * the page and says it was changed — and does not email 150 people a second
+   * time to tell them the service was called api-gateway, not checkout.
+   */
+  test("a published update can be corrected, and the page says so", async ({ page }) => {
+    await signIn(page, MEMBERS.owner);
+    await page.goto("/app/status-pages");
+    const updates = page.getByTestId("public-updates").first();
+    await expect(updates).toBeVisible();
+    await updates.locator("summary").click();
+    const form = page.getByTestId("update-form").first();
+    const corrected = `Corrected at ${stamp} — the affected service was api-gateway.`;
+    await form.locator("textarea").fill(corrected);
+    await form.getByTestId("correct-update").click();
+    await page.waitForURL(/corrected=1/);
+    // The admin screen carries the mark, and so does the public page.
+    await expect(page.getByText(/corrected|corrigé|korrigiert/).first()).toBeVisible();
+    /*
+     * On the public page an ongoing incident shows its updates outright and a
+     * past one keeps them behind its entry, so both are tried: which of the
+     * two this update belongs to depends on the incident it was published
+     * from, and the correction has to be visible either way.
+     */
+    await expect(async () => {
+      await page.goto(STATUS_BASE_URL);
+      if (!(await page.getByText(corrected).count())) {
+        const history = page.getByTestId("history-item");
+        for (let i = 0; i < (await history.count()); i++) await history.nth(i).click();
+      }
+      await expect(page.getByText(corrected).first()).toBeVisible({ timeout: 2_000 });
+      await expect(page.getByText(/corrected|corrigé|korrigiert/).first()).toBeVisible({
+        timeout: 2_000,
+      });
+    }).toPass({ timeout: 30_000 });
+    await signOut(page);
+  });
+
+  /**
+   * A window that has not started can move. It used to take a cancellation and
+   * a new maintenance, which tells every subscriber two things about one event.
+   */
+  test("a scheduled maintenance can be moved", async ({ page }) => {
+    await signIn(page, MEMBERS.owner);
+    await page.goto("/app/status-pages");
+    await page.getByTestId("maintenance-open").click();
+    const title = `Smoke move ${stamp}`;
+    const local = (d: Date) =>
+      new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+    const create = page.getByTestId("maintenance-form");
+    await create.locator('input[name="title"]').fill(title);
+    await create
+      .locator('input[type="datetime-local"]')
+      .nth(0)
+      .fill(local(new Date(Date.now() + 2 * 3_600_000)));
+    await create
+      .locator('input[type="datetime-local"]')
+      .nth(1)
+      .fill(local(new Date(Date.now() + 3 * 3_600_000)));
+    await create.locator("button[type=submit]").click();
+    const row = page.getByTestId("maintenance-row").filter({ hasText: title });
+    await expect(row).toBeVisible();
+
+    await row.getByTestId("maintenance-edit").click();
+    const edit = page.getByTestId("maintenance-edit-form");
+    await expect(edit).toBeVisible();
+    // The form arrives filled: an editor that opens empty rewrites by accident.
+    expect(await edit.locator('input[name="title"]').inputValue()).toBe(title);
+    const moved = new Date(Date.now() + 48 * 3_600_000);
+    await edit.locator('input[type="datetime-local"]').nth(0).fill(local(moved));
+    await edit
+      .locator('input[type="datetime-local"]')
+      .nth(1)
+      .fill(local(new Date(moved.getTime() + 3_600_000)));
+    await edit.locator("button[type=submit]").click();
+    await page.waitForURL(/maintenance=edited/);
+    const day = String(moved.getDate()).padStart(2, "0");
+    await expect(
+      page.getByTestId("maintenance-row").filter({ hasText: title }).first(),
+    ).toContainText(day);
+
+    // Cancel it so the demo workspace is left as it was found.
+    await page
+      .getByTestId("maintenance-row")
+      .filter({ hasText: title })
+      .getByRole("button", { name: /Annuler|Cancel|Abbrechen/ })
+      .click();
     await signOut(page);
   });
 });
