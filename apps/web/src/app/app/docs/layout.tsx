@@ -7,6 +7,13 @@ import { GUIDE_SECTIONS, listChapters, type GuideSection } from "@/lib/guide";
 /**
  * The guide's frame: chapters grouped by section on the left, the chapter in
  * the middle. Every member reads it — a viewer as much as an owner.
+ *
+ * The row is declared here rather than assumed of the shell. This layout used
+ * to return the aside and the section as siblings of nothing, counting on the
+ * frame around it being a flex row; the V2 frame is a plain scroll box, so the
+ * two stacked — the whole table of contents first, and the chapter thirteen
+ * hundred pixels below the fold, on a screen that looked empty. A layout that
+ * needs a row is a layout that owns one.
  */
 export default async function DocsLayout({ children }: { children: React.ReactNode }) {
   await requireMember();
@@ -15,7 +22,7 @@ export default async function DocsLayout({ children }: { children: React.ReactNo
   const chapters = listChapters();
   const sectionLabel = (s: GuideSection) => t(`docs.section.${s}`);
   return (
-    <>
+    <div style={{ display: "flex", height: "100%", minHeight: 0 }}>
       <aside
         aria-label={t("docs.title")}
         style={{
@@ -86,6 +93,6 @@ export default async function DocsLayout({ children }: { children: React.ReactNo
         })}
       </aside>
       <section style={{ flex: 1, minWidth: 0, overflow: "auto" }}>{children}</section>
-    </>
+    </div>
   );
 }

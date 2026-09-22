@@ -22,6 +22,29 @@ test.describe("User guide", () => {
     expect(await nav.locator("a[href^='/app/docs/']").count()).toBeGreaterThanOrEqual(20);
     await expect(page.locator("article h1")).toBeVisible();
 
+    /*
+     * Beside the chapter list, not under it.
+     *
+     * This is a geometry assertion because the obvious one cannot fail: the
+     * guide's layout returned its two columns as siblings of nothing and
+     * counted on the frame around them being a flex row, which it stopped
+     * being. The chapters then stacked — the whole table of contents first and
+     * the chapter thirteen hundred pixels below the fold — and every check
+     * above still passed, because `toBeVisible` asks whether an element is
+     * rendered, not whether anybody can see it.
+     */
+    const listBox = (await nav.boundingBox())!;
+    const chapterBox = (await page.locator("article").first().boundingBox())!;
+    expect(chapterBox.x).toBeGreaterThanOrEqual(listBox.x + listBox.width - 1);
+    expect(chapterBox.y).toBeLessThan(listBox.y + listBox.height);
+
+    // And the rail's own Guide entry opens a chapter rather than a page about
+    // the guide: the reader asked for the guide.
+    await page.goto("/app/incidents");
+    await page.locator('aside a[href="/app/docs"]').first().click();
+    await page.waitForURL(/\/app\/docs\/[a-z-]+$/);
+    await expect(page.locator("article h1")).toBeVisible();
+
     // A chapter with illustrations: the first image really loads from the product.
     await page.goto("/app/docs/incidents");
     await expect(page.locator("article h1")).toHaveText(/Incidents/);

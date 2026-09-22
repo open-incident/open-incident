@@ -245,7 +245,10 @@ export function Sidebar({
 
       {(
         [
-          { href: "/app/guide", id: "guide" as const, key: "nav.guide" as MessageKey },
+          // Straight into the guide. The splash that used to sit here said
+          // four things about the product and then offered a link to the
+          // chapters, which is a click charged for nothing.
+          { href: "/app/docs", id: "guide" as const, key: "nav.guide" as MessageKey },
           { href: "/app/settings", id: "settings" as const, key: "nav.settings" as MessageKey },
         ] satisfies { href: string; id: NavIconId; key: MessageKey }[]
       ).map((x) => {
