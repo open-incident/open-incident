@@ -838,6 +838,14 @@ async function main(): Promise<void> {
       "exception_groups_1h",
       "rum_events",
       "rum_sessions_agg",
+      // The rollups a materialized view fills. A materialized view forwards
+      // inserts; it does not see a delete. Leaving these behind and loading
+      // again counts the same minute twice, and the chart that reads them —
+      // the seven-day latency bands — is then wrong in a way nothing else
+      // contradicts.
+      "trace_1m",
+      "service_edges_1m",
+      "service_edge_runs",
     ]) {
       await ch.command({
         query: `ALTER TABLE ${table} DELETE WHERE tenant_id = {tenant:UUID}`,

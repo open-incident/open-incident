@@ -62,6 +62,10 @@ import {
   incidentUpdates,
   incidents,
   members,
+  monitorChecks,
+  monitorDays,
+  monitors,
+  telemetryMonitorSeries,
   postIncidentTasks,
   postMortems,
   roleAssignments,
@@ -70,6 +74,7 @@ import {
   webhookEndpoints,
   workspaces,
 } from "../schema/app";
+import type { MonitorCriterion, MonitorType, SignalAction, TelemetryQuery } from "../schema/app";
 import { DEMO_INVITED, DEMO_MEMBERS, DEMO_SLUG } from "./demo-data";
 import { createHash, randomBytes } from "node:crypto";
 import { registerApiKeyLookup, upsertStatusSnapshot } from "../directory";
@@ -131,6 +136,7 @@ try {
     await ensureOnCall(tx, ctx);
     await linkTeamPolicies(tx, ctx);
     await ensureHeartbeats(tx, ctx);
+    await ensureMonitors(tx, ctx);
     await ensurePayRules(tx);
     await ensureStatusPage(tx, ctx);
     await ensureAiAndChanges(tx, ctx);
@@ -2759,6 +2765,34 @@ async function ensureStatusPage(tx: Tx, ctx: Ctx) {
       publishedAt: paris("08-10", "23:30"),
     },
   ]);
+  // And one still ahead, because a status page with nothing but past
+  // maintenances never shows the half of the screen that matters: the window
+  // that has not started is the one subscribers plan around, and the only one
+  // that can still be moved.
+  const ahead = new Date(Date.now() + 14 * DAY);
+  ahead.setUTCHours(20, 0, 0, 0);
+  const [planned] = await tx
+    .insert(statusPageMaintenances)
+    .values({
+      tenantId,
+      pageId,
+      title: "Bascule du cluster PostgreSQL",
+      body: "Bascule vers le nouveau primaire. Une coupure de deux minutes est attendue en début de fenêtre.",
+      componentIds: [comp.Paiements!, comp.API!].filter(Boolean),
+      startAt: ahead,
+      endAt: new Date(ahead.getTime() + 90 * MIN),
+      status: "scheduled",
+      autoTransitions: true,
+      createdByMemberId: AL,
+    })
+    .returning({ id: statusPageMaintenances.id });
+  await tx.insert(statusPageMaintenanceUpdates).values({
+    tenantId,
+    maintenanceId: planned!.id,
+    status: "scheduled",
+    body: "Maintenance scheduled.",
+    publishedAt: new Date(),
+  });
   await tx.insert(componentImpactHistory).values({
     tenantId,
     componentId: comp.Paiements!,
@@ -3189,4 +3223,313 @@ async function ensurePayRules(tx: Tx) {
       ],
     })
     .onConflictDoNothing();
+}
+
+/**
+ * Seven monitors with three months behind them, paused.
+ *
+ * The demo covers every other section of the rail with real rows, and left
+ * Monitors empty — so the one screen whose whole point is "what does this look
+ * like once it has been running" was the one screen nobody could see. A
+ * monitor with no history is also the least informative thing in the product:
+ * the bars, the uptime figure and the latency chart are all made of past
+ * checks, and a monitor created a minute ago has none of them. So the history
+ * is written too: ninety days of the day rollup the bars read, with a few real
+ * bad days rather than a uniform wall of green, and the last hours of raw
+ * checks the recent list and the latency chart read.
+ *
+ * Paused, and that is the part worth explaining. These targets are Skylark's,
+ * which is to say nobody's: `api.skylark.dev` does not resolve. Left running,
+ * every one of them would go offline within the minute, page whoever the demo
+ * put on call, and open an incident — on a fresh install, before anybody had
+ * read a screen. Pointing them at a real host instead would mean every demo
+ * instance in the world checking somebody else's site every minute.
+ *
+ * A paused monitor keeps its bars, its uptime, its latency chart and its
+ * journey, which is everything the screens are made of; what it does not do is
+ * reach out or wake anyone. Resuming one is a click, and then it is a real
+ * monitor of a target that is not there — which is itself an honest first
+ * lesson.
+ */
+/** One run of a seeded journey: every step passed, sharing the total. */
+function journeyRun(config: Record<string, unknown>, totalMs: number): Record<string, unknown> {
+  const steps = (config.steps ?? []) as Array<{ kind: string; selector?: string; value?: string }>;
+  // The first step is the navigation and takes most of the time; the rest
+  // share what is left, which is the shape a real run has.
+  const weights = steps.map((_, i) => (i === 0 ? 3 : 1));
+  const total = weights.reduce((a, b) => a + b, 0);
+  return {
+    kind: "synthetic",
+    ok: true,
+    totalMs,
+    steps: steps.map((step, i) => ({
+      index: i,
+      kind: step.kind,
+      label: [step.kind, step.selector ?? step.value ?? ""].filter(Boolean).join(" "),
+      outcome: "passed",
+      durationMs: Math.round((totalMs * weights[i]!) / total),
+    })),
+  };
+}
+
+async function ensureMonitors(tx: Tx, ctx: Ctx) {
+  const [present] = await tx
+    .select({ id: monitors.id })
+    .from(monitors)
+    .where(eq(monitors.tenantId, tenantId))
+    .limit(1);
+  if (present) return;
+
+  const owner: SignalAction = {
+    page: { kind: "owner" },
+    incident: { from: "urgent" },
+    autoResolve: true,
+  };
+  /*
+   * The rules each type starts with, spelled out rather than imported.
+   *
+   * The product builds these in the web app, which the seed cannot reach —
+   * and a demo monitor with no rule at all would read "reachable is online"
+   * on the one card the Monitors chapter points at.
+   */
+  const reach: MonitorCriterion[] = [
+    { on: "reachable", op: "eq", value: "false", then: "offline" },
+    { on: "reachable", op: "eq", value: "true", then: "online" },
+  ];
+  const web = (slowMs: number): MonitorCriterion[] => [
+    { on: "reachable", op: "eq", value: "false", then: "offline" },
+    { on: "status_code", op: "gte", value: "400", then: "offline" },
+    { on: "response_time_ms", op: "gt", value: String(slowMs), then: "degraded" },
+    { on: "status_code", op: "lt", value: "400", then: "online" },
+  ];
+  const expiry: MonitorCriterion[] = [
+    { on: "reachable", op: "eq", value: "false", then: "offline" },
+    { on: "days_to_expiry", op: "lt", value: "7", then: "offline" },
+    { on: "days_to_expiry", op: "lt", value: "30", then: "degraded" },
+    { on: "reachable", op: "eq", value: "true", then: "online" },
+  ];
+  const now = new Date();
+
+  type Seed = {
+    name: string;
+    type: MonitorType;
+    target: string;
+    intervalSeconds: number;
+    service: string;
+    latency: number;
+    detail: string;
+    config?: Record<string, unknown>;
+    criteria?: MonitorCriterion[];
+    telemetryQuery?: TelemetryQuery;
+    /** Days, counting back from today, that were not perfect. */
+    bad?: Array<{ ago: number; offline: number; degraded: number }>;
+  };
+
+  const seeds: Seed[] = [
+    {
+      name: "Storefront — home page",
+      type: "http",
+      target: "https://www.skylark.dev/",
+      intervalSeconds: 60,
+      service: "web-storefront",
+      criteria: web(2_000),
+      latency: 214,
+      detail: "200 in 214 ms",
+      bad: [{ ago: 11, offline: 0, degraded: 4_800 }],
+    },
+    {
+      name: "Checkout — /health",
+      type: "api",
+      target: "https://api.skylark.dev/v1/health",
+      intervalSeconds: 60,
+      service: "checkout-api",
+      criteria: web(1_000),
+      latency: 87,
+      detail: "200 in 87 ms",
+      // The day of INC-217: the health endpoint answered, slowly, then not at all.
+      bad: [{ ago: 34, offline: 2_400, degraded: 9_600 }],
+    },
+    {
+      name: "api.skylark.dev certificate",
+      type: "ssl",
+      target: "api.skylark.dev",
+      intervalSeconds: 3_600,
+      service: "checkout-api",
+      criteria: expiry,
+      latency: 41,
+      detail: "valid, expires in 68 days",
+    },
+    {
+      name: "PostgreSQL primary",
+      type: "port",
+      target: "db-primary.skylark.internal:5432",
+      intervalSeconds: 300,
+      service: "payments-worker",
+      criteria: reach,
+      latency: 6,
+      detail: "connection accepted",
+      bad: [{ ago: 34, offline: 900, degraded: 0 }],
+    },
+    {
+      name: "DNS — api.skylark.dev",
+      type: "dns",
+      target: "api.skylark.dev",
+      intervalSeconds: 900,
+      service: "checkout-api",
+      criteria: reach,
+      latency: 18,
+      detail: "A → 51.158.24.7",
+    },
+    {
+      name: "Checkout journey",
+      type: "synthetic",
+      target: "",
+      intervalSeconds: 300,
+      service: "web-storefront",
+      criteria: [
+        { on: "reachable", op: "eq", value: "false", then: "offline" },
+        { on: "response_time_ms", op: "gt", value: "30000", then: "degraded" },
+        { on: "reachable", op: "eq", value: "true", then: "online" },
+      ],
+      latency: 11_420,
+      detail: "6 steps, 11.4 s",
+      config: {
+        budgetMs: 60_000,
+        viewport: { width: 1280, height: 800 },
+        steps: [
+          { kind: "goto", value: "https://www.skylark.dev/", timeoutMs: 15_000 },
+          { kind: "click", selector: "text=Plans", timeoutMs: 15_000 },
+          { kind: "click", selector: "[data-plan=pro] button", timeoutMs: 15_000 },
+          { kind: "fill", selector: "#email", value: "demo@skylark.dev", timeoutMs: 15_000 },
+          { kind: "click", selector: "button[type=submit]", timeoutMs: 20_000 },
+          { kind: "expectText", value: "Order confirmed", timeoutMs: 20_000 },
+        ],
+      },
+      bad: [{ ago: 3, offline: 1_800, degraded: 0 }],
+    },
+    {
+      // The fourteenth type is not a probe at all: it reads what the services
+      // already send. One row on the list so the two families sit side by side.
+      name: "Checkout — failing traces",
+      type: "traces",
+      target: "",
+      intervalSeconds: 60,
+      service: "checkout-api",
+      latency: 0,
+      detail: "0.4/s over 5 min — under the threshold",
+      telemetryQuery: {
+        query: "service_name = 'checkout-api' AND status_code = 'error'",
+        aggregate: "rate",
+        windowMinutes: 5,
+        condition: { kind: "threshold", op: ">", value: 2 },
+        forEvaluations: 2,
+        groupBy: ["http_route"],
+        noData: "ignore",
+      },
+    },
+  ];
+
+  for (const seed of seeds) {
+    const [row] = await tx
+      .insert(monitors)
+      .values({
+        tenantId,
+        name: seed.name,
+        type: seed.type,
+        target: seed.target,
+        intervalSeconds: seed.intervalSeconds,
+        config: seed.config ?? {},
+        criteria: seed.criteria ?? [],
+        telemetryQuery: seed.telemetryQuery ?? null,
+        action: owner,
+        serviceId: ctx.serviceId[seed.service] ?? null,
+        state: "paused",
+        stateSince: new Date(now.getTime() - 3 * DAY),
+        lastCheckAt: new Date(now.getTime() - 3 * DAY),
+        lastLatencyMs: seed.latency,
+        lastDetail: seed.detail,
+        paused: true,
+        createdByMemberId: ctx.memberId("Amélie Laurent"),
+      })
+      .returning({ id: monitors.id });
+    const monitorId = row!.id;
+
+    // A telemetry monitor has no check and no uptime: it reads rows somebody
+    // else wrote, and what it keeps instead is one line per series it watches.
+    if (seed.telemetryQuery) {
+      await tx.insert(telemetryMonitorSeries).values(
+        [
+          { route: "/checkout", value: 0.4 },
+          { route: "/cart", value: 0.1 },
+          { route: "/orders", value: 0.9 },
+        ].map((sr) => ({
+          tenantId,
+          monitorId,
+          seriesKey: `http_route=${sr.route}`,
+          labels: { http_route: sr.route },
+          state: "ok" as const,
+          lastVerdict: "ok" as const,
+          consecutive: 4,
+          lastValue: sr.value,
+          lastDetail: `${sr.value}/s over 5 min — threshold 2/s`,
+          stateSince: new Date(now.getTime() - 9 * DAY),
+          lastSeenAt: new Date(now.getTime() - 3 * DAY),
+        })),
+      );
+      continue;
+    }
+
+    // Ninety days of the rollup the bars and the uptime figure read. A day is
+    // 86 400 seconds split between the three states; a day with nothing in it
+    // would draw as grey, which means "not watched" and not "fine".
+    const days: Array<typeof monitorDays.$inferInsert> = [];
+    for (let ago = 0; ago < 90; ago++) {
+      const at = new Date(now.getTime() - ago * DAY);
+      const bad = seed.bad?.find((b) => b.ago === ago);
+      const offline = bad?.offline ?? 0;
+      const degraded = bad?.degraded ?? 0;
+      // Nothing was watched after the pause: those days are absent rather than
+      // perfect, which is what a grey bar means.
+      if (ago < 3) continue;
+      const elapsed = 86_400;
+      days.push({
+        tenantId,
+        monitorId,
+        day: at.toISOString().slice(0, 10),
+        onlineSeconds: Math.max(0, elapsed - offline - degraded),
+        degradedSeconds: degraded,
+        offlineSeconds: offline,
+        checks: Math.floor(elapsed / seed.intervalSeconds),
+      });
+    }
+    await tx.insert(monitorDays).values(days);
+
+    // The last checks, which are the recent list and the latency chart. They
+    // stop where the pause does, three days back.
+    {
+      const checks: Array<typeof monitorChecks.$inferInsert> = [];
+      const until = now.getTime() - 3 * DAY;
+      for (let i = 0; i < 48; i++) {
+        const at = new Date(until - (i + 1) * seed.intervalSeconds * 1000);
+        // A believable wobble around the last figure, deterministic so two
+        // seeds of the same database draw the same chart.
+        const wobble = 1 + 0.18 * Math.sin(i * 1.7) + 0.06 * Math.sin(i * 0.31);
+        const latencyMs = Math.max(1, Math.round(seed.latency * wobble));
+        checks.push({
+          tenantId,
+          monitorId,
+          at,
+          state: "online",
+          latencyMs,
+          detail: seed.detail,
+          // A journey's per-step timings are what its card draws; the other
+          // types have nothing to say beyond the one number.
+          ...(seed.type === "synthetic" && seed.config
+            ? { result: journeyRun(seed.config, latencyMs) }
+            : {}),
+        });
+      }
+      await tx.insert(monitorChecks).values(checks);
+    }
+  }
 }

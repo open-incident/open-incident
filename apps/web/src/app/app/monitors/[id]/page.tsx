@@ -9,6 +9,7 @@ import {
   checkNow,
   deleteMonitor,
   deleteMonitorSecret,
+  saveMonitorCriteria,
   saveMonitorSecret,
   saveSyntheticJourney,
   togglePause,
@@ -73,6 +74,31 @@ const STATE_TONE: Record<string, [string, string]> = {
   offline: ["var(--dang-t)", "var(--dang)"],
   paused: ["var(--sunk)", "var(--ink-3)"],
   waiting: ["var(--sunk)", "var(--ink-2)"],
+};
+
+/** The left-hand sides a criterion can read, in the order the editor lists them. */
+const CRITERION_FIELDS = [
+  "reachable",
+  "status_code",
+  "response_time_ms",
+  "body_contains",
+  "body_matches",
+  "header",
+  "days_to_expiry",
+  "record_value",
+  "ping_received_in",
+] as const;
+
+/** The editor's controls: small enough that four fit across a sidebar card. */
+const MICRO: React.CSSProperties = {
+  height: 26,
+  minWidth: 0,
+  flex: 1,
+  border: "1px solid var(--line)",
+  borderRadius: 7,
+  padding: "0 6px",
+  fontSize: 11.5,
+  background: "var(--panel)",
 };
 
 const OP_LABEL: Record<string, string> = {
@@ -627,46 +653,139 @@ export default async function MonitorDetailPage({
           ) : (
             <div style={CARD}>
               <div style={EYEBROW}>{t("monitors.criteria")}</div>
-              {m.criteria.length === 0 ? (
+              {m.criteria.length === 0 && (
                 <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
                   {t("monitors.noCriteria")}
                 </div>
-              ) : (
-                m.criteria.map((c, i) => {
-                  const dot =
-                    c.then === "online"
-                      ? "var(--ok)"
-                      : c.then === "degraded"
-                        ? "var(--wait)"
-                        : "var(--dang)";
-                  return (
-                    <div
-                      key={i}
-                      style={{ display: "flex", gap: 8, fontSize: 12.5, lineHeight: 1.5 }}
-                    >
-                      <span
+              )}
+              {m.criteria.map((c, i) => {
+                const dot =
+                  c.then === "online"
+                    ? "var(--ok)"
+                    : c.then === "degraded"
+                      ? "var(--wait)"
+                      : "var(--dang)";
+                return (
+                  <div key={i} style={{ display: "flex", gap: 8, fontSize: 12.5, lineHeight: 1.5 }}>
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: dot,
+                        marginTop: 7,
+                        flex: "none",
+                      }}
+                    />
+                    <span>
+                      {t(`monitors.on.${c.on}` as MessageKey)}{" "}
+                      <span style={{ fontFamily: "var(--mono)" }}>
+                        {OP_LABEL[c.op] ?? c.op} {c.value}
+                      </span>{" "}
+                      →{" "}
+                      <strong style={{ color: dot }}>
+                        {t(`monitors.state.${c.then}` as MessageKey)}
+                      </strong>
+                    </span>
+                  </div>
+                );
+              })}
+              {/*
+                The creation form calls these "default criteria · editable
+                later". This is the later. Folded away because the reader who
+                opened this page during an incident wants to read the rules,
+                not edit them — and one click is a small price for a form that
+                is not in the way the other ninety-nine times.
+              */}
+              {mayEdit && (
+                <details data-testid="criteria-edit">
+                  <summary style={{ cursor: "pointer", fontSize: 11.5, color: "var(--ink-3)" }}>
+                    {t("monitors.editCriteria")}
+                  </summary>
+                  <form
+                    action={saveMonitorCriteria}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                      marginTop: 8,
+                    }}
+                  >
+                    <input type="hidden" name="id" value={m.id} />
+                    {[...m.criteria, null].map((c, i) => (
+                      <div
+                        key={i}
+                        data-testid="criterion-row"
+                        style={{ display: "flex", gap: 4, alignItems: "center" }}
+                      >
+                        <select
+                          name="on"
+                          defaultValue={c?.on ?? "response_time_ms"}
+                          className="oi-field"
+                          style={MICRO}
+                        >
+                          {CRITERION_FIELDS.map((f) => (
+                            <option key={f} value={f}>
+                              {t(`monitors.on.${f}` as MessageKey)}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          name="op"
+                          defaultValue={c?.op ?? "gt"}
+                          className="oi-field"
+                          style={{ ...MICRO, width: 64, flex: "none" }}
+                        >
+                          {Object.keys(OP_LABEL).map((op) => (
+                            <option key={op} value={op}>
+                              {OP_LABEL[op]}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          name="value"
+                          defaultValue={c?.value ?? ""}
+                          placeholder={t("monitors.criterionValue")}
+                          className="oi-field"
+                          style={{ ...MICRO, width: 78, flex: "none" }}
+                        />
+                        <select
+                          name="then"
+                          defaultValue={c?.then ?? "degraded"}
+                          className="oi-field"
+                          style={{ ...MICRO, width: 96, flex: "none" }}
+                        >
+                          {(["online", "degraded", "offline"] as const).map((st) => (
+                            <option key={st} value={st}>
+                              {t(`monitors.state.${st}` as MessageKey)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+                      <button
+                        type="submit"
+                        data-testid="criteria-save"
                         style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: "50%",
-                          background: dot,
-                          marginTop: 7,
-                          flex: "none",
+                          height: 26,
+                          padding: "0 10px",
+                          border: "1px solid var(--line)",
+                          borderRadius: 8,
+                          background: "var(--panel)",
+                          fontSize: 11.5,
+                          fontWeight: 600,
+                          cursor: "pointer",
                         }}
-                      />
-                      <span>
-                        {t(`monitors.on.${c.on}` as MessageKey)}{" "}
-                        <span style={{ fontFamily: "var(--mono)" }}>
-                          {OP_LABEL[c.op] ?? c.op} {c.value}
-                        </span>{" "}
-                        →{" "}
-                        <strong style={{ color: dot }}>
-                          {t(`monitors.state.${c.then}` as MessageKey)}
-                        </strong>
+                      >
+                        {t("common.save")}
+                      </button>
+                      <span style={{ fontSize: 11, color: "var(--ink-3)", lineHeight: 1.4 }}>
+                        {t("monitors.criteriaNote")}
                       </span>
                     </div>
-                  );
-                })
+                  </form>
+                </details>
               )}
             </div>
           )}

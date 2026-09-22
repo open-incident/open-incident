@@ -55,6 +55,9 @@ export default async function MonitorsPage({
     degraded: data.monitors.filter((m) => m.state === "degraded").length,
     offline: data.monitors.filter((m) => m.state === "offline").length,
     waiting: data.monitors.filter((m) => m.state === "waiting").length,
+    // Counted like the rest: a list of seven monitors whose header said
+    // nothing because all seven were paused is a header that lies by omission.
+    paused: data.monitors.filter((m) => m.state === "paused").length,
   };
   const mayEdit = canRespond(member);
 
@@ -100,6 +103,11 @@ export default async function MonitorsPage({
           {counts.waiting > 0 && (
             <span style={{ color: "var(--ink-3)" }}>
               {t("monitors.nWaiting", { count: counts.waiting })}
+            </span>
+          )}
+          {counts.paused > 0 && (
+            <span style={{ color: "var(--ink-3)" }}>
+              {t("monitors.nPaused", { count: counts.paused })}
             </span>
           )}
         </span>

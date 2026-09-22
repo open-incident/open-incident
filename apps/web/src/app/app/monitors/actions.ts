@@ -18,6 +18,7 @@ import {
   monitorSecrets,
   monitors,
   withTenant,
+  type MonitorCriterion,
   type MonitorType,
   type TelemetryQuery,
 } from "@openincident/db";
@@ -512,4 +513,73 @@ export async function deleteMonitorSecret(formData: FormData) {
     await recordAudit(tx, current, "config", "monitor.secret.removed", { secrets: name });
   });
   revalidatePath(`/app/monitors/${id}`);
+}
+
+/**
+ * Rewriting what makes a monitor online, degraded or offline.
+ *
+ * The creation form calls its panel "default criteria · editable later", and
+ * until now the second half of that was not true: the rules were written once
+ * and could only be read afterwards. A default that cannot be changed is not a
+ * default, it is a decision — and the two-second ceiling that makes a
+ * background job "degraded" is exactly the number every team argues about.
+ *
+ * The rows arrive parallel: one `on`, one `op`, one `value` and one `then` per
+ * line, in the order the form drew them. A line whose value is empty is a line
+ * the reader cleared, and clearing is how a rule is removed — there is no
+ * separate delete, because a form that posts what it shows cannot disagree
+ * with what it shows. Order is kept, and it matters: `stateFromSample` walks
+ * the list and the first rule that holds wins.
+ */
+export async function saveMonitorCriteria(formData: FormData) {
+  const current = await requireResponder();
+  const id = z.string().uuid().parse(formData.get("id"));
+  const criterion = z.object({
+    on: z.enum([
+      "status_code",
+      "response_time_ms",
+      "body_contains",
+      "body_matches",
+      "header",
+      "reachable",
+      "days_to_expiry",
+      "record_value",
+      "ping_received_in",
+    ]),
+    op: z.enum(["eq", "neq", "lt", "lte", "gt", "gte", "contains", "not_contains", "matches"]),
+    value: z.string().trim().min(1).max(200),
+    then: z.enum(["online", "degraded", "offline"]),
+  });
+  const ons = formData.getAll("on").map(String);
+  const ops = formData.getAll("op").map(String);
+  const values = formData.getAll("value").map(String);
+  const thens = formData.getAll("then").map(String);
+  const criteria: MonitorCriterion[] = [];
+  for (let i = 0; i < ons.length; i++) {
+    const parsed = criterion.safeParse({
+      on: ons[i],
+      op: ops[i],
+      value: (values[i] ?? "").trim(),
+      then: thens[i],
+    });
+    if (parsed.success) criteria.push(parsed.data);
+  }
+  if (criteria.length > 12) redirect(`/app/monitors/${id}?error=criteria`);
+
+  await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .select({ name: monitors.name, type: monitors.type })
+      .from(monitors)
+      .where(and(eq(monitors.tenantId, current.tenant.id), eq(monitors.id, id)));
+    // A telemetry monitor's rule is its query, not a list of criteria; writing
+    // criteria onto one would store something nothing ever reads.
+    if (!row || (TELEMETRY_TYPES as readonly string[]).includes(row.type)) return;
+    await tx.update(monitors).set({ criteria, updatedAt: new Date() }).where(eq(monitors.id, id));
+    await recordAudit(tx, current, "config", "monitor.criteria.saved", {
+      name: row.name,
+      count: criteria.length,
+    });
+  });
+  revalidatePath(`/app/monitors/${id}`);
+  redirect(`/app/monitors/${id}?saved=criteria`);
 }
