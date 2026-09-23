@@ -46,6 +46,18 @@ export async function GET(request: Request) {
       accessToken: result.accessToken,
       memberId: state.memberId,
     });
+    /*
+     * The directory row commits with the install, not after it.
+     *
+     * These two writes are one fact: "this Slack team belongs to this
+     * workspace". The install is what the settings screen reads; the directory
+     * row is what a request from Slack reads, since Slack does not know which
+     * host to call. Written apart, a process that dies between them leaves an
+     * installation the product calls "Connected" and every slash command
+     * answers "this Slack workspace is not connected" — two screens, two
+     * truths, and nothing to reconcile them. Found exactly in that state.
+     */
+    await registerApiKeyLookup(`slack:${result.teamId}`, state.tenantId, tx);
     // Best effort: remember who is who, starting with the active members.
     const api = slack(result.accessToken);
     const rows = await tx
@@ -55,6 +67,5 @@ export async function GET(request: Request) {
     for (const m of rows.slice(0, 50))
       await linkSlackIdentity(tx, state.tenantId, api, m).catch(() => null);
   });
-  await registerApiKeyLookup(`slack:${result.teamId}`, state.tenantId);
   return NextResponse.redirect(`${back}?connect=slack&step=2&authorized=1`);
 }

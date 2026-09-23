@@ -30,6 +30,27 @@ SMOKE_HEADED=1 pnpm --filter @openincident/smoke smoke   # visible browser
 Variables: `SMOKE_PORT` (3106), `SMOKE_HOST`, `SMOKE_BASE_URL`, `SMOKE_TENANT`
 (skylark), `SMOKE_MAILPIT_URL` (http://localhost:8027).
 
+**`SMOKE_BASE_URL` must name the workspace's own host**, not the apex. A
+workspace lives on `<slug>.<host>` and its session cookie with it; point the
+suite at the apex and most specs still pass, because they never leave it. The
+ones that do — the Slack OAuth round trip returns from the identity provider to
+the _workspace_ origin — lose the session on the way back and land on `/login`,
+which reads as a broken product and is a broken invocation:
+
+```bash
+# Against a local stack behind TLS, with the workspace that owns the data:
+SMOKE_TENANT=skylark \
+SMOKE_BASE_URL=https://skylark.oi.localhost:3106 \
+SMOKE_STATUS_BASE_URL=https://skylark.status.oi.localhost:3107 \
+NODE_TLS_REJECT_UNAUTHORIZED=0 \
+  pnpm --filter @openincident/smoke smoke
+```
+
+The Slack and Teams specs additionally need the server started with the mock
+credentials and `SLACK_ALLOW_LOCAL_ENDPOINT=1`, which is what the CI workflow
+does — the OAuth start route otherwise refuses to send anybody to a loopback
+address.
+
 ## What is covered
 
 | File             | Journey                                                                           |
