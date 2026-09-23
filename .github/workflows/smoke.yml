@@ -61,6 +61,9 @@ jobs:
           SLACK_CLIENT_SECRET: smoke-secret
           SLACK_SIGNING_SECRET: smoke-signing-secret
           SLACK_API_BASE: http://127.0.0.1:3197
+          # The OAuth start route refuses to send a human to a loopback
+          # address; this suite is not a human and the double is the point.
+          SLACK_ALLOW_LOCAL_ENDPOINT: "1"
           AI_API_BASE: http://127.0.0.1:3198/v1
           AI_API_KEY: smoke
           AI_MODEL: mock-chat

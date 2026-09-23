@@ -909,7 +909,12 @@ export default async function IntegrationsPage({
               </div>
               {q.error && (
                 <div role="alert" style={{ fontSize: 12.5, color: "var(--dang)" }}>
-                  {t("settings.integrations.slackError", { error: q.error })}
+                  {/* A misconfigured instance is not Slack refusing: saying
+                      "Slack answered" would send an administrator looking for
+                      the fault in the wrong place. */}
+                  {q.error === "local-endpoint"
+                    ? t("settings.integrations.slackLocalEndpoint")
+                    : t("settings.integrations.slackError", { error: q.error })}
                 </div>
               )}
               {step === 1 && (

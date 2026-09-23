@@ -2927,6 +2927,8 @@ export const en = {
   "settings.integrations.step2": "Configuration",
   "settings.integrations.step3": "Test",
   "settings.integrations.slackError": "Slack answered: {error}.",
+  "settings.integrations.slackLocalEndpoint":
+    "The Slack app of this instance points at a local address (SLACK_API_BASE), which only this machine can reach. That variable is for the test suite: clear it, and set SLACK_CLIENT_ID, SLACK_CLIENT_SECRET and SLACK_SIGNING_SECRET from a real Slack app.",
   "settings.integrations.slackAuthorizeText":
     "Authorize Open Incident in your Slack workspace — minimal scopes: create and read channels, post messages, pin, read reactions, look members up by email. The token is encrypted at rest.",
   "settings.integrations.slackAuthorize": "Authorize in Slack ↗",

@@ -46,6 +46,37 @@ export function readInstallState(state: string): { tenantId: string; memberId: s
   return { tenantId, memberId };
 }
 
+/**
+ * Whether an authorize URL points somewhere only this machine can reach.
+ *
+ * `SLACK_API_BASE` exists so the test suite can stand a mock in Slack's place.
+ * Left set on an instance people actually use, the "Authorize in Slack" button
+ * sends them to `127.0.0.1:3197` — and a browser that cannot connect shows its
+ * own error page, outside the product, with no way back. The person is not
+ * merely blocked: they are ejected.
+ *
+ * So the instance checks its own configuration before handing anybody over. It
+ * is a shape check, not a reachability probe: a loopback or link-local host is
+ * never a real Slack, and probing the network on the way to an OAuth screen
+ * would be slow and would fail for reasons of its own.
+ */
+export function pointsAtThisMachine(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host === "[::1]" ||
+    host === "0.0.0.0"
+  );
+}
+
 /** Where the "Authorize in Slack" button sends the admin. A mock base rewrites the host for tests. */
 export function slackAuthorizeUrl(redirectUri: string, state: string): string {
   const base = process.env.SLACK_API_BASE

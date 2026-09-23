@@ -2986,6 +2986,8 @@ export const de: Dictionary = {
   "settings.integrations.step2": "Konfiguration",
   "settings.integrations.step3": "Test",
   "settings.integrations.slackError": "Slack antwortete: {error}.",
+  "settings.integrations.slackLocalEndpoint":
+    "Die Slack-App dieser Instanz zeigt auf eine lokale Adresse (SLACK_API_BASE), die nur dieser Rechner erreicht. Diese Variable gehört der Testsuite: leeren Sie sie und tragen Sie SLACK_CLIENT_ID, SLACK_CLIENT_SECRET und SLACK_SIGNING_SECRET einer echten Slack-App ein.",
   "settings.integrations.slackAuthorizeText":
     "Autorisieren Sie Open Incident in Ihrem Slack-Workspace — minimale Scopes: Kanäle anlegen und lesen, Nachrichten posten, anheften, Reaktionen lesen, Mitglieder per E-Mail finden. Das Token wird verschlüsselt gespeichert.",
   "settings.integrations.slackAuthorize": "In Slack autorisieren ↗",
