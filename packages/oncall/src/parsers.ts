@@ -253,11 +253,18 @@ export function applyMappings(
 export function defaultMappings(kind: AlertSourceKind): AttributeMapping[] {
   switch (kind) {
     case "datadog":
-      return [
-        { attribute: "service", path: "scope.service" },
-        { attribute: "priority", path: "priority" },
-        { attribute: "environment", path: "scope.env" },
-      ];
+      /*
+       * Only `priority`, because Datadog's `scope` is a string.
+       *
+       * It arrives as `"env:production,service:checkout-api"`, so the paths
+       * that used to be here — `scope.service`, `scope.env` — walked into a
+       * string and resolved to nothing. The attributes were right anyway: the
+       * parser splits that string itself. What the two rows did was appear on
+       * the Attributes screen, next to a sample value that stayed empty, and
+       * invite somebody debugging their mapping to edit a line that does
+       * nothing.
+       */
+      return [{ attribute: "priority", path: "priority" }];
     case "prometheus":
     case "grafana":
       return [

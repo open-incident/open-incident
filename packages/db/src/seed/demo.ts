@@ -2523,12 +2523,9 @@ function defaultMappingsFor(
 ): (typeof alertSources.$inferInsert)["mappings"] {
   switch (kind) {
     case "datadog":
-      return [
-        { attribute: "service", path: "scope.service" },
-        { attribute: "priority", path: "priority" },
-        { attribute: "environment", path: "scope.env" },
-        { attribute: "region", path: "scope.region" },
-      ];
+      // `scope` is a string that the parser splits itself; a dot path into it
+      // resolves to nothing. See `defaultMappings` in @openincident/oncall.
+      return [{ attribute: "priority", path: "priority" }];
     case "prometheus":
     case "grafana":
       return [

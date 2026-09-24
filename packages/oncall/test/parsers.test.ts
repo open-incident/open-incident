@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyMappings, parsePayload, readPath } from "../src/parsers";
+import { applyMappings, defaultMappings, parsePayload, readPath } from "../src/parsers";
 
 describe("payload parsers", () => {
   it("splits an Alertmanager batch and maps severity to a priority", () => {
@@ -49,6 +49,27 @@ describe("payload parsers", () => {
       status: "resolved",
       dedupKey: "dd:4207231",
       attributes: { service: "auth-service", environment: "production", priority: "P2" },
+    });
+  });
+
+  /*
+   * A default mapping that cannot resolve is worse than none: the Attributes
+   * screen shows the row with an empty sample value, beside an attribute that
+   * is correctly filled, and the person debugging edits the wrong thing.
+   */
+  it("only ships Datadog defaults whose path exists in a real payload", () => {
+    const payload = {
+      monitor_id: 4207231,
+      priority: "P2",
+      scope: "service:auth-service,env:production",
+    };
+    for (const m of defaultMappings("datadog")) {
+      expect(readPath(payload, m.path), `${m.attribute} ← ${m.path}`).toBeDefined();
+    }
+    // And what the dead paths used to promise still arrives, from the parser.
+    expect(parsePayload("datadog", payload)[0]!.attributes).toMatchObject({
+      service: "auth-service",
+      environment: "production",
     });
   });
 
