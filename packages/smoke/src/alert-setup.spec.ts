@@ -166,3 +166,35 @@ test.describe("Alert configuration", () => {
     await api.dispose();
   });
 });
+
+/**
+ * The welcome screen's tool grid, and the field that used to lag behind it.
+ *
+ * The name field defaulted to the picked tool's label with `defaultValue`,
+ * which React applies at mount and never again. The form stays mounted while
+ * somebody tries the tiles, so picking one tool and then another created a
+ * source named after the first and parsed as the second — and the alerts
+ * screen printed a sample payload for a tool the source was not named after.
+ */
+test("the source name follows the tool the second click picked", async ({ page }) => {
+  await signIn(page, MEMBERS.owner);
+  await page.goto("/app");
+  // The step is a collapsed card until it is the one being worked on, and the
+  // grid lives inside it — a workspace that already has a source never opens
+  // it, which is why this runs on the throwaway one.
+  const header = page.getByText(
+    /D'où viennent les alertes|Where do alerts come from|Woher kommen die Alarme/,
+  );
+  if (await header.count()) await header.first().click();
+  const grid = page.getByTestId("onboarding-tool-datadog");
+  test.skip(!(await grid.isVisible().catch(() => false)), "the welcome step is already done here");
+
+  await grid.click();
+  const form = page.getByTestId("onboarding-source");
+  await expect(form.locator('input[name="name"]')).toHaveValue("Datadog");
+
+  // Change one's mind: the hidden kind and the visible name must agree.
+  await page.getByTestId("onboarding-tool-grafana").click();
+  expect(await form.locator('input[name="kind"]').inputValue()).toBe("grafana");
+  await expect(form.locator('input[name="name"]')).toHaveValue("Grafana");
+});

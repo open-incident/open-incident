@@ -614,7 +614,21 @@ function SourceStep({ kinds, manages }: { kinds: Kind[]; manages: boolean }) {
             style={{ display: "flex", flexDirection: "column", gap: 5, flex: 1, minWidth: 200 }}
           >
             <span style={LABEL}>{t("home.sourceName")}</span>
+            {/*
+              `key` so the field follows the tool.
+
+              `defaultValue` applies once, at mount, and this form stays
+              mounted while somebody tries the tiles: picking Datadog then
+              Grafana left "Datadog" in the box beside a hidden `kind` of
+              `grafana`, and the source was created with a name naming one tool
+              and a parser for another. The alerts screen then printed a sample
+              payload of the second tool under the name of the first, which is
+              where it was noticed. Keyed on the tool, the field remounts with
+              the new default — the same thing the full dialog does by holding
+              the name in state.
+            */}
             <input
+              key={picked.kind}
               name="name"
               required
               defaultValue={picked.label}
