@@ -17,6 +17,7 @@ import {
   withTenant,
   type Tx,
 } from "@openincident/db";
+import { postAlert } from "./monitors";
 import { tenantOrigin } from "./notify";
 
 export const HEARTBEAT_SOURCE_NAME = "Heartbeats";
@@ -83,40 +84,6 @@ export function heartbeatPingUrl(origin: string, id: string, token: string): str
   return `${origin}/api/heartbeats/${id}/${token}`;
 }
 
-/** Where the product posts to itself: the tenant's public origin, or an internal base with the tenant's Host. */
-function ingestTarget(origin: string, sourceId: string): { url: string; host: string | null } {
-  const internal = process.env.INTERNAL_WEB_ORIGIN?.replace(/\/$/, "");
-  const path = `/api/ingest/alerts/${sourceId}`;
-  if (internal) return { url: `${internal}${path}`, host: new URL(origin).host };
-  return { url: `${origin}${path}`, host: null };
-}
-
-async function postHeartbeatAlert(
-  origin: string,
-  source: { id: string; secret: string },
-  payload: Record<string, unknown>,
-): Promise<boolean> {
-  const target = ingestTarget(origin, source.id);
-  try {
-    const res = await fetch(target.url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-oi-secret": source.secret,
-        // The tenant travels in x-forwarded-host, which the middleware reads first.
-        ...(target.host ? { host: target.host, "x-forwarded-host": target.host } : {}),
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!res.ok) console.error(`[heartbeats] ingest answered ${res.status} for ${target.url}`);
-    return res.ok;
-  } catch (err) {
-    console.error("[heartbeats] ingest unreachable:", err instanceof Error ? err.message : err);
-    return false;
-  }
-}
-
 function alertPayload(
   hb: {
     id: string;
@@ -176,7 +143,7 @@ export async function recordHeartbeatPing(
     const tenant = await getTenantById(tenantId);
     if (tenant) {
       const origin = tenantOrigin(tenant.slug, tenant.customDomain);
-      await postHeartbeatAlert(
+      await postAlert(
         origin,
         state.source,
         alertPayload(state.row.hb, state.row.serviceName, "resolved", origin),
@@ -223,13 +190,7 @@ export async function sweepHeartbeats(tenantIds: string[], now = new Date()): Pr
     if (!tenant) continue;
     const origin = tenantOrigin(tenant.slug, tenant.customDomain);
     for (const r of late.due) {
-      if (
-        await postHeartbeatAlert(
-          origin,
-          late.source,
-          alertPayload(r.hb, r.serviceName, "firing", origin),
-        )
-      )
+      if (await postAlert(origin, late.source, alertPayload(r.hb, r.serviceName, "firing", origin)))
         missed++;
     }
   }

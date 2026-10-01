@@ -41,7 +41,7 @@ test.describe("Single sign-on", () => {
     await expect(row.getByTestId("sso-enforced")).toBeVisible();
     const redirectUri = (await row.getByTestId("sso-redirect-uri").textContent())!.trim();
     expect(redirectUri).toMatch(
-      /^https?:\/\/[a-z0-9-]+\.localhost:\d+\/api\/auth\/sso\/callback\/oi-/,
+      /^https?:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.localhost:\d+\/api\/auth\/sso\/callback\/oi-/,
     );
 
     // The sign-in page now offers it; a password for the enforced domain is refused.

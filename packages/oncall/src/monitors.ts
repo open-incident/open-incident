@@ -608,10 +608,19 @@ export async function postAlert(
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) console.error(`[monitors] ingest answered ${res.status}`);
-    return res.ok;
+    // The ingest endpoint answers 202, and nothing else does. A reverse proxy
+    // that routes by Host answers an empty 200 for a host it does not serve —
+    // and fetch drops the Host header — so `res.ok` once counted an alert as
+    // raised that no one ever received.
+    if (res.status === 202) return true;
+    const excerpt = (await res.text().catch(() => "")).slice(0, 120);
+    console.error(
+      `[ingest] ${target.url} answered ${res.status} where the ingest endpoint answers 202` +
+        (excerpt ? ` — ${excerpt}` : " — empty body; is INTERNAL_WEB_ORIGIN the app itself?"),
+    );
+    return false;
   } catch (err) {
-    console.error("[monitors] ingest unreachable:", err instanceof Error ? err.message : err);
+    console.error("[ingest] unreachable:", err instanceof Error ? err.message : err);
     return false;
   }
 }

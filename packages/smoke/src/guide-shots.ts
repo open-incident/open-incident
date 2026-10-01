@@ -146,8 +146,14 @@ async function main() {
       file: "monitor-detail.png",
       path: "/app/monitors",
       act: async (p) => {
-        const journey = p.locator("a[href^='/app/monitors/']:not([role='tab'])").filter({ hasText: /SYNTHETIC/ });
-        await ((await journey.count()) ? journey : p.locator("a[href^='/app/monitors/']:not([role='tab'])"))
+        const journey = p
+          .locator("a[href^='/app/monitors/']:not([role='tab'])")
+          .filter({ hasText: /SYNTHETIC/ });
+        await (
+          (await journey.count())
+            ? journey
+            : p.locator("a[href^='/app/monitors/']:not([role='tab'])")
+        )
           .first()
           .click();
         await p.waitForURL(/\/app\/monitors\/[0-9a-f-]+/);
