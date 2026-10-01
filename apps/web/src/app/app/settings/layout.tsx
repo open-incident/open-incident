@@ -1,26 +1,32 @@
 import { Suspense } from "react";
 import { headers } from "next/headers";
 import { canOpenSettings, hasPermission, requireMember } from "@/lib/session";
+import { entitlementsFor } from "@/lib/entitlements";
 import { getEdition, type Permission } from "@openincident/config";
 import { getT } from "@/i18n/server";
-import { SettingsNav, type NavGroup, type NavItem } from "./settings-nav";
+import { SegmentTabs, type SegmentTab } from "@/components/shell/segment-tabs";
+import { SettingsNav, type NavGroup } from "./settings-nav";
 
 /**
- * The administration frame of the V2 design: a 210 px sticky secondary
- * navigation in five groups, then the screen in the second column of a
- * 1200-wide grid. Owner and admin only — a viewer or responder who lands here
- * by URL reads why, and no form is rendered for them.
+ * The administration frame: a 210 px sticky secondary navigation in four
+ * groups, then the screen in the second column of a 1200-wide grid. Owner and
+ * admin only — a viewer or responder who lands here by URL reads why, and no
+ * form is rendered for them.
  *
- * Two kinds of item are not plain links. One leaves the area (Alert sources
- * now lives in Alerts, and says so with ↗). The other is a capability this
- * instance does not have: it stays on the screen, greyed, carrying the reason
- * and the way to enable it, and the URL behind it refuses.
+ * Twelve entries, one per thing an administrator decides. A family of screens
+ * that used to take three or four entries each takes one, and separates its
+ * screens with tabs drawn above the screen — General & brand and Working
+ * hours; Members and the enterprise access screens; Types, severities and
+ * fields; Priorities and attributes; Integrations and API. What is not a
+ * decision has no entry: alert sources are read and created under Alerts, and
+ * heartbeats live beside the monitors they resemble.
  */
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
-  const { member } = await requireMember();
+  const { member, tenant } = await requireMember();
   const t = await getT();
   const pathname = (await headers()).get("x-pathname") ?? "";
   const cloud = getEdition() === "cloud";
+  const entitlements = entitlementsFor(tenant);
 
   if (!canOpenSettings(member)) {
     return (
@@ -35,9 +41,30 @@ export default async function SettingsLayout({ children }: { children: React.Rea
     );
   }
 
-  // Each screen names the permission it stands for; a member sees the screens they hold.
-  type Item = NavItem & { permission: Permission };
-  const all: Array<{ title: string; items: Item[] }> = [
+  // Each entry names the permission it stands for; a member sees the entries they hold.
+  type Entry = {
+    href: string;
+    label: string;
+    permission: Permission;
+    tabs?: SegmentTab[];
+  };
+  // The enterprise access screens: three tabs when the instance has them, one
+  // tab — the notice that says how to get them — when it does not.
+  const accessTabs: SegmentTab[] =
+    entitlements.sso || entitlements.customRoles
+      ? [
+          { href: "/app/settings/sso", label: t("ee.sso.title") },
+          { href: "/app/settings/scim", label: t("ee.scim.title") },
+          { href: "/app/settings/roles", label: t("ee.roles.title") },
+        ]
+      : [
+          {
+            href: "/app/settings/sso",
+            label: t("settings.tab.enterprise"),
+            also: ["/app/settings/scim", "/app/settings/roles"],
+          },
+        ];
+  const all: Array<{ title: string; items: Entry[] }> = [
     {
       title: t("settings.group.workspace"),
       items: [
@@ -45,32 +72,31 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           href: "/app/settings/general",
           label: t("settings.nav.general"),
           permission: "settings.workspace",
+          tabs: [
+            { href: "/app/settings/general", label: t("settings.general.title") },
+            { href: "/app/settings/working-hours", label: t("settings.hours.title") },
+          ],
         },
         {
           href: "/app/settings/members",
           label: t("settings.nav.members"),
           permission: "settings.members",
+          tabs: [
+            { href: "/app/settings/members", label: t("settings.tab.members") },
+            ...accessTabs,
+          ],
         },
-        {
-          href: "/app/settings/working-hours",
-          label: t("settings.nav.workingHours"),
-          permission: "settings.workspace",
-        },
-        // The subscription is sold by the control plane of a cloud deployment.
-        // A self-hosted instance keeps the entry — greyed, with the reason and
-        // the way to enable it — and its URL answers 404.
-        cloud
-          ? {
-              href: "/app/settings/billing",
-              label: t("settings.nav.billing"),
-              permission: "settings.workspace" as Permission,
-            }
-          : {
-              label: t("settings.nav.billing"),
-              chip: t("set2.nav.billingOff"),
-              why: t("set2.nav.billingWhy"),
-              permission: "settings.workspace" as Permission,
-            },
+        // The subscription is sold by the control plane of a cloud deployment;
+        // a self-hosted instance has nothing to show and shows nothing.
+        ...(cloud
+          ? [
+              {
+                href: "/app/settings/billing",
+                label: t("settings.nav.billing"),
+                permission: "settings.workspace" as Permission,
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -79,28 +105,16 @@ export default async function SettingsLayout({ children }: { children: React.Rea
         {
           href: "/app/settings/types",
           label: t("settings.nav.types"),
-          bare: true,
           permission: "settings.response",
-        },
-        // The incident severities are the second segment of the same screen.
-        {
-          href: "/app/settings/types?seg=severities",
-          label: t("set2.nav.incidentSeverities"),
-          seg: "severities",
-          permission: "settings.response",
-        },
-        {
-          href: "/app/settings/fields",
-          label: t("set2.nav.fields"),
-          permission: "settings.response",
-        },
-        // The shared label keys the design folds into "Fields & labels": the
-        // vocabulary every source maps its payload onto. Its own screen, next
-        // to the fields, because that is where a reader looks for a label key.
-        {
-          href: "/app/settings/alert-attributes",
-          label: t("settings.nav.alertAttributes"),
-          permission: "settings.alerting",
+          tabs: [
+            { href: "/app/settings/types", label: t("settings.types.segTypes"), bare: true },
+            {
+              href: "/app/settings/types?seg=severities",
+              label: t("settings.types.segSeverities"),
+              seg: "severities",
+            },
+            { href: "/app/settings/fields", label: t("settings.fields.title") },
+          ],
         },
         {
           href: "/app/settings/announcements",
@@ -118,40 +132,19 @@ export default async function SettingsLayout({ children }: { children: React.Rea
       title: t("settings.group.alerting"),
       items: [
         {
-          href: "/app/alerts/sources",
-          label: t("settings.nav.alertSources"),
-          external: true,
-          hint: t("set2.nav.externalHint"),
-          permission: "settings.alerting",
-        },
-        {
           href: "/app/settings/alert-routes",
           label: t("set2.nav.rules"),
           permission: "settings.alerting",
         },
+        // The vocabulary the rules read: what an alert is worth, and what it says.
         {
           href: "/app/settings/alert-priorities",
-          label: t("set2.nav.alertSeverities"),
+          label: t("settings.nav.priorities"),
           permission: "settings.alerting",
-        },
-        {
-          href: "/app/settings/probes",
-          label: t("set2.nav.probes"),
-          permission: "settings.alerting",
-        },
-        // A heartbeat is the other thing that watches by waiting: its silence
-        // is the signal. It belongs beside the probes, not in a group of its own.
-        {
-          href: "/app/settings/heartbeats",
-          label: t("settings.nav.heartbeats"),
-          permission: "settings.alerting",
-        },
-        // The guided four-step hub. Superseded by the four items above for
-        // anyone who knows what they want; kept last for anyone who does not.
-        {
-          href: "/app/settings/alerting",
-          label: t("settings.nav.alerting"),
-          permission: "settings.alerting",
+          tabs: [
+            { href: "/app/settings/alert-priorities", label: t("set2.sev.title") },
+            { href: "/app/settings/alert-attributes", label: t("settings.attributes.title") },
+          ],
         },
       ],
     },
@@ -162,11 +155,10 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           href: "/app/settings/integrations",
           label: t("settings.nav.integrations"),
           permission: "settings.platform",
-        },
-        {
-          href: "/app/settings/api",
-          label: t("settings.nav.api"),
-          permission: "settings.platform",
+          tabs: [
+            { href: "/app/settings/integrations", label: t("settings.integrations.title") },
+            { href: "/app/settings/api", label: t("settings.nav.api") },
+          ],
         },
         {
           href: "/app/settings/ai",
@@ -186,35 +178,29 @@ export default async function SettingsLayout({ children }: { children: React.Rea
         { href: "/app/settings/qa", label: t("settings.nav.qa"), permission: "settings.platform" },
       ],
     },
-    {
-      title: t("settings.group.enterprise"),
-      items: [
-        { href: "/app/settings/sso", label: t("settings.nav.sso"), permission: "settings.members" },
-        {
-          href: "/app/settings/scim",
-          label: t("settings.nav.scim"),
-          permission: "settings.members",
-        },
-        {
-          href: "/app/settings/roles",
-          label: t("settings.nav.roles"),
-          permission: "settings.members",
-        },
-      ],
-    },
   ];
+  const pathsOf = (e: Entry) =>
+    Array.from(
+      new Set(
+        [e.href, ...(e.tabs ?? []).flatMap((tab) => [tab.href, ...(tab.also ?? [])])].map(
+          (href) => href.split("?")[0]!,
+        ),
+      ),
+    );
   const groups: NavGroup[] = all
     .map((g) => ({
       title: g.title,
       items: g.items
         .filter((i) => hasPermission(member, i.permission))
-        .map(({ permission: _permission, ...i }) => i),
+        .map((i) => ({ href: i.href, label: i.label, paths: pathsOf(i) })),
     }))
     .filter((g) => g.items.length > 0);
-  // A screen the member does not hold: the same notice as a member without settings at all.
+  // The entry the current screen belongs to — for its tabs, and for the
+  // permission it stands for: a screen the member does not hold gets the same
+  // notice as a member without settings at all.
   const current = all
     .flatMap((g) => g.items)
-    .find((i) => i.href && !i.external && pathname.startsWith(i.href.split("?")[0]!));
+    .find((i) => pathsOf(i).some((path) => pathname === path || pathname.startsWith(`${path}/`)));
   if (current && !hasPermission(member, current.permission)) {
     return (
       <section style={{ flex: 1, display: "grid", placeItems: "center", padding: 32 }}>
@@ -244,6 +230,11 @@ export default async function SettingsLayout({ children }: { children: React.Rea
         <SettingsNav groups={groups} label={t("nav.settings")} />
       </Suspense>
       <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+        {current?.tabs && (
+          <Suspense fallback={<div style={{ height: 34 }} />}>
+            <SegmentTabs tabs={current.tabs} label={current.label} />
+          </Suspense>
+        )}
         {children}
       </div>
     </div>

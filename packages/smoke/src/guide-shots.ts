@@ -139,14 +139,15 @@ async function main() {
         await p.getByTestId("monitor-form").waitFor();
       },
     },
+    { file: "monitors-heartbeats.png", path: "/app/monitors/heartbeats" },
     {
       // The synthetic one, because its page carries the journey card as well
       // as everything the others have.
       file: "monitor-detail.png",
       path: "/app/monitors",
       act: async (p) => {
-        const journey = p.locator("a[href^='/app/monitors/']").filter({ hasText: /SYNTHETIC/ });
-        await ((await journey.count()) ? journey : p.locator("a[href^='/app/monitors/']"))
+        const journey = p.locator("a[href^='/app/monitors/']:not([role='tab'])").filter({ hasText: /SYNTHETIC/ });
+        await ((await journey.count()) ? journey : p.locator("a[href^='/app/monitors/']:not([role='tab'])"))
           .first()
           .click();
         await p.waitForURL(/\/app\/monitors\/[0-9a-f-]+/);
@@ -219,7 +220,6 @@ async function main() {
     { file: "settings-alert-sources.png", path: "/app/settings/alert-sources" },
     { file: "settings-rules.png", path: "/app/settings/alert-routes" },
     { file: "settings-priorities.png", path: "/app/settings/alert-priorities" },
-    { file: "settings-heartbeats.png", path: "/app/settings/heartbeats" },
     { file: "settings-integrations.png", path: "/app/settings/integrations" },
     { file: "settings-api.png", path: "/app/settings/api" },
     { file: "settings-ai.png", path: "/app/settings/ai" },

@@ -16,8 +16,8 @@ Each case is a story you can replay in the demo workspace. Steps name the screen
 1. **Services**: `checkout-api` was seen in the traffic long ago and given the owner team **Payments**; that team is paged through _Payments escalation_.
 2. **On-call → Escalation paths**: _Payments escalation_ is published with a level 1 paging the _Payments_ schedule (on call now, high urgency, ack 5 min, 2 retries) and a level 2 paging the _Platform primary_ schedule.
 3. **On-call → Schedules**: the _Payments_ schedule is published with its rotation.
-4. **Settings → Alert sources → + New source → Datadog**: copy the endpoint and secret into a Datadog webhook; attach it to the monitors' notifications.
-5. **Settings → Routes → + New route**: filters `source equals datadog` and `service exists`; escalation **dynamic — service → owner team → its path**; incident **conditional — triage when urgency is high**; priority from the payload; urgency from the priority.
+4. **Alerts → Sources → + New source → Datadog**: copy the endpoint and secret into a Datadog webhook; attach it to the monitors' notifications.
+5. **Settings → Rules → + New route**: filters `source equals datadog` and `service exists`; escalation **dynamic — service → owner team → its path**; incident **conditional — triage when urgency is high**; priority from the payload; urgency from the priority.
 6. Each responder verified a phone number in **On-call → My notifications** and has _SMS immediately, voice after 3 min_ in the high-urgency rule.
 
 **During the incident**
@@ -37,7 +37,7 @@ Each case is a story you can replay in the demo workspace. Steps name the screen
 2. **On-call → Escalation paths → + New path** _Search escalation_: level 1 → schedule _Search_ (on call now, high urgency, ack 5 min), a **condition** _Working hours "EU business"?_ — YES: level 2 pages the _Search_ team members; NO: **delay** until _EU business_ opens, then level 2. **Publish v1**. **Test the path** names who would be paged right now.
 3. **On-call → Schedules → + New schedule** _Search_: weekly, handover Monday 09:00 Europe/Paris, members in order. **Publish**.
 4. Back in **Services**, give the team _Search_ the path it is paged through — _Search escalation_. Until it is set, a service owned by _Search_ has an owner and still reaches nobody.
-5. **Settings → Heartbeats → New heartbeat** _Nightly reindex_, service `search-indexer`, every 24 h, grace 1 h. Put the URL at the end of the cron. Nothing fires before the first ping.
+5. **Monitors → Heartbeats → New heartbeat** _Nightly reindex_, service `search-indexer`, every 24 h, grace 1 h. Put the URL at the end of the cron. Nothing fires before the first ping.
 6. The first signal naming `search-indexer` — that heartbeat, a monitor, a Datadog alert — makes the service appear under **Services → Seen in traffic**. **Assign owner → Search**: the service is confirmed and the chain is complete, _incoming alert → search-indexer → Search → Search escalation_.
 7. **Status pages → Skylark status → + Component** _Search_, service `search-indexer`.
 
@@ -55,10 +55,10 @@ No route was touched: the existing dynamic route follows the service to its owne
 Enterprise edition, `OI_ENTITLEMENTS=sso,customRoles`.
 
 1. In Okta, create an OIDC web application; note the client id and secret.
-2. **Settings → Single sign-on → + Add a connection**: OpenID Connect, label _Okta_, issuer `https://acme.okta.com`, client id and secret, email domains `acme.example`, role of a new member _responder_, **Create the member on first sign-in**. **Create the connection**; copy the **Redirect URI** into Okta; assign the engineering group.
+2. **Settings → Members & access → Single sign-on → + Add a connection**: OpenID Connect, label _Okta_, issuer `https://acme.okta.com`, client id and secret, email domains `acme.example`, role of a new member _responder_, **Create the member on first sign-in**. **Create the connection**; copy the **Redirect URI** into Okta; assign the engineering group.
 3. Sign out; the sign-in page shows **Continue with Okta**. A first engineer signs in: a member is created as responder; **Settings → Audit log** shows _Okta SSO sign-in — new session for …_.
-4. **Settings → Provisioning (SCIM) → Enable and issue a token**; in Okta, configure the SCIM integration with the base URL and the token; enable create, update and deactivate; push the _Payments_ and _Search_ groups. **Services → Teams** now mirrors the groups' members.
-5. **Settings → Custom roles → + New role** _Alerting admin_: base responder, permissions `incidents.respond`, `settings.alerting`. **Members & roles**: give it to the SRE. They now see **Settings** with the **Alerting** group only.
+4. **Settings → Members & access → Provisioning (SCIM) → Enable and issue a token**; in Okta, configure the SCIM integration with the base URL and the token; enable create, update and deactivate; push the _Payments_ and _Search_ groups. **Services → Teams** now mirrors the groups' members.
+5. **Settings → Members & access → Custom roles → + New role** _Alerting admin_: base responder, permissions `incidents.respond`, `settings.alerting`. **Members & roles**: give it to the SRE. They now see **Settings** with the **Alerting** group only.
 6. Once every owner has signed in through Okta at least once, edit the connection's intent by recreating it with **SSO only** — passwords are refused for `acme.example`; the guard refuses the change if it would lock every owner out.
 7. An engineer leaves: Okta deactivates the user; the member is **disabled** in the product, refused at the door, and everything they did stays attributed.
 

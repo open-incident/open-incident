@@ -7,7 +7,7 @@ summary: The flow that follows a resolution — tasks in two phases, the debrief
 
 ## When the flow starts
 
-The **Post-incident** tab of an incident becomes active when the incident is resolved and its severity asks for the flow. Each severity says, in **Settings → Types & lifecycle → Severities**, whether it starts the flow: _always_, _yes_, _opt-in at closure_, or _no_. The timeline records _The post-incident flow starts (SEV2 rule)_.
+The **Post-incident** tab of an incident becomes active when the incident is resolved and its severity asks for the flow. Each severity says, in **Settings → Types, severities & fields → Severities**, whether it starts the flow: _always_, _yes_, _opt-in at closure_, or _no_. The timeline records _The post-incident flow starts (SEV2 rule)_.
 
 ![The post-incident tab](img/incident-post-incident.png "Two phases with their tasks, the debrief, the post-mortem and its sections.")
 
@@ -43,7 +43,7 @@ Every section is edited in place, in **Markdown**, with a toolbar — bold, ital
 
 ### The AI draft, section by section
 
-With an inference provider configured and the capability allowed in **Settings → AI governance**, the assistant works on the document — always one section at a time when you ask for one, so you pay for what you asked:
+With an inference provider configured and the capability allowed in **Settings → AI assistant**, the assistant works on the document — always one section at a time when you ask for one, so you pay for what you asked:
 
 - **Draft with AI** fills every empty section from the incident's timeline. Each section carries the **AI DRAFT** label until a person edits it.
 - The **✦ Assistant** menu of a section: **Generate / Regenerate** this section from the timeline; **Tighten** (half the length, every fact kept); **Enrich with facts from the timeline** (times, actors, numbers the section lacks — nothing the material does not say); **Rewrite for a reader who was not there**.

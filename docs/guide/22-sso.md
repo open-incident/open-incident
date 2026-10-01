@@ -7,7 +7,7 @@ summary: OpenID Connect and SAML 2.0 connections per workspace, a button per con
 
 ## What a connection is
 
-**Settings → Single sign-on** holds the workspace's connections. Each one says:
+**Settings → Members & access → Single sign-on** holds the workspace's connections. Each one says:
 
 - the **protocol** — OpenID Connect or SAML 2.0 — and the provider's details;
 - the **button label** members click on the sign-in page (_Okta_, _Entra ID_…);

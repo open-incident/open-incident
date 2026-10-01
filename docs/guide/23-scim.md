@@ -9,7 +9,7 @@ summary: One SCIM 2.0 endpoint per workspace behind a bearer token; users mapped
 
 ![Provisioning](img/settings-scim.png "The base URL, the token issued once, the options for provisioned members.")
 
-**Settings → Provisioning (SCIM) → Enable and issue a token**. The screen shows:
+**Settings → Members & access → Provisioning (SCIM) → Enable and issue a token**. The screen shows:
 
 - the **SCIM base URL**: `https://<workspace host>/scim/v2`;
 - the **bearer token** `oi_scim_…`, **shown once** — copy it into the provider now. Only its hash is stored; a lost token is rotated, never recovered;

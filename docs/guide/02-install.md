@@ -46,7 +46,7 @@ openssl rand -hex 16      # APP_DB_PASSWORD — the application's database role
 
 ## First sign-in
 
-With `SEED_DEMO=true` the instance starts with the **Skylark Systems** demo workspace on `skylark.<BASE_DOMAIN>` (and on the bare domain, since `DEFAULT_TENANT_SLUG=skylark`). Sign in as `amelie@skylark.dev` / `demo-openincident`. Open **Settings → Members & roles** to see the roles at work, **Incidents → INC-217** for a complete history, **On-call** for a running rotation.
+With `SEED_DEMO=true` the instance starts with the **Skylark Systems** demo workspace on `skylark.<BASE_DOMAIN>` (and on the bare domain, since `DEFAULT_TENANT_SLUG=skylark`). Sign in as `amelie@skylark.dev` / `demo-openincident`. Open **Settings → Members & access** to see the roles at work, **Incidents → INC-217** for a complete history, **On-call** for a running rotation.
 
 ## Your own workspace
 
@@ -206,7 +206,7 @@ in every member's notification rules — and never silently skipped.
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `AI_API_BASE`, `AI_API_KEY`, `AI_MODEL` | Any OpenAI-compatible endpoint: Mistral La Plateforme, an EU-region deployment, a self-hosted Ollama or vLLM. |
 | `AI_EMBED_MODEL`                        | Embeddings for "similar incidents" by meaning; without it, similarity falls back to titles and says so.       |
-| `AI_PROVIDER_LABEL`                     | The name shown in **Settings → AI governance**.                                                               |
+| `AI_PROVIDER_LABEL`                     | The name shown in **Settings → AI assistant**.                                                                |
 
 Without `AI_API_BASE` and `AI_MODEL`, every assistant function is shown as unavailable. See [The assistant](ai).
 

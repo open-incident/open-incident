@@ -14,7 +14,7 @@ import {
 import { recordAudit } from "@/lib/audit";
 import { requireManager } from "@/lib/session";
 
-const PAGE = "/app/settings/heartbeats";
+const PAGE = "/app/monitors/heartbeats";
 
 const schema = z.object({
   name: z.string().trim().min(2).max(120),

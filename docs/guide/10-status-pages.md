@@ -27,7 +27,7 @@ Pages answer on `{slug}.<STATUS_BASE_DOMAIN>` at once (`skylark.status.localhost
 
 ### Brand and language
 
-Accent colour, language of the public wording (English, French, German), privacy policy and legal notice URLs, reply-to for subscriber emails. The workspace logo (uploaded in **Settings → General & brand**) is shown when object storage is configured.
+Accent colour, language of the public wording (English, French, German), privacy policy and legal notice URLs, reply-to for subscriber emails. The workspace logo (uploaded in **Settings → General**) is shown when object storage is configured.
 
 ### Publication threshold
 

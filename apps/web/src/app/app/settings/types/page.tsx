@@ -179,43 +179,6 @@ export default async function TypesPage({
           types={data.types.map((ty) => ({ id: ty.id, name: ty.name, isDefault: ty.isDefault }))}
           teams={teamRows}
         />
-        <div
-          role="tablist"
-          style={{
-            display: "flex",
-            gap: 2,
-            background: "var(--sunk)",
-            borderRadius: 10,
-            padding: 3,
-          }}
-        >
-          {(["types", "severities"] as const).map((s) => {
-            const on = seg === s;
-            return (
-              <Link
-                key={s}
-                role="tab"
-                aria-selected={on}
-                href={href({ seg: s })}
-                style={{
-                  height: 28,
-                  padding: "0 14px",
-                  borderRadius: 8,
-                  background: on ? "var(--panel)" : "transparent",
-                  color: on ? "var(--ink)" : "var(--ink-3)",
-                  boxShadow: on ? "var(--shadow-card)" : "none",
-                  display: "flex",
-                  alignItems: "center",
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  textDecoration: "none",
-                }}
-              >
-                {s === "types" ? t("settings.types.segTypes") : t("settings.types.segSeverities")}
-              </Link>
-            );
-          })}
-        </div>
       </div>
 
       {seg === "types" ? (

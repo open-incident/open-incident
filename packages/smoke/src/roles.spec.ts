@@ -58,7 +58,7 @@ test.describe("Custom roles", () => {
     await page.goto("/app/settings/alert-routes");
     await expect(page.getByTestId("role-restricted")).toHaveCount(0);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await page.goto("/app/settings/heartbeats");
+    await page.goto("/app/monitors/heartbeats");
     await expect(page.getByTestId("role-restricted")).toHaveCount(0);
     await page.goto("/app/settings/general");
     await expect(page.getByTestId("role-restricted")).toBeVisible();

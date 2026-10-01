@@ -30,7 +30,7 @@ The built-in roles are fixed sets: **Owner** and **Admin** hold everything; **Re
 
 ![Custom roles](img/settings-roles.png "The built-in roles as a reference, the custom roles with their members, the form.")
 
-**Settings → Custom roles → + New role**:
+**Settings → Members & access → Custom roles → + New role**:
 
 1. A **name** (_Alerting admin_, _Status page editor_, _Auditor_) and a description.
 2. A **base role** — admin, responder or viewer. It is what the member is shown as in the product, and what integrations without a permission model (a Slack command, for instance) fall back to.

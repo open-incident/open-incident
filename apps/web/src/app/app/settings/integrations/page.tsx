@@ -555,13 +555,6 @@ export default async function IntegrationsPage({
             {t("common.saved")}
           </span>
         )}
-        <Link
-          href="/app/settings/api"
-          className="oi-hover"
-          style={{ ...ghostBtn, height: 32, fontWeight: 600 }}
-        >
-          {t("settings.integrations.apiLink")}
-        </Link>
       </div>
       <form style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <input type="hidden" name="cat" value={cat} />

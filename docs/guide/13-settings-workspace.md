@@ -2,12 +2,27 @@
 title: Workspace settings
 section: configuration
 order: 13
-summary: General & brand, Members & roles, Working hours — the Workspace group of the settings.
+summary: How the settings are organised; General (identity, brand, working hours) and Members & access (members, single sign-on, SCIM, custom roles) — the Workspace group.
 ---
 
-The **Settings** section is reserved to members who hold at least one settings permission — owners and admins with the built-in roles. The left navigation shows the screens the member holds; a viewer or responder who lands here by URL reads why, and no form is rendered.
+The **Settings** section is reserved to members who hold at least one settings permission — owners and admins with the built-in roles. The left navigation shows the entries the member holds; a viewer or responder who lands here by URL reads why, and no form is rendered.
 
-## General & brand
+Four groups, twelve entries, one per thing an administrator decides:
+
+| Group         | Entries                                                                       |
+| ------------- | ----------------------------------------------------------------------------- |
+| **Workspace** | General · Members & access · Subscription & invoices (cloud deployments only) |
+| **Incidents** | Types, severities & fields · Announcements · Post-incident & post-mortem      |
+| **Alerts**    | Rules · Severities & attributes                                               |
+| **Platform**  | Integrations & API · AI assistant · Telemetry · Audit log · QA                |
+
+An entry that stands for several screens separates them with **tabs** drawn above the screen — _General & brand_ and _Working hours_ under **General**, _Members_ and the enterprise access screens under **Members & access**, and so on. Two things an administrator reads often are not settings and live where they are used: **alert sources** under [Alerts → Sources](alerts#from-a-webhook-to-an-alert), and **heartbeats** under [Monitors → Heartbeats](monitors#dead-mans-switches-use-heartbeats).
+
+## General
+
+Two tabs: **General & brand**, and **Working hours**.
+
+### General & brand
 
 ![General & brand](img/settings-general.png "Identity, language and timezone, brand, the danger zone.")
 
@@ -21,7 +36,11 @@ The **Settings** section is reserved to members who hold at least one settings p
 | **Accent colour**  | Status page, emails, workspace avatars.                                                                                                                                                                                                                                                          |
 | **Danger zone**    | On a self-hosted instance the workspace is deleted by the operator with `pnpm workspace:purge` — the purge is real and verified (see [Operations](operations)).                                                                                                                                  |
 
-## Members & roles
+## Members & access
+
+The **Members** tab, then the three enterprise screens — **Single sign-on**, **Provisioning (SCIM)**, **Custom roles** — each described in its own chapter. Without the entitlement the three fold into one tab, **Enterprise edition**, which says _Unavailable on this instance_ and names the variable that switches it on. Nothing is simulated.
+
+### Members
 
 ![Members & roles](img/settings-members.png "Active members with their role select, the pending invitations, the note on roles.")
 
@@ -32,7 +51,7 @@ The **Settings** section is reserved to members who hold at least one settings p
 
 Members created by single sign-on or SCIM appear here like the others, with their source recorded. What each role may do is in [Concepts](concepts#roles-and-permissions); custom roles in [Custom roles](custom-roles).
 
-## Working hours
+### Working hours
 
 ![Working hours](img/settings-working-hours.png "Named sets of days and hours, and the escalation paths that use them.")
 

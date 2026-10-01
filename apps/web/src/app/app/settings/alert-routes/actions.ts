@@ -230,7 +230,6 @@ export async function saveRoute(formData: FormData) {
     return row!.id;
   });
   revalidatePath(PAGE);
-  revalidatePath("/app/settings/alerting");
   redirect(`${PAGE}?saved=${id}`);
 }
 
@@ -254,7 +253,6 @@ export async function moveRoute(formData: FormData) {
       await tx.update(alertRoutes).set({ position: pos }).where(eq(alertRoutes.id, rid));
   });
   revalidatePath(PAGE);
-  revalidatePath("/app/settings/alerting");
 }
 
 export async function toggleRoute(formData: FormData) {
@@ -280,7 +278,6 @@ export async function toggleRoute(formData: FormData) {
     await recordAudit(tx, current, "config", "alert_route.toggled", { name: r.name });
   });
   revalidatePath(PAGE);
-  revalidatePath("/app/settings/alerting");
 }
 
 /** Duplicates in test mode — activate it once the conditions are verified. */
@@ -345,7 +342,6 @@ export async function deleteRoute(formData: FormData) {
     await recordAudit(tx, current, "config", "alert_route.deleted", { name: r.name });
   });
   revalidatePath(PAGE);
-  revalidatePath("/app/settings/alerting");
   redirect(PAGE);
 }
 

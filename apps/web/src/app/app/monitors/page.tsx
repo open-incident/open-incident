@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { Suspense } from "react";
+import { SegmentTabs } from "@/components/shell/segment-tabs";
 import { withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { canRespond, requireMember } from "@/lib/session";
@@ -72,6 +74,15 @@ export default async function MonitorsPage({
         gap: 14,
       }}
     >
+      <Suspense fallback={<div style={{ height: 34 }} />}>
+        <SegmentTabs
+          label={t("nav.monitors")}
+          tabs={[
+            { href: "/app/monitors", label: t("nav.monitors") },
+            { href: "/app/monitors/heartbeats", label: t("heartbeats.title") },
+          ]}
+        />
+      </Suspense>
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <h1
           style={{

@@ -7,12 +7,11 @@ summary: What your monitoring sent, how the route treated it, who was paged — 
 
 ## Getting started
 
-**Settings → Alert configuration** takes a workspace from nothing to "an alert paged someone" in four steps, each of them real:
+The welcome screen — **Home**, until the workspace has had its first page — takes a workspace from nothing to "an alert paged someone" in three steps, each of them real:
 
-1. **Decide who gets paged.** **Page me** makes a published escalation path that pages you (or a colleague, or whoever is on call on a schedule) and names it on the route that catches every alert. Refine the path later — levels, retries, working hours — in **On-call → Paths**.
-2. **Connect a source.** Pick the tool in a grid, name it, get an endpoint and a secret shown once. HTTP covers any tool not listed.
-3. **Receive a first alert.** Send one from the tool — the source page waits for it live — or press **Test**: a real alert goes through the whole pipeline in test mode and pages nobody.
-4. **Check that an alert paged someone.** Open it: its history says which route caught it, who it paged and why.
+1. **Who should we page?** You, a teammate, or a schedule; a verified phone is enough. Behind it, a published escalation path is created and named on the rule that catches every alert. Refine the path later — levels, retries, working hours — in **On-call → Paths**.
+2. **Where do alerts come from?** Pick the tool in a grid, name it, get an endpoint and a secret shown once. HTTP covers any tool not listed; a URL the product watches for you is a [monitor](monitors).
+3. **Send a test page.** A real page, on your phone, right now — through the whole pipeline. Open the alert afterwards: its history says which rule caught it, who it paged and why.
 
 Nothing has to be declared first. Services appear on their own, the moment an alert or a monitor names one; giving one an owner team in **Services** is what later lets a route page _the team that owns the service_ rather than a fixed path.
 
@@ -20,7 +19,7 @@ If no tool is sending anything yet — or if what you want watched is a URL, a c
 
 ## From a webhook to an alert
 
-Every monitoring tool posts to its own **alert source**: one endpoint and one secret per source (Datadog, Prometheus/Alertmanager, Grafana, Sentry, CloudWatch, Uptime Kuma, generic HTTP). The payload is stored raw and parsed by the source's **mappings** into the workspace's **attributes** — service, team, environment, region, the tool's own severity, and any you add in **Settings → Attributes**. An attribute typed `service` or `team` is resolved against the workspace's real services and teams — an unknown service name is recorded as a new one, seen in traffic, and the team is derived from the service's owner when the payload gives none. Every other attribute is just a label carried by the alert. The source then decides the **priority** — the same for every alert, or read from a payload field with a value map; a label the tools use (_critical_, _warning_) matches a priority by its aliases — and may **filter** out what it does not want (resolutions always pass).
+Every monitoring tool posts to its own **alert source**: one endpoint and one secret per source (Datadog, Prometheus/Alertmanager, Grafana, Sentry, CloudWatch, Uptime Kuma, generic HTTP). The payload is stored raw and parsed by the source's **mappings** into the workspace's **attributes** — service, team, environment, region, the tool's own severity, and any you add in **Settings → Severities & attributes → Attributes**. An attribute typed `service` or `team` is resolved against the workspace's real services and teams — an unknown service name is recorded as a new one, seen in traffic, and the team is derived from the service's owner when the payload gives none. Every other attribute is just a label carried by the alert. The source then decides the **priority** — the same for every alert, or read from a payload field with a value map; a label the tools use (_critical_, _warning_) matches a priority by its aliases — and may **filter** out what it does not want (resolutions always pass).
 
 Two mechanisms keep the noise down before anything else happens:
 
@@ -69,7 +68,7 @@ Every source has a **Test** button that sends a real alert end to end in test mo
 
 ## Heartbeats
 
-A cron that stops pinging is an alert too: **Settings → Heartbeats** gives each job a URL; silence beyond the interval plus the grace raises an alert through the workspace's own managed _Heartbeats_ source, routed like any other. See [Alerting settings](settings-alerting) and [Monitors](monitors).
+A cron that stops pinging is an alert too: **Monitors → Heartbeats** gives each job a URL; silence beyond the interval plus the grace raises an alert through the workspace's own managed _Heartbeats_ source, routed like any other. See [Monitors](monitors#dead-mans-switches-use-heartbeats).
 
 ## Reading the noise
 

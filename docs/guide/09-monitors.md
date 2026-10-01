@@ -116,7 +116,7 @@ The fastest way to create one is not this form at all: narrow the [explorer](tel
 
 ## Dead-man's switches: use heartbeats
 
-A cron that stops running emits nothing, and nothing is exactly what no check can see. **Settings → Heartbeats** is the feature for it: each heartbeat has a URL, your job calls it when it finishes (any method, no body), and silence for longer than the interval plus the grace raises an alert through the workspace's **Heartbeats** source — same routes, same priorities, same escalation. The next ping resolves it, and nothing is alerted before the first ping ever arrives.
+A cron that stops running emits nothing, and nothing is exactly what no check can see. **Monitors → Heartbeats** is the feature for it: each heartbeat has a URL, your job calls it when it finishes (any method, no body), and silence for longer than the interval plus the grace raises an alert through the workspace's **Heartbeats** source — same routes, same priorities, same escalation. The next ping resolves it, and nothing is alerted before the first ping ever arrives.
 
 Rotating a heartbeat's token issues a new URL and stops the old one working at once.
 

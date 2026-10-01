@@ -12,7 +12,7 @@ test.describe("Heartbeats", () => {
   test("ping → up, silence → alert, ping → resolved", async ({ page }) => {
     test.setTimeout(260_000);
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/settings/heartbeats?new=1");
+    await page.goto("/app/monitors/heartbeats?new=1");
     const name = `Smoke cron ${Date.now().toString(36)}`;
     await page.getByTestId("heartbeat-form").locator('input[name="name"]').fill(name);
     // 10 s is below the shortest option: the select is bypassed by setting the value directly, as an operator's API client could.
@@ -62,7 +62,7 @@ test.describe("Heartbeats", () => {
         { timeout: 150_000, intervals: [5_000] },
       )
       .toBe(true);
-    await page.goto("/app/settings/heartbeats");
+    await page.goto("/app/monitors/heartbeats");
     await expect(row.getByTestId("heartbeat-status")).toContainText(/down|panne|ausgefallen/i);
 
     // The next ping resolves the alert and brings the heartbeat back up.
@@ -76,7 +76,7 @@ test.describe("Heartbeats", () => {
         { timeout: 30_000, intervals: [3_000] },
       )
       .toBe(true);
-    await page.goto("/app/settings/heartbeats");
+    await page.goto("/app/monitors/heartbeats");
     await expect(row.getByTestId("heartbeat-status")).toContainText(/^up|ok$/i);
     await api.dispose();
   });

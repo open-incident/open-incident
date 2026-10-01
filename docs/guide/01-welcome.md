@@ -39,7 +39,7 @@ The header carries the things that are true of you rather than of the screen you
 
 ## Conventions in this guide
 
-- Screen labels are written **in bold**, exactly as they appear in the English interface: **Settings → Alert sources → + New source**. The product is also available in French and German; the labels then follow your language.
+- Screen labels are written **in bold**, exactly as they appear in the English interface: **Alerts → Sources → + New source**. The product is also available in French and German; the labels then follow your language.
 - A path like `/app/settings/api` is the address in the browser, relative to your workspace's own address (`https://acme.your-domain.example`).
 - `Code` denotes something you type: a command, an environment variable, a JSON body.
 - Blockquotes carry notes and warnings:

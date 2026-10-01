@@ -85,7 +85,7 @@ They send to the same endpoint the browser SDK does and land in the same
 tables, so an application and a website appear side by side on **RUM**.
 
 **A RUM application has to accept mobile applications first**, on
-**Settings → Observability**, and it is off until somebody turns it on. That is
+**Settings → Telemetry**, and it is off until somebody turns it on. That is
 a switch rather than a default because it costs something real: a browser is
 made to send an `Origin` it cannot forge, and that header is what stands in for
 a credential when the application id is public. An app sends none, so accepting
@@ -123,7 +123,7 @@ Sometimes the numbers do not settle the argument. A p75 LCP of 3.1 s says the
 page was slow; a recording says the spinner ran twice because the retry fired
 before the first response landed. Only one of those ends a meeting.
 
-Turn it on per application, under **Settings → Observability**. It is off until
+Turn it on per application, under **Settings → Telemetry**. It is off until
 somebody turns it on, and a new application is created off, because a replay is
 a copy of what a visitor saw and that is a different promise from a page-load
 timing.
@@ -191,7 +191,7 @@ latency alone, and the baseline policy kept 35 of 400 against the 10 % it is
 set to.
 
 **The daily cap** is the other one, and it is not a quality decision — it is a
-budget guard, set on **Settings → Observability**. Past it logs and traces are
+budget guard, set on **Settings → Telemetry**. Past it logs and traces are
 thinned rather than refused, and three rules make that survivable: errors are
 never thinned, a trace is kept whole or not at all, and the share kept falls as
 the day goes on rather than stopping at a cliff. Sending ten times the cap
@@ -423,7 +423,7 @@ feature that tells it when something new breaks. Resolving is also what makes
 the group coming back afterwards into news rather than one more line in a list.
 
 The rule is on by default and can be turned off per workspace, with its own
-severity, under Settings → Observability. On by default because the
+severity, under Settings → Telemetry. On by default because the
 alternative is that the one thing everybody wants from an exception tracker has
 to be discovered and switched on.
 
@@ -576,7 +576,7 @@ What a browser sees, which is the one thing the rest of the telemetry cannot
 say. A p95 of 40 ms at the edge and a page that takes four seconds to become
 usable are both true at once, and only this knows the second.
 
-Create an application under **Settings → Observability**, then paste what it
+Create an application under **Settings → Telemetry**, then paste what it
 gives you:
 
 ```html
@@ -900,7 +900,7 @@ would push the timeline and the change events out of it — making the analysis
 worse, not better. Each item carries an id the findings must cite, so a claim
 about the telemetry can be traced back to the number it came from.
 
-The checks are governed like the others, under Settings → AI: a workspace can
+The checks are governed like the others, under Settings → AI assistant: a workspace can
 switch the telemetry source off. A workspace whose settings predate the checks
 has them on, because absent is not a choice somebody made.
 

@@ -1,15 +1,15 @@
 ---
-title: Response settings
+title: Incident settings
 section: configuration
 order: 14
-summary: Types & lifecycle, severities, custom fields, announcements, the post-incident flow — the Response group of the settings.
+summary: Types, severities and custom fields; announcements; the post-incident flow — the Incidents group of the settings.
 ---
 
-## Types & lifecycle
+## Types, severities & fields
 
-![Types & lifecycle](img/settings-types.png "The types with their lifecycle and declaration form; the shared severities.")
+![Types](img/settings-types.png "The types with their lifecycle and declaration form; the tabs for severities and fields.")
 
-Each **incident type** carries its own lifecycle and its own declaration form; **severities** are shared by every type.
+One entry, three tabs. Each **incident type** carries its own lifecycle and its own declaration form; **severities** are shared by every type; **custom fields** are what a type's form asks beyond the system fields.
 
 ### The lifecycle
 
@@ -36,7 +36,7 @@ Ordered and shared. Each carries a description, a colour, and the **post-inciden
 
 > Severity ≠ priority ≠ urgency. Severity qualifies the incident; priority qualifies the alert; urgency picks the notification channel.
 
-## Custom fields
+### Custom fields
 
 ![Custom fields](img/settings-fields.png "One row per field: API name, label, type, incident type, required or not.")
 

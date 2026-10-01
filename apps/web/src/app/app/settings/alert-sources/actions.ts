@@ -66,7 +66,6 @@ function revalidateSources(id?: string) {
   revalidatePath(PAGE);
   if (id) revalidatePath(`${PAGE}/${id}`);
   revalidatePath("/app/alerts");
-  revalidatePath("/app/settings/alerting");
 }
 
 /* ---------- The three choices ---------- */
@@ -494,7 +493,6 @@ export async function testSource(formData: FormData) {
   );
   revalidateSources(id);
   const alertId = outcomes[0]?.alertId ?? "";
-  if (back === "alerting") redirect(`/app/settings/alerting?saved=test`);
   if (back === "detail") redirect(`${PAGE}/${id}?tested=${alertId}`);
   redirect(`${PAGE}?tested=${id}&alert=${alertId}`);
 }

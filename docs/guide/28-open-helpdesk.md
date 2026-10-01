@@ -42,7 +42,7 @@ Open Incident is not a prober: it does not fetch URLs, read metrics or tail logs
 ## 2. Workspace, members, roles
 
 1. Create the workspace (see [Install and configure](install#your-own-workspace)): slug `openhelpdesk`, name _Open Helpdesk_, timezone `Europe/Paris`.
-2. **Settings → Members & roles → + Invite** the team as **Responder**; the two people who own the configuration as **Admin**. A stakeholder who only reads gets **Viewer**.
+2. **Settings → Members & access → + Invite** the team as **Responder**; the two people who own the configuration as **Admin**. A stakeholder who only reads gets **Viewer**.
 3. Each responder verifies a phone in **On-call → My notifications**, sets _SMS immediately, voice call after 3 minutes_ on the high-urgency rule, and links Slack if the workspace uses it.
 
 ## 3. The team, and the services that appear on their own
@@ -72,7 +72,7 @@ The names matter: they are what the `service` field of every alert carries, and 
 
 ## 4. On-call
 
-1. **Settings → Working hours → + New set** _Paris business_: Mon–Fri 09:00–19:00.
+1. **Settings → General → Working hours → + New set** _Paris business_: Mon–Fri 09:00–19:00.
 2. **On-call → Escalation paths → + New path** _Open Helpdesk on-call_ — the name the team's `escalation_path` attribute carries:
    - **Level 1**: schedule _Open Helpdesk_ (on call now), high urgency, ack within 5 min, 2 retries.
    - **Condition** _Working hours "Paris business"?_ — YES: **Level 2** pages the _Open Helpdesk_ team members; NO: **Level 2** pages the team members at high urgency as well — at 3 a.m. the second person is the whole plan.
@@ -97,7 +97,7 @@ The sampler in `worker-cloud` already decides, every minute, whether each of the
 | `attributes` or `labels` (object of strings) | More attributes for the routes                                         |
 | `url` (or `link`)                            | A link back — the console's health screen                              |
 
-Create the source: **Settings → Alert sources → + New source → Generic HTTP**, name _Open Helpdesk health_. Then, in `open-helpdesk-cloud`, add an emitter next to the sampler and call it after `collectHealthSamples()` in `apps/worker-cloud/src/index.ts`:
+Create the source: **Alerts → Sources → + New source → Generic HTTP**, name _Open Helpdesk health_. Then, in `open-helpdesk-cloud`, add an emitter next to the sampler and call it after `collectHealthSamples()` in `apps/worker-cloud/src/index.ts`:
 
 ```ts
 // packages/cloud-health/src/incident-emitter.ts — one alert per service in trouble,
@@ -186,7 +186,7 @@ Open Incident does not probe URLs. Keep whatever probes them — Better Stack to
 
 ### 5.3 Heartbeats — the scheduled jobs
 
-**Settings → Heartbeats → New heartbeat**, one per job that must keep running. Each gets a URL to call at the end of the job (any method, no body). Nothing fires before the first ping; pausing during a planned stop forgets the last ping.
+**Monitors → Heartbeats → New heartbeat**, one per job that must keep running. Each gets a URL to call at the end of the job (any method, no body). Nothing fires before the first ping; pausing during a planned stop forgets the last ping.
 
 | Heartbeat                         | Service   | Expected every | Grace  | Where to ping                                                                          |
 | --------------------------------- | --------- | -------------- | ------ | -------------------------------------------------------------------------------------- |
@@ -198,13 +198,13 @@ Open Incident does not probe URLs. Keep whatever probes them — Better Stack to
 
 In the workers, one line per processor: `await fetch(process.env.HEARTBEAT_SLA_TIMERS_URL!).catch(() => undefined);` — guarded by `if (process.env.HEARTBEAT_SLA_TIMERS_URL)`. Silence beyond the interval plus the grace raises an alert through the workspace's own _Heartbeats_ source, routed like any other; the next ping resolves it.
 
-![Heartbeats](img/settings-heartbeats.png "One row per job, its cadence, last ping and state.")
+![Heartbeats](img/monitors-heartbeats.png "One row per job, its cadence, last ping and state.")
 
 ## 6. Priorities and routes
 
-**Settings → Priorities**: keep P1 (high urgency), P2 (high), P3 (low), P4 (low). The emitter above sets the priority per check; the routes take it _from the payload_.
+**Settings → Severities & attributes**: keep P1 (high urgency), P2 (high), P3 (low), P4 (low). The emitter above sets the priority per check; the routes take it _from the payload_.
 
-**Settings → Routes**, in this order — the first match wins:
+**Settings → Rules**, in this order — the first match wins:
 
 | #   | Name               | Filters                                             | Escalation                                | Incident                                  | Notes                                                                                                                                         |
 | --- | ------------------ | --------------------------------------------------- | ----------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -221,7 +221,7 @@ Heartbeat alerts carry the heartbeat's service and the workspace's environment: 
 
 The defaults fit. Two adjustments:
 
-- **Settings → Types & lifecycle → Severities**: SEV1 _always_ enters the post-incident flow, SEV2 _yes_, SEV3 _opt-in at closure_. A SEV1 is customer-visible downtime (web app, postgres, redis); SEV2 a degraded service (email failure rate, billing webhook); SEV3 internal.
+- **Settings → Types, severities & fields → Severities**: SEV1 _always_ enters the post-incident flow, SEV2 _yes_, SEV3 _opt-in at closure_. A SEV1 is customer-visible downtime (web app, postgres, redis); SEV2 a degraded service (email failure rate, billing webhook); SEV3 internal.
 - **Settings → Announcements**: the seeded rule _Announce SEV1 / SEV2_ to the whole workspace, plus the Slack announcement channel if Slack is connected.
 
 ## 8. The status page for Open Helpdesk customers
@@ -263,13 +263,13 @@ for svc in web-app workers console provisioning; do
 done
 ```
 
-The incident's side panel then lists the deploys of the day before it. With an inference provider configured on the Open Incident instance and **Settings → AI governance** allowing it, the assistant reads them, any runbook the service carries and the timeline to draft the summary and the post-mortem.
+The incident's side panel then lists the deploys of the day before it. With an inference provider configured on the Open Incident instance and **Settings → AI assistant** allowing it, the assistant reads them, any runbook the service carries and the timeline to draft the summary and the post-mortem.
 
 ## 10. Dry run — proving the chain before trusting it
 
 Run this on staging first, then on production the day it opens.
 
-1. **Source test**: **Settings → Alert sources → Open Helpdesk health → Test**. The alert appears under **Alerts** in test mode: _logged and routed, nobody paged_. Open it: **Route** names _Staging_.
+1. **Source test**: **Alerts → Sources → Open Helpdesk health → Test**. The alert appears under **Alerts** in test mode: _logged and routed, nobody paged_. Open it: **Route** names _Staging_.
 2. **A real staging alert**: the `curl` of section 5.1 with `environment: staging`. The alert is firing, routed by _Staging_, no incident, nobody paged — as designed. Post the same payload with `"status":"resolved"`: the alert resolves at the source.
 3. **A production page** (with `environment: production`, `priority: P1`, `service: postgres`): the alert is routed by _Production — page_; its **History** reads _Incident INC-n created in triage_ and, two minutes later, _Level 1 notified — <name>_. The on-call person receives the SMS, taps **Acknowledge**: the card reads _Acknowledged by …, n minutes after the page_. In **Incidents → Triage**, accept with SEV1. Publish _Investigating_ on the status page; check `status.open-helpdesk.com` (or the instance address) shows _Agent workspace & portal — Major outage_. Post the resolved payload: the alert resolves, the escalation ends. Share **Resolved**: the page clears, the post-incident flow starts.
 4. **Heartbeat**: create _backup.sh_ with _every 2 min, grace 1 min_ for the test, `curl` its URL once, wait three minutes: the alert fires through the Heartbeats source, routed like any other; `curl` again: it resolves. Then set the real cadence.

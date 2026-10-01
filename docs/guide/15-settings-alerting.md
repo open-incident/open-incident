@@ -1,24 +1,19 @@
 ---
-title: Alerting settings
+title: Alert settings
 section: configuration
 order: 15
-summary: Alert configuration in four steps; sources with their page, attributes, priorities, rules, heartbeats — the Alerting group of the settings.
+summary: Rules, priorities and attributes — the Alerts group of the settings — and where the sources went.
 ---
 
-## Alert configuration
+## Two entries
 
-**Settings → Alert configuration** is the one screen that says where the alerting stands, and gets a workspace from nothing to "an alert paged someone" in four steps. Each step is real; nothing is simulated.
+The Alerts group holds what an administrator decides about alerts and nothing else: **Rules**, and **Severities & attributes** — the vocabulary the rules read. Sources are not a setting; they are read, created and configured under **Alerts → Sources**, where the alerts they produce are. Heartbeats are not a setting either; they live under **Monitors → Heartbeats**, beside the other thing that watches by waiting.
 
-1. **Decide who gets paged.** **Page me** creates a published escalation path that pages you — one level, five minutes to acknowledge, two retries — and names it on the rule that catches every alert. **Page whoever is on call…** does the same for a schedule, **Page someone…** for a colleague, **Use an existing path…** for one you built. Refine it later in **On-call → Paths**.
-2. **Connect an alert source.** The tool grid, a name, then the endpoint and the secret shown once.
-3. **Receive a first alert.** **Test** sends a real alert through the whole pipeline in test mode; or send one from the tool — the source page waits for it live.
-4. **Check that an alert paged someone.** The step turns green when an alert started an escalation.
-
-Under the steps: tiles for sources, rules, paths, priorities and attributes; the sources with their last day (alerts, firing) and their last alert; the rules in order, each in one line — _if_ and _then_.
-
-Nothing has to be declared beforehand. Every new workspace starts with three priorities (P1–P3 with the usual aliases), five attributes (service, team, environment, region, the tool's severity) and one rule — **Every alert** — that catches everything and opens a triage incident when the priority pages. Name who to page and it is live.
+Nothing has to be declared beforehand. Every new workspace starts with three priorities (P1–P3 with the usual aliases), five attributes (service, team, environment, region, the tool's severity) and one rule — **Every alert** — that catches everything and opens a triage incident when the priority pages. The welcome screen's **Who should we page?** step names who to page, and it is live.
 
 ## Alert sources
+
+Under **Alerts → Sources**, not in the settings — described here because the rules below read what the sources produce.
 
 ![Alert sources](img/settings-alert-sources.png "One row per source with its mark, its last day, its last alert, and the way to its page.")
 
@@ -51,13 +46,13 @@ Adding a dedicated tool is a parser plus default mappings, not a connector — t
 
 ## Attributes
 
-**Settings → Attributes** is the vocabulary every source maps its payload onto and every rule reasons about — so a rule says _environment is production_ without knowing which tool said `env=prod`. Each attribute has a **key** (fixed once created), a label, a **type** — text, list, alert priority, **service** or **team** — whether it is **required** on every alert (sources missing it are flagged, alerts lacking it say so in their history), and what a **repeat** of the same alert does to its value: first wins, last wins, accumulate (lists), highest priority wins. The **coverage** column says how many of the last 200 alerts carry it and how many sources map it.
+**Settings → Severities & attributes → Attributes** is the vocabulary every source maps its payload onto and every rule reasons about — so a rule says _environment is production_ without knowing which tool said `env=prod`. Each attribute has a **key** (fixed once created), a label, a **type** — text, list, alert priority, **service** or **team** — whether it is **required** on every alert (sources missing it are flagged, alerts lacking it say so in their history), and what a **repeat** of the same alert does to its value: first wins, last wins, accumulate (lists), highest priority wins. The **coverage** column says how many of the last 200 alerts carry it and how many sources map it.
 
 **Service** and **team** are the two types that name a real row: the value is matched against the workspace's services and teams, and a rule can then page _the path that row leads to_. Every other attribute — environment, region, tier, customer — is a plain label: a rule reads it, a screen filters on it, and nothing else is stored about it.
 
 ## Priorities
 
-Priorities qualify the alert and choose the urgency of the page (high pages now; low notifies quietly). Each has a name, a colour, a description, **aliases** — what the tools call it, `critical`, `sev1`, `warning`… matched case-insensitively — and one is the **default**, given to alerts nothing names. Escalation paths branch on priority.
+The first tab of **Settings → Severities & attributes**. Priorities qualify the alert and choose the urgency of the page (high pages now; low notifies quietly). Each has a name, a colour, a description, **aliases** — what the tools call it, `critical`, `sev1`, `warning`… matched case-insensitively — and one is the **default**, given to alerts nothing names. Escalation paths branch on priority.
 
 ![Priorities](img/settings-priorities.png "Four priorities, their colour, their aliases and which one is the default.")
 
@@ -83,4 +78,4 @@ On the right, **Against the last alerts** previews the draft: which recent alert
 
 ## Heartbeats
 
-**Settings → Heartbeats**: a dead man's switch per job. Each heartbeat has a URL; a ping resets it; silence beyond the interval plus the grace raises an alert through the workspace's own managed _Heartbeats_ source, routed like any other alert. See [Alerts](alerts#heartbeats).
+Moved: **Monitors → Heartbeats**. A dead man's switch per job — each heartbeat has a URL; a ping resets it; silence beyond the interval plus the grace raises an alert through the workspace's own managed _Heartbeats_ source, routed like any other alert. See [Monitors](monitors#dead-mans-switches-use-heartbeats).

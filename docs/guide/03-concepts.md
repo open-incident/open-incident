@@ -28,7 +28,7 @@ Underneath, the product asks one question everywhere: _may this member do this h
 
 ## Services, teams, labels
 
-Nothing has to be declared before the routing works. A route says who to page — an escalation path, chosen once — and a fresh workspace pages someone the moment a person clicks **Page me** in **Settings → Alert configuration**.
+Nothing has to be declared before the routing works. A route says who to page — an escalation path, chosen once — and a fresh workspace pages someone the moment a person answers **Who should we page?** on the welcome screen.
 
 A **service** is never created by hand: it appears under **Services** the first time a signal names it — a label on an alert, a monitor. Its **key** _is_ its name (`checkout-api`); there is no second field to fill in. It waits in **Seen in traffic** until a member gives it an **owner team**, which confirms it in the same gesture.
 
@@ -84,7 +84,7 @@ A **status update** is the unit of communication: a message, optionally a new st
 
 ## The assistant proposes, never publishes
 
-When an inference provider is configured, an assistant drafts titles, summaries, status updates, follow-ups and post-mortem sections from the incident's own timeline. Every output is labelled **AI DRAFT** and a person reads it before anything is shared. Emails, phone numbers, IPs, hostnames and secrets are redacted before a prompt leaves the instance. What it may do, and which sources it may read, is decided per workspace in **Settings → AI governance**. In the enterprise edition, the **root cause analysis (RCA)** goes further: at declaration it gathers the evidence, states findings that cite it and proposes hypotheses with their confidence, challenged before you read them.
+When an inference provider is configured, an assistant drafts titles, summaries, status updates, follow-ups and post-mortem sections from the incident's own timeline. Every output is labelled **AI DRAFT** and a person reads it before anything is shared. Emails, phone numbers, IPs, hostnames and secrets are redacted before a prompt leaves the instance. What it may do, and which sources it may read, is decided per workspace in **Settings → AI assistant**. In the enterprise edition, the **root cause analysis (RCA)** goes further: at declaration it gathers the evidence, states findings that cite it and proposes hypotheses with their confidence, challenged before you read them.
 
 ## Where the truth lives
 

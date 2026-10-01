@@ -20,7 +20,7 @@ test.describe("Monitors", () => {
 
   test("the list shows every monitor with its history", async ({ page }) => {
     await page.goto("/app/monitors");
-    const rows = page.locator("a[href^='/app/monitors/']");
+    const rows = page.locator("a[href^='/app/monitors/']:not([role='tab'])");
     const count = await rows.count();
     test.skip(count === 0, "no monitor in this workspace");
     // Every row says what it is and how it is; a row with neither is a row
@@ -34,8 +34,8 @@ test.describe("Monitors", () => {
 
   test("a monitor's page carries its rules, its chart and its journey", async ({ page }) => {
     await page.goto("/app/monitors");
-    const journey = page.locator("a[href^='/app/monitors/']").filter({ hasText: /SYNTHETIC/ });
-    const any = page.locator("a[href^='/app/monitors/']");
+    const journey = page.locator("a[href^='/app/monitors/']:not([role='tab'])").filter({ hasText: /SYNTHETIC/ });
+    const any = page.locator("a[href^='/app/monitors/']:not([role='tab'])");
     test.skip((await any.count()) === 0, "no monitor in this workspace");
     const target = (await journey.count()) ? journey : any;
     await target.first().click();
@@ -56,7 +56,7 @@ test.describe("Monitors", () => {
    */
   test("the rules of a monitor can be rewritten, and survive the round trip", async ({ page }) => {
     await page.goto("/app/monitors");
-    const rows = page.locator("a[href^='/app/monitors/']").filter({ hasText: /HTTP|API/ });
+    const rows = page.locator("a[href^='/app/monitors/']:not([role='tab'])").filter({ hasText: /HTTP|API/ });
     test.skip((await rows.count()) === 0, "no reachability monitor in this workspace");
     await rows.first().click();
     await page.waitForURL(/\/app\/monitors\/[0-9a-f-]+/);

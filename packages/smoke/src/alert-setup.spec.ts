@@ -3,19 +3,17 @@ import { BASE_URL } from "../playwright.config";
 import { MEMBERS, signIn } from "./helpers";
 
 /**
- * From nothing to "an alert paged someone" through the setup screen: one click
- * names who gets paged, a source is created from the tool grid, its page maps
- * attributes against a real payload and previews the routing, a route is
- * edited on its own page and previewed against recent alerts, and a payload
- * posted to the endpoint is routed, pages, and opens a triage incident.
+ * From nothing to "an alert paged someone": a source is created from the tool
+ * grid, its page maps attributes against a real payload and previews the
+ * routing, a route is edited on its own page and previewed against recent
+ * alerts, and a payload posted to the endpoint is routed, pages, and opens a
+ * triage incident.
  */
 /** The delete button of a row, in the three languages the suite may run in. */
 const DELETE = /^Supprimer$|^Delete$|^Löschen$/;
 
 test.describe("Alert configuration", () => {
-  test("the four steps, a source page, a route page, and a real alert through it all", async ({
-    page,
-  }) => {
+  test("a source page, a route page, and a real alert through it all", async ({ page }) => {
     // The keys this run fires under, so the end of it can close them: an alert
     // left firing groups the next run's into itself, and the run that made it
     // is the one that has to clear it.
@@ -23,13 +21,6 @@ test.describe("Alert configuration", () => {
     const testKey = `setup-test-${run}`;
     const realKey = `setup-real-${run}`;
     await signIn(page, MEMBERS.owner);
-
-    // The hub and its checklist.
-    // The demo workspace is already set up, so the steps hide until asked for.
-    await page.goto("/app/settings/alerting?setup=1");
-    await expect(page.getByTestId("setup-checklist")).toBeVisible();
-    // It already pages through its routes; the step reads as done.
-    await expect(page.getByTestId("setup-step-pager")).toHaveAttribute("data-done", "1");
 
     // A source from the tool grid, in three steps.
     await page.goto("/app/settings/alert-sources?new=1");

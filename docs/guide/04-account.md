@@ -9,7 +9,7 @@ summary: Joining a workspace, signing in, and the settings that are yours alone 
 
 You enter a workspace in one of three ways:
 
-1. **An invitation.** An administrator invites your email from **Settings → Members & roles**. You receive an email with a link valid for seven days; the page asks for your name and a password, creates your account and signs you in. If you already have an account on the instance (from another workspace), the same link simply adds the membership.
+1. **An invitation.** An administrator invites your email from **Settings → Members & access**. You receive an email with a link valid for seven days; the page asks for your name and a password, creates your account and signs you in. If you already have an account on the instance (from another workspace), the same link simply adds the membership.
 2. **Single sign-on** (enterprise edition). The sign-in page shows a **Continue with …** button per connection; your identity provider signs you in, and a member is created on the spot with the role the connection gives to newcomers.
 3. **Provisioning** (enterprise edition). Your identity provider created the member through SCIM; you then sign in through SSO, or through the invitation email the provisioning sent.
 

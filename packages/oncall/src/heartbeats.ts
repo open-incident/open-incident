@@ -138,7 +138,7 @@ function alertPayload(
     status,
     dedup_key: `heartbeat:${hb.id}`,
     service: serviceName ?? undefined,
-    url: `${origin}/app/settings/heartbeats`,
+    url: `${origin}/app/monitors/heartbeats`,
     heartbeat: hb.id,
   };
 }
