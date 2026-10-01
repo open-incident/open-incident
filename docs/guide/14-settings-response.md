@@ -7,28 +7,22 @@ summary: Types, severities and custom fields; announcements; the post-incident f
 
 ## Types, severities & fields
 
-![Types](img/settings-types.png "The types with their lifecycle and declaration form; the tabs for severities and fields.")
+![Types](img/settings-types.png "The types on the left; the open type's sheet on the right — the type, its form, its statuses, its post-incident rule.")
 
 One entry, three tabs. Each **incident type** carries its own lifecycle and its own declaration form; **severities** are shared by every type; **custom fields** are what a type's form asks beyond the system fields.
 
-### The lifecycle
+### A type's sheet
 
-Four phases, drawn in order. Click a phase or a status to configure it — every transition is a timeline event, never a silent change.
+Pick a type in the list on the left; the sheet on the right has four sections, each with its own **Save**.
 
-| Phase             | Configuration                                                                                                                                                                                                                                                                                |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Triage**        | Entry point of incidents created by an alert or the API; nobody is paged until a responder decides. Possible actions: accept, decline, merge.                                                                                                                                                |
-| **Active**        | The type's statuses, in order: a name, a description, an **update reminder** (the default delay before the next update is due), the **public status** it maps to on status pages (or _not published_), and whether it **counts in the MTTR**. The phase only advances by an explicit update. |
-| **Post-incident** | Entered _always_, _never_, or from a severity; advances as the flow's tasks complete; leaves when every task is done or skipped with a reason.                                                                                                                                               |
-| **Closed**        | Terminal. Reopening possible for 30 days.                                                                                                                                                                                                                                                    |
+| Section              | What you decide                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **The type**         | Name, description, **who may declare it** (everyone, or one team), and whether its incidents **start private**. The default type is everyone's and cannot be deleted; another type can be deleted as long as no incident carries it — the sheet says how many do.                                                                                                        |
+| **Declaration form** | One choice per field — **Required**, **Optional**, **Not asked** — for the system fields (severity, affected service, summary; the title is always asked) and for the custom fields of this type or of every type. **Manage fields →** adds or removes custom fields.                                                                                                    |
+| **Statuses**         | The statuses an active incident goes through, **in order**: an accepted incident starts at the first and only advances by an explicit update. Each has a name, a description, an **update reminder**, the **public status** it maps to on status pages, and whether it **counts in the MTTR**. Reorder with the arrows; a status with incidents in it cannot be deleted. |
+| **Post-incident**    | When a resolved incident of this type enters the post-incident flow: _never_, _always_, or _from_ a severity.                                                                                                                                                                                                                                                            |
 
-### The declaration form
-
-Title, severity, affected service and summary are system fields, each required or optional. Custom fields of the type (or of every type) follow. A type may be **declarable by everyone** or by **one team only**, and may start its incidents **private**.
-
-### New types
-
-**+ New type** inherits the lifecycle and form of the type it is based on — adjust afterwards. Seeded types are marked; restricted and private types carry a badge.
+Around the statuses, three phases are the same for every type and are not configured here: **Triage** before (incidents created by an alert or the API wait there until a responder accepts, declines or merges them), **Post-incident** after (advances as the flow's tasks complete), and **Closed** (terminal; reopening possible for 30 days). Every transition is a timeline event, never a silent change.
 
 ### Severities
 

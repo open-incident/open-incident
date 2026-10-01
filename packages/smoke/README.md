@@ -46,6 +46,15 @@ NODE_TLS_REJECT_UNAUTHORIZED=0 \
   pnpm --filter @openincident/smoke smoke
 ```
 
+A development stack usually keeps the standalone mock identity provider running
+(`pnpm --filter @openincident/smoke run mock:idp`, port 3195, signs in
+`sam@smoke.example`). The suite and the guide shots then start their own mock
+on the next free port, 3196, so the instance must trust both:
+`SSO_TRUSTED_IDP_ORIGINS=http://127.0.0.1:3195,http://127.0.0.1:3196`. The SSO
+spec names its connection **Smoke IdP** on `smoke-sso.example`, apart from the
+standalone **Mock IdP** on `smoke.example`: two connections on one domain are
+refused, correctly.
+
 The Slack and Teams specs additionally need the server started with the mock
 credentials and `SLACK_ALLOW_LOCAL_ENDPOINT=1`, which is what the CI workflow
 does — the OAuth start route otherwise refuses to send anybody to a loopback

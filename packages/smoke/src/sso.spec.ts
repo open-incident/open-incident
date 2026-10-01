@@ -12,8 +12,16 @@ import { startOidcMock } from "./oidc-mock";
  */
 test.describe("Single sign-on", () => {
   let idp: Awaited<ReturnType<typeof startOidcMock>>;
+  // Its own label, domain and person: a development stack keeps a standalone
+  // "Mock IdP" on smoke.example beside this run, and two connections on one
+  // domain are refused — correctly.
+  const run = Date.now().toString(36);
   test.beforeAll(async () => {
-    idp = await startOidcMock();
+    idp = await startOidcMock(3195, {
+      sub: `sso-${run}`,
+      email: `sso-${run}@smoke-sso.example`,
+      name: "Sam Single",
+    });
   });
   test.afterAll(async () => {
     idp.server.close();
@@ -27,8 +35,8 @@ test.describe("Single sign-on", () => {
     // An OIDC connection: discovery runs against the mock at creation.
     await page.getByTestId("sso-add").click();
     const form = page.getByTestId("sso-form");
-    await form.locator('input[name="label"]').fill("Mock IdP");
-    await form.locator('input[name="domains"]').fill("smoke.example");
+    await form.locator('input[name="label"]').fill("Smoke IdP");
+    await form.locator('input[name="domains"]').fill("smoke-sso.example");
     await form.locator('select[name="defaultRole"]').selectOption("viewer");
     await form.locator('input[name="issuer"]').fill(idp.issuer);
     await form.locator('input[name="clientId"]').fill("smoke-client");
@@ -36,7 +44,7 @@ test.describe("Single sign-on", () => {
     await page.getByTestId("sso-enforce").check();
     await page.getByTestId("sso-save").click();
     await page.waitForURL(/saved=1/);
-    const row = page.getByTestId("sso-row").filter({ hasText: "Mock IdP" });
+    const row = page.getByTestId("sso-row").filter({ hasText: "Smoke IdP" });
     await expect(row).toBeVisible();
     await expect(row.getByTestId("sso-enforced")).toBeVisible();
     const redirectUri = (await row.getByTestId("sso-redirect-uri").textContent())!.trim();
@@ -47,13 +55,13 @@ test.describe("Single sign-on", () => {
     // The sign-in page now offers it; a password for the enforced domain is refused.
     await signOut(page);
     await page.goto("/login");
-    const button = page.getByTestId("sso-button");
-    await expect(button).toHaveText(/Mock IdP/);
+    const button = page.getByTestId("sso-button").filter({ hasText: "Smoke IdP" });
+    await expect(button).toBeVisible();
     // Replayed: the sign-in rate limit is shared by the whole suite, and a
     // 429 says "wait", not "use SSO".
     await expect(async () => {
       await page.goto("/login");
-      await page.locator("input[type=email]").fill("someone@smoke.example");
+      await page.locator("input[type=email]").fill("someone@smoke-sso.example");
       await page.locator("input[type=password]").fill("whatever-password");
       await page.locator("button[type=submit]").click();
       await expect(page.locator('p[role="alert"]')).toContainText(/SSO/, { timeout: 5_000 });
@@ -100,7 +108,9 @@ test.describe("Single sign-on", () => {
     // Removal: the button leaves the sign-in page.
     await samlRow.getByTestId("sso-remove").click();
     await page.waitForURL(/removed=1/);
-    await expect(page.getByTestId("sso-row")).toHaveCount(1);
+    await expect(
+      page.getByTestId("sso-row").filter({ hasText: /Smoke IdP|Mock SAML/ }),
+    ).toHaveCount(1);
   });
 });
 

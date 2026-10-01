@@ -119,7 +119,14 @@ export function startOidcMock(
       return json({ error: `mock: unknown ${req.method} ${url.pathname}` }, 404);
     });
   });
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    // A development stack keeps the standalone mock on 3195 all day; a suite
+    // or the guide shots started beside it take the next free port, and the
+    // issuer follows, since it is derived from the port.
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE" && port < 3199) resolve(startOidcMock(port + 1, user));
+      else reject(err);
+    });
     server.listen(port, "127.0.0.1", () => {
       state.server = server;
       resolve(state);

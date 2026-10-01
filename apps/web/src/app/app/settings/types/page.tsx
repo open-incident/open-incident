@@ -13,7 +13,17 @@ import { sql } from "drizzle-orm";
 import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
 import { severityInk } from "@/lib/tones";
-import { saveSeverity, saveStatus } from "./actions";
+import {
+  addStatus,
+  deleteStatus,
+  deleteType,
+  moveStatus,
+  saveDeclareForm,
+  savePostIncident,
+  saveSeverity,
+  saveStatus,
+  saveType,
+} from "./actions";
 import { NewTypeDialog } from "./new-type";
 
 /**
@@ -29,7 +39,7 @@ export default async function TypesPage({
   searchParams: Promise<{
     type?: string;
     seg?: string;
-    node?: string;
+    status?: string;
     sev?: string;
     saved?: string;
     error?: string;
@@ -65,7 +75,25 @@ export default async function TypesPage({
       .from(incidents)
       .where(and(eq(incidents.tenantId, tenant.id), gte(incidents.declaredAt, since)))
       .groupBy(incidents.typeId);
-    return { types, statuses, sevs, fields, counts: new Map(counts.map((c) => [c.typeId, c.n])) };
+    const allCounts = await tx
+      .select({ typeId: incidents.typeId, n: sql<number>`count(*)`.mapWith(Number) })
+      .from(incidents)
+      .where(eq(incidents.tenantId, tenant.id))
+      .groupBy(incidents.typeId);
+    const inStatus = await tx
+      .select({ statusId: incidents.statusId, n: sql<number>`count(*)`.mapWith(Number) })
+      .from(incidents)
+      .where(and(eq(incidents.tenantId, tenant.id), eq(incidents.phase, "active")))
+      .groupBy(incidents.statusId);
+    return {
+      types,
+      statuses,
+      sevs,
+      fields,
+      counts: new Map(counts.map((c) => [c.typeId, c.n])),
+      allCounts: new Map(allCounts.map((c) => [c.typeId, c.n])),
+      inStatus: new Map(inStatus.map((c) => [c.statusId, c.n])),
+    };
   });
   const seg = params.seg === "severities" ? "severities" : "types";
   const type =
@@ -74,11 +102,10 @@ export default async function TypesPage({
     data.types[0];
   if (!type) return null;
   const statuses = data.statuses.filter((s) => s.typeId === type.id);
-  const node = params.node ?? statuses[0]?.id ?? "triage";
-  const nodeStatus = statuses.find((s) => s.id === node);
+  const editing = params.status === "new" ? "new" : statuses.find((s) => s.id === params.status);
   const href = (patch: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries({ type: type.id, seg, node, ...patch })) if (v) p.set(k, v);
+    for (const [k, v] of Object.entries({ type: type.id, seg, ...patch })) if (v) p.set(k, v);
     return `/app/settings/types?${p.toString()}`;
   };
   const label: React.CSSProperties = {
@@ -98,49 +125,30 @@ export default async function TypesPage({
     background: "var(--panel)",
     width: "100%",
   };
-
-  const phaseCard = (
-    key: string,
-    title: string,
-    sub: string,
-    ink: string,
-    bg: string,
-    line: string,
-  ) => {
-    const on = node === key;
-    return (
-      <Link
-        href={href({ node: key })}
-        style={{
-          flex: 1,
-          minWidth: 128,
-          border: `1px solid ${line}`,
-          borderRadius: 11,
-          padding: "10px 12px",
-          background: bg,
-          textDecoration: "none",
-          color: "inherit",
-          boxShadow: on ? "0 0 0 2px var(--brand-b)" : "none",
-        }}
-      >
-        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".08em", color: ink }}>
-          {title}
-        </div>
-        <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 4 }}>{sub}</div>
-      </Link>
-    );
+  const ghostBtn: React.CSSProperties = {
+    height: 30,
+    padding: "0 11px",
+    border: "1px solid var(--line)",
+    borderRadius: 8,
+    background: "var(--panel)",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    color: "inherit",
+    display: "inline-flex",
+    alignItems: "center",
   };
-  const arrow = (
-    <div style={{ display: "flex", alignItems: "center", color: "var(--ink-3)" }}>→</div>
-  );
-  const postRule =
-    type.postIncidentFromRank === null
-      ? t("settings.types.postNever")
-      : type.postIncidentFromRank === -1
-        ? t("settings.types.postAlways")
-        : t("settings.types.postFrom", {
-            severity: data.sevs.find((s) => s.rank === type.postIncidentFromRank)?.name ?? "—",
-          });
+  const brandBtn: React.CSSProperties = {
+    height: 30,
+    padding: "0 13px",
+    borderRadius: 8,
+    background: "var(--brand)",
+    color: "var(--on-brand)",
+    border: 0,
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+  };
 
   const teamRows = await withTenant(tenant.id, (tx) =>
     tx
@@ -172,7 +180,15 @@ export default async function TypesPage({
           <span role="alert" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--dang)" }}>
             {params.error === "duplicate"
               ? t("settings.types.errorDuplicate")
-              : t("settings.fields.errorInvalid")}
+              : params.error === "in_use"
+                ? t("settings.types.errorInUse")
+                : params.error === "status_in_use"
+                  ? t("settings.types.errorStatusInUse")
+                  : params.error === "last_status"
+                    ? t("settings.types.errorLastStatus")
+                    : params.error === "refused"
+                      ? t("settings.types.errorRefused")
+                      : t("settings.fields.errorInvalid")}
           </span>
         )}
         <NewTypeDialog
@@ -182,482 +198,633 @@ export default async function TypesPage({
       </div>
 
       {seg === "types" ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {/* Up to eight types read well as cards. Past that — a workspace that
-              declares a type per team, or a demo full of them — the cards push
-              the lifecycle below the fold, and a list is what scales. */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "220px minmax(0,1fr)",
+            gap: 14,
+            alignItems: "start",
+          }}
+        >
+          {/* The types, as a list: one is open on the right. */}
           <div
-            style={
-              data.types.length > 8
-                ? {
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
-                    gap: 6,
-                    maxHeight: 232,
-                    overflowY: "auto",
-                    padding: 2,
-                  }
-                : { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "stretch" }
-            }
+            className="oi-panel"
+            style={{
+              overflowY: "auto",
+              maxHeight: "calc(100vh - 160px)",
+              position: "sticky",
+              top: 14,
+            }}
           >
             {data.types.map((ty) => {
               const on = ty.id === type.id;
-              const badge = ty.isDefault
-                ? { l: t("settings.types.badgeSeeded"), bg: "var(--sunk)", ink: "var(--ink-2)" }
-                : ty.restrictedToTeamIds && ty.restrictedToTeamIds.length > 0
-                  ? {
-                      l: t("settings.types.badgeRestricted"),
-                      bg: "var(--viol-t)",
-                      ink: "var(--viol)",
-                    }
-                  : ty.privateByDefault
-                    ? {
-                        l: t("settings.types.badgePrivate"),
-                        bg: "var(--viol-t)",
-                        ink: "var(--viol)",
-                      }
-                    : {
-                        l: t("settings.types.badgeSpecific"),
-                        bg: "var(--sunk)",
-                        ink: "var(--ink-2)",
-                      };
               return (
                 <Link
                   key={ty.id}
                   href={`/app/settings/types?type=${ty.id}`}
-                  className="oi-hover-edge"
-                  style={
-                    data.types.length > 8
-                      ? {
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "7px 10px",
-                          background: on ? "var(--brand-t)" : "var(--panel)",
-                          border: `1px solid ${on ? "var(--brand)" : "var(--line)"}`,
-                          borderRadius: 9,
-                          textDecoration: "none",
-                          color: "inherit",
-                          minWidth: 0,
-                        }
-                      : {
-                          flex: "1 1 210px",
-                          maxWidth: 280,
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 5,
-                          padding: "13px 15px",
-                          background: "var(--panel)",
-                          border: `1.5px solid ${on ? "var(--brand)" : "var(--line)"}`,
-                          borderRadius: 13,
-                          boxShadow: on ? "var(--shadow-card-hover)" : "var(--shadow-card)",
-                          textDecoration: "none",
-                          color: "inherit",
-                        }
-                  }
+                  className={on ? undefined : "oi-hover"}
+                  aria-current={on ? "true" : undefined}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "9px 12px",
+                    borderBottom: "1px solid var(--line-2)",
+                    borderLeft: `3px solid ${on ? "var(--brand)" : "transparent"}`,
+                    background: on ? "var(--brand-t)" : undefined,
+                    textDecoration: "none",
+                    color: "inherit",
+                    minWidth: 0,
+                  }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600 }}>{ty.name}</span>
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: 13,
+                      fontWeight: on ? 600 : 500,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {ty.name}
+                  </span>
+                  {ty.isDefault && (
                     <span
-                      style={{
-                        padding: "1px 8px",
-                        borderRadius: 999,
-                        background: badge.bg,
-                        color: badge.ink,
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                      }}
+                      title={t("settings.types.badgeSeeded")}
+                      style={{ fontSize: 10, color: "var(--ink-3)" }}
                     >
-                      {badge.l}
+                      ★
                     </span>
-                  </div>
-                  {data.types.length <= 8 && (
-                    <div style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.45 }}>
-                      {ty.description}
-                    </div>
                   )}
-                  <div
+                  <span
                     style={{
                       fontSize: 11,
                       color: "var(--ink-3)",
                       fontVariantNumeric: "tabular-nums",
-                      marginTop: data.types.length > 8 ? 0 : "auto",
-                      marginLeft: data.types.length > 8 ? "auto" : 0,
-                      whiteSpace: "nowrap",
+                      flex: "none",
                     }}
                   >
-                    {t("settings.types.incidentCount", { count: data.counts.get(ty.id) ?? 0 })}
-                  </div>
+                    {data.counts.get(ty.id) ?? 0}
+                  </span>
                 </Link>
               );
             })}
           </div>
-          <div className="oi-panel" style={{ overflow: "hidden" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "11px 18px",
-                borderBottom: "1px solid var(--line)",
-                flexWrap: "wrap",
-              }}
-            >
-              <span style={{ fontFamily: "var(--font-title)", fontSize: 15, fontWeight: 600 }}>
-                {type.name}
-              </span>
-              <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                {t("settings.types.lifecycle")}
-              </span>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 14,
-                padding: "16px 18px",
-                alignItems: "flex-start",
-              }}
-            >
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
+            {/* 1. The type: name, description, who declares it, visibility. */}
+            <form action={saveType} className="oi-panel" style={{ padding: "14px 18px" }}>
+              <input type="hidden" name="typeId" value={type.id} />
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <span style={{ fontFamily: "var(--font-title)", fontSize: 15, fontWeight: 600 }}>
+                  {t("settings.types.sectionType")}
+                </span>
+                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                  {t("settings.types.incidentCount", { count: data.counts.get(type.id) ?? 0 })}
+                </span>
+                <span style={{ flex: 1 }} />
+                <button type="submit" className="oi-hover-brand-2" style={brandBtn}>
+                  {t("common.save")}
+                </button>
+              </div>
               <div
                 style={{
-                  flex: "10 1 400px",
-                  minWidth: 0,
-                  display: "flex",
-                  flexDirection: "column",
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0,1fr) minmax(0,2fr)",
                   gap: 12,
                 }}
               >
-                <div style={{ display: "flex", alignItems: "stretch", gap: 8, flexWrap: "wrap" }}>
-                  {phaseCard(
-                    "triage",
-                    t("settings.types.phaseTriage"),
-                    t("settings.types.phaseTriageSub"),
-                    "var(--viol)",
-                    "var(--viol-t)",
-                    "var(--viol)",
-                  )}
-                  {arrow}
-                  <div
-                    style={{
-                      flex: 2,
-                      minWidth: 230,
-                      border: "1px solid var(--open)",
-                      borderRadius: 11,
-                      padding: "10px 12px",
-                      background: "var(--open-t)",
-                      boxShadow: nodeStatus ? "0 0 0 2px var(--brand-b)" : "none",
-                    }}
+                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <span style={label}>{t("settings.types.typeName")}</span>
+                  <input
+                    name="name"
+                    defaultValue={type.name}
+                    required
+                    minLength={2}
+                    maxLength={60}
+                    className="oi-field"
+                    style={control}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <span style={label}>{t("settings.types.typeDescription")}</span>
+                  <input
+                    name="description"
+                    defaultValue={type.description ?? ""}
+                    maxLength={200}
+                    className="oi-field"
+                    style={control}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <span style={label}>{t("settings.types.declarableBy")}</span>
+                  <select
+                    name="teamId"
+                    defaultValue={type.isDefault ? "" : (type.restrictedToTeamIds?.[0] ?? "")}
+                    disabled={type.isDefault}
+                    className="oi-field"
+                    style={control}
                   >
-                    <div
-                      style={{
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        letterSpacing: ".08em",
-                        color: "var(--open)",
-                      }}
-                    >
-                      {t("settings.types.phaseActive")}
-                    </div>
-                    <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
-                      {statuses.map((s) => {
-                        const on = node === s.id;
-                        return (
-                          <Link
-                            key={s.id}
-                            href={href({ node: s.id })}
-                            style={{
-                              fontSize: 11.5,
-                              fontWeight: 600,
-                              background: on ? "var(--brand)" : "var(--panel)",
-                              color: on ? "#fff" : "var(--ink)",
-                              border: `1px solid ${on ? "var(--brand)" : "var(--line)"}`,
-                              borderRadius: 999,
-                              padding: "3px 10px",
-                              textDecoration: "none",
-                            }}
-                          >
-                            {s.name}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 6 }}>
-                      {t("settings.types.phaseActiveSub")}
-                    </div>
-                  </div>
-                  {arrow}
-                  {phaseCard(
-                    "post",
-                    t("settings.types.phasePost"),
-                    t("settings.types.phasePostSub"),
-                    "var(--brand)",
-                    "var(--brand-t)",
-                    "var(--brand-b)",
-                  )}
-                  {arrow}
-                  {phaseCard(
-                    "closed",
-                    t("settings.types.phaseClosed"),
-                    t("settings.types.phaseClosedSub"),
-                    "var(--ink-2)",
-                    "var(--panel)",
-                    "var(--line)",
-                  )}
-                </div>
-                <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                  {t("settings.types.lifecycleNote")}
-                </div>
-                <div style={{ borderTop: "1px solid var(--line-2)", paddingTop: 12 }}>
-                  <div style={label}>{t("settings.types.declareForm")}</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                    {type.declareForm.map((f) => {
-                      const custom = data.fields.find((x) => x.key === f.key);
-                      const name = custom
-                        ? custom.label
-                        : t(
-                            `settings.types.systemField.${f.key as "title" | "severity" | "service" | "summary"}`,
-                          );
-                      return (
-                        <span
-                          key={f.key}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 6,
-                            padding: "3px 10px",
-                            borderRadius: 999,
-                            background: f.required ? "var(--brand-t)" : "var(--sunk)",
-                            color: f.required ? "var(--brand)" : "var(--ink-2)",
-                            fontSize: 11.5,
-                            fontWeight: 600,
-                            fontFamily:
-                              custom && /^[a-z_]+$/.test(name) ? "var(--font-mono)" : undefined,
-                          }}
-                        >
-                          {name}
-                          <span style={{ fontWeight: 400, opacity: 0.7 }}>
-                            {f.required
-                              ? t("settings.types.required")
-                              : t("settings.types.optional")}
-                          </span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
+                    <option value="">{t("settings.types.everyone")}</option>
+                    {teamRows.map((tm) => (
+                      <option key={tm.id} value={tm.id}>
+                        {tm.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                    fontSize: 13,
+                    paddingTop: 22,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    name="privateByDefault"
+                    defaultChecked={type.privateByDefault}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span style={{ lineHeight: 1.45 }}>
+                    {t("settings.types.privateByDefault")}
+                    <span style={{ display: "block", fontSize: 11.5, color: "var(--ink-3)" }}>
+                      {t("settings.types.privateHint")}
+                    </span>
+                  </span>
+                </label>
               </div>
               <div
                 style={{
-                  flex: "1 1 250px",
-                  maxWidth: 320,
-                  minWidth: 240,
-                  background: "var(--sunk)",
-                  borderRadius: 12,
-                  padding: "14px 15px",
                   display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
+                  alignItems: "center",
+                  gap: 12,
+                  marginTop: 12,
+                  fontSize: 11.5,
+                  color: "var(--ink-3)",
                 }}
               >
-                {nodeStatus ? (
-                  <form
-                    action={saveStatus}
-                    style={{ display: "flex", flexDirection: "column", gap: 10 }}
-                  >
-                    <input type="hidden" name="statusId" value={nodeStatus.id} />
-                    <input type="hidden" name="typeId" value={type.id} />
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: "var(--open)",
-                          flex: "none",
-                        }}
-                      />
-                      <span style={{ fontSize: 13.5, fontWeight: 600 }}>{nodeStatus.name}</span>
-                      <span style={{ flex: 1 }} />
-                      <span
-                        style={{
-                          padding: "1px 8px",
-                          borderRadius: 999,
-                          background: "var(--panel)",
-                          border: "1px solid var(--line)",
-                          color: "var(--ink-3)",
-                          fontSize: 10,
-                          fontWeight: 700,
-                          textTransform: "uppercase",
-                          letterSpacing: ".06em",
-                        }}
-                      >
-                        {t("settings.types.kindStatus")}
-                      </span>
-                    </div>
-                    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <span style={label}>{t("settings.types.statusName")}</span>
-                      <input
-                        name="name"
-                        defaultValue={nodeStatus.name}
-                        required
-                        maxLength={60}
-                        className="oi-field"
-                        style={control}
-                      />
-                    </label>
-                    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <span style={label}>{t("settings.types.statusDescription")}</span>
-                      <input
-                        name="description"
-                        defaultValue={nodeStatus.description ?? ""}
-                        maxLength={200}
-                        className="oi-field"
-                        style={control}
-                      />
-                    </label>
-                    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <span style={label}>{t("settings.types.updateReminder")}</span>
-                      <select
-                        name="updateReminderMinutes"
-                        defaultValue={String(nodeStatus.updateReminderMinutes ?? "")}
-                        className="oi-field"
-                        style={control}
-                      >
-                        <option value="">{t("incident.update.noReminder")}</option>
-                        {[15, 30, 60, 120].map((m) => (
-                          <option key={m} value={m}>
-                            {t("incident.update.inMinutes", { count: m })}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <span style={label}>{t("settings.types.publicStatus")}</span>
-                      <select
-                        name="publicStatus"
-                        defaultValue={nodeStatus.publicStatus ?? ""}
-                        className="oi-field"
-                        style={control}
-                      >
-                        <option value="">— ({t("settings.types.publicNone")})</option>
-                        {["investigating", "identified", "monitoring"].map((p) => (
-                          <option key={p} value={p}>
-                            {p}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label
-                      style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}
-                    >
-                      <input
-                        type="checkbox"
-                        name="countsInMttr"
-                        defaultChecked={nodeStatus.countsInMttr}
-                      />{" "}
-                      {t("settings.types.countsInMttr")}
-                    </label>
-                    <button
-                      type="submit"
-                      style={{
-                        height: 30,
-                        borderRadius: 8,
-                        background: "var(--brand)",
-                        color: "#fff",
-                        border: 0,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {t("common.save")}
-                    </button>
-                  </form>
+                {type.isDefault ? (
+                  <span>{t("settings.types.defaultTypeNote")}</span>
+                ) : (data.allCounts.get(type.id) ?? 0) > 0 ? (
+                  <span>
+                    {t("settings.types.deleteTypeInUse", {
+                      count: data.allCounts.get(type.id) ?? 0,
+                    })}
+                  </span>
                 ) : (
-                  <>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background:
-                            node === "triage"
-                              ? "var(--viol)"
-                              : node === "post"
-                                ? "var(--brand)"
-                                : "var(--ink-3)",
-                          flex: "none",
-                        }}
-                      />
-                      <span style={{ fontSize: 13.5, fontWeight: 600 }}>
-                        {node === "triage"
-                          ? t("settings.types.phaseTriage")
-                          : node === "post"
-                            ? t("settings.types.phasePost")
-                            : t("settings.types.phaseClosed")}
-                      </span>
-                      <span style={{ flex: 1 }} />
-                      <span
-                        style={{
-                          padding: "1px 8px",
-                          borderRadius: 999,
-                          background: "var(--panel)",
-                          border: "1px solid var(--line)",
-                          color: "var(--ink-3)",
-                          fontSize: 10,
-                          fontWeight: 700,
-                          textTransform: "uppercase",
-                          letterSpacing: ".06em",
-                        }}
-                      >
-                        {t("settings.types.kindPhase")}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>
-                      {node === "triage"
-                        ? t("settings.types.triageDesc")
-                        : node === "post"
-                          ? t("settings.types.postDesc")
-                          : t("settings.types.closedDesc")}
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column" }}>
-                      {(node === "triage"
-                        ? [
-                            [t("settings.types.row.actions"), t("settings.types.phaseTriageSub")],
-                            [t("settings.types.row.entry"), t("settings.types.triageEntry")],
-                          ]
-                        : node === "post"
-                          ? [
-                              [t("settings.types.row.autoEntry"), postRule],
-                              [t("settings.types.row.exit"), t("settings.types.postExit")],
-                            ]
-                          : [
-                              [t("settings.types.row.skip"), t("settings.types.closedSkip")],
-                              [t("settings.types.row.reopen"), t("settings.types.closedReopen")],
-                            ]
-                      ).map(([l, v]) => (
-                        <div
-                          key={l}
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            gap: 12,
-                            fontSize: 12,
-                            padding: "7px 0",
-                            borderBottom: "1px solid var(--line-2)",
-                          }}
-                        >
-                          <span style={{ color: "var(--ink-3)", flex: "none" }}>{l}</span>
-                          <span style={{ fontWeight: 600, textAlign: "right" }}>{v}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </>
+                  <button
+                    type="submit"
+                    formAction={deleteType}
+                    className="oi-hover-dang"
+                    data-testid="type-delete"
+                    style={{ ...ghostBtn, color: "var(--dang)" }}
+                  >
+                    {t("settings.types.deleteType")}
+                  </button>
                 )}
               </div>
+            </form>
+
+            {/* 2. The declaration form: one choice per field. */}
+            <form action={saveDeclareForm} className="oi-panel" style={{ overflow: "hidden" }}>
+              <input type="hidden" name="typeId" value={type.id} />
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "12px 18px",
+                  borderBottom: "1px solid var(--line)",
+                }}
+              >
+                <span style={{ fontFamily: "var(--font-title)", fontSize: 15, fontWeight: 600 }}>
+                  {t("settings.types.formTitle")}
+                </span>
+                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                  {t("settings.types.formHint")}
+                </span>
+                <span style={{ flex: 1 }} />
+                <Link href="/app/settings/fields" className="oi-link" style={{ fontSize: 12 }}>
+                  {t("settings.types.manageFields")}
+                </Link>
+                <button type="submit" className="oi-hover-brand-2" style={brandBtn}>
+                  {t("common.save")}
+                </button>
+              </div>
+              {(
+                [
+                  ...(["title", "severity", "service", "summary"] as const).map((k) => ({
+                    key: k,
+                    name: t(`settings.types.systemField.${k}`),
+                    mono: false,
+                    fixed: k === "title",
+                  })),
+                  ...data.fields
+                    .filter((f) => f.incidentTypeId === null || f.incidentTypeId === type.id)
+                    .map((f) => ({ key: f.key, name: f.label, mono: true, fixed: false })),
+                ] as const
+              ).map((f, i, all) => {
+                const inForm = type.declareForm.find((x) => x.key === f.key);
+                const ask = f.fixed
+                  ? "required"
+                  : inForm
+                    ? inForm.required
+                      ? "required"
+                      : "optional"
+                    : "off";
+                return (
+                  <div
+                    key={f.key}
+                    data-testid="form-field"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "9px 18px",
+                      borderBottom: i < all.length - 1 ? "1px solid var(--line-2)" : undefined,
+                    }}
+                  >
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600 }}>
+                      {f.name}
+                      {f.mono && (
+                        <span
+                          style={{
+                            marginLeft: 8,
+                            fontFamily: "var(--font-mono)",
+                            fontWeight: 400,
+                            fontSize: 11.5,
+                            color: "var(--ink-3)",
+                          }}
+                        >
+                          {f.key}
+                        </span>
+                      )}
+                    </span>
+                    <div role="radiogroup" style={{ display: "flex", gap: 2 }}>
+                      {(["required", "optional", "off"] as const).map((choice) => (
+                        <label
+                          key={choice}
+                          style={{
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            padding: "3px 10px",
+                            borderRadius: 999,
+                            border: `1px solid ${ask === choice ? "var(--brand)" : "var(--line)"}`,
+                            background: ask === choice ? "var(--brand-t)" : "var(--panel)",
+                            color:
+                              ask === choice
+                                ? "var(--brand)"
+                                : f.fixed
+                                  ? "var(--line)"
+                                  : "var(--ink-2)",
+                            cursor: f.fixed ? "default" : "pointer",
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name={`ask.${f.key}`}
+                            value={choice}
+                            defaultChecked={ask === choice}
+                            disabled={f.fixed}
+                            style={{ display: "none" }}
+                          />
+                          {t(`settings.types.ask.${choice}`)}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </form>
+
+            {/* 3. The active statuses, in order. */}
+            <div className="oi-panel" style={{ overflow: "hidden" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "12px 18px",
+                  borderBottom: "1px solid var(--line)",
+                  flexWrap: "wrap",
+                }}
+              >
+                <span style={{ fontFamily: "var(--font-title)", fontSize: 15, fontWeight: 600 }}>
+                  {t("settings.types.statusesTitle")}
+                </span>
+                <span style={{ flex: 1 }} />
+                {editing !== "new" && (
+                  <Link
+                    href={href({ status: "new" })}
+                    className="oi-hover"
+                    data-testid="status-add"
+                    style={{ ...ghostBtn, textDecoration: "none" }}
+                  >
+                    {t("settings.types.addStatus")}
+                  </Link>
+                )}
+                <span style={{ flexBasis: "100%", fontSize: 11.5, color: "var(--ink-3)" }}>
+                  {t("settings.types.statusesHint")}
+                </span>
+              </div>
+              {statuses.map((st, i) => {
+                const open = editing !== "new" && editing?.id === st.id;
+                const inIt = data.inStatus.get(st.id) ?? 0;
+                return (
+                  <div
+                    key={st.id}
+                    data-testid="status-row"
+                    style={{ borderBottom: "1px solid var(--line-2)" }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "10px 18px",
+                        background: open ? "var(--brand-t)" : undefined,
+                      }}
+                    >
+                      <div style={{ display: "flex", flexDirection: "column", gap: 1, width: 14 }}>
+                        {(["up", "down"] as const).map((dir) => {
+                          const edge = dir === "up" ? i === 0 : i === statuses.length - 1;
+                          return (
+                            <form key={dir} action={moveStatus} style={{ display: "contents" }}>
+                              <input type="hidden" name="statusId" value={st.id} />
+                              <input type="hidden" name="typeId" value={type.id} />
+                              <input type="hidden" name="dir" value={dir} />
+                              <button
+                                type="submit"
+                                disabled={edge}
+                                aria-label={dir === "up" ? t("common.previous") : t("common.next")}
+                                style={{
+                                  border: 0,
+                                  background: "transparent",
+                                  color: edge ? "var(--line-2)" : "var(--ink-3)",
+                                  cursor: edge ? "default" : "pointer",
+                                  fontSize: 9,
+                                  lineHeight: 1,
+                                  padding: 0,
+                                }}
+                              >
+                                {dir === "up" ? "▲" : "▼"}
+                              </button>
+                            </form>
+                          );
+                        })}
+                      </div>
+                      <span
+                        style={{
+                          width: 18,
+                          fontSize: 11.5,
+                          color: "var(--ink-3)",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {i + 1}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                          {st.name}
+                          {st.description && (
+                            <span style={{ fontWeight: 400, color: "var(--ink-2)" }}>
+                              {" "}
+                              — {st.description}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 2 }}>
+                          {[
+                            st.updateReminderMinutes
+                              ? t("settings.types.statusMeta.reminder", {
+                                  minutes: st.updateReminderMinutes,
+                                })
+                              : t("settings.types.statusMeta.noReminder"),
+                            st.publicStatus
+                              ? t("settings.types.statusMeta.public", { status: st.publicStatus })
+                              : t("settings.types.statusMeta.notPublic"),
+                            st.countsInMttr
+                              ? t("settings.types.statusMeta.mttr")
+                              : t("settings.types.statusMeta.noMttr"),
+                          ].join(" · ")}
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 11.5, color: "var(--ink-3)", whiteSpace: "nowrap" }}>
+                        {t("settings.types.statusIncidents", { count: inIt })}
+                      </span>
+                      <Link
+                        href={href({ status: open ? undefined : st.id })}
+                        className="oi-hover"
+                        style={{ ...ghostBtn, textDecoration: "none" }}
+                      >
+                        {open ? t("common.close") : t("common.edit")}
+                      </Link>
+                      <form action={deleteStatus}>
+                        <input type="hidden" name="statusId" value={st.id} />
+                        <input type="hidden" name="typeId" value={type.id} />
+                        <button
+                          type="submit"
+                          disabled={inIt > 0 || statuses.length <= 1}
+                          title={
+                            inIt > 0
+                              ? t("settings.types.errorStatusInUse")
+                              : statuses.length <= 1
+                                ? t("settings.types.errorLastStatus")
+                                : t("common.delete")
+                          }
+                          aria-label={t("common.delete")}
+                          className="oi-hover-dang"
+                          style={{
+                            ...ghostBtn,
+                            width: 28,
+                            padding: 0,
+                            justifyContent: "center",
+                            color: inIt > 0 || statuses.length <= 1 ? "var(--line)" : "var(--dang)",
+                            cursor: inIt > 0 || statuses.length <= 1 ? "default" : "pointer",
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </form>
+                    </div>
+                    {open && (
+                      <form
+                        action={saveStatus}
+                        data-testid="status-form"
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                          gap: 12,
+                          padding: "12px 18px 14px 62px",
+                          background: "var(--sunk)",
+                          alignItems: "end",
+                        }}
+                      >
+                        <input type="hidden" name="statusId" value={st.id} />
+                        <input type="hidden" name="typeId" value={type.id} />
+                        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <span style={label}>{t("settings.types.statusName")}</span>
+                          <input
+                            name="name"
+                            defaultValue={st.name}
+                            required
+                            maxLength={60}
+                            className="oi-field"
+                            style={control}
+                          />
+                        </label>
+                        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <span style={label}>{t("settings.types.statusDescription")}</span>
+                          <input
+                            name="description"
+                            defaultValue={st.description ?? ""}
+                            maxLength={200}
+                            className="oi-field"
+                            style={control}
+                          />
+                        </label>
+                        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <span style={label}>{t("settings.types.updateReminder")}</span>
+                          <select
+                            name="updateReminderMinutes"
+                            defaultValue={String(st.updateReminderMinutes ?? "")}
+                            className="oi-field"
+                            style={control}
+                          >
+                            <option value="">{t("incident.update.noReminder")}</option>
+                            {[15, 30, 60, 120].map((m) => (
+                              <option key={m} value={m}>
+                                {t("incident.update.inMinutes", { count: m })}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <span style={label}>{t("settings.types.publicStatus")}</span>
+                          <select
+                            name="publicStatus"
+                            defaultValue={st.publicStatus ?? ""}
+                            className="oi-field"
+                            style={control}
+                          >
+                            <option value="">— ({t("settings.types.publicNone")})</option>
+                            {["investigating", "identified", "monitoring"].map((p) => (
+                              <option key={p} value={p}>
+                                {p}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            fontSize: 12.5,
+                            height: 34,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            name="countsInMttr"
+                            defaultChecked={st.countsInMttr}
+                          />
+                          {t("settings.types.countsInMttr")}
+                        </label>
+                        <button type="submit" className="oi-hover-brand-2" style={brandBtn}>
+                          {t("common.save")}
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                );
+              })}
+              {editing === "new" && (
+                <form
+                  action={addStatus}
+                  data-testid="status-new-form"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "12px 18px",
+                    background: "var(--sunk)",
+                  }}
+                >
+                  <input type="hidden" name="typeId" value={type.id} />
+                  <input
+                    name="name"
+                    required
+                    autoFocus
+                    maxLength={60}
+                    placeholder={t("settings.types.newStatusPlaceholder")}
+                    className="oi-field"
+                    style={{ ...control, maxWidth: 320 }}
+                  />
+                  <button type="submit" className="oi-hover-brand-2" style={brandBtn}>
+                    {t("common.create")}
+                  </button>
+                  <Link
+                    href={href({})}
+                    className="oi-hover"
+                    style={{ ...ghostBtn, textDecoration: "none" }}
+                  >
+                    {t("common.cancel")}
+                  </Link>
+                </form>
+              )}
             </div>
+
+            {/* 4. The post-incident entry rule. */}
+            <form
+              action={savePostIncident}
+              className="oi-panel"
+              style={{
+                padding: "14px 18px",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <input type="hidden" name="typeId" value={type.id} />
+              <span style={{ fontFamily: "var(--font-title)", fontSize: 15, fontWeight: 600 }}>
+                {t("settings.types.postIncidentTitle")}
+              </span>
+              <span style={{ fontSize: 13 }}>{t("settings.types.postIncidentRule")}</span>
+              <select
+                name="rule"
+                defaultValue={
+                  type.postIncidentFromRank === null
+                    ? "never"
+                    : type.postIncidentFromRank === -1
+                      ? "always"
+                      : String(type.postIncidentFromRank)
+                }
+                className="oi-field"
+                style={{ ...control, width: "auto", minWidth: 180 }}
+              >
+                <option value="never">{t("settings.types.postRule.never")}</option>
+                <option value="always">{t("settings.types.postRule.always")}</option>
+                {data.sevs.slice(0, -1).map((sv) => (
+                  <option key={sv.id} value={sv.rank}>
+                    {t("settings.types.postRule.from", { severity: sv.name })}
+                  </option>
+                ))}
+              </select>
+              <button type="submit" className="oi-hover-brand-2" style={brandBtn}>
+                {t("common.save")}
+              </button>
+              <span style={{ flex: 1 }} />
+              <Link href="/app/settings/post-incident" className="oi-link" style={{ fontSize: 12 }}>
+                {t("settings.types.postIncidentFlowLink")}
+              </Link>
+            </form>
           </div>
         </div>
       ) : (

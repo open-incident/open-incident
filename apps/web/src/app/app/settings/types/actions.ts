@@ -2,9 +2,16 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { incidentStatuses, incidentTypes, severities, withTenant } from "@openincident/db";
+import {
+  incidentFields,
+  incidentStatuses,
+  incidentTypes,
+  incidents,
+  severities,
+  withTenant,
+} from "@openincident/db";
 import { recordAudit } from "@/lib/audit";
 import { requireManager } from "@/lib/session";
 
@@ -89,7 +96,7 @@ export async function saveStatus(formData: FormData) {
   });
   revalidatePath("/app/settings/types");
   revalidatePath("/app/incidents");
-  redirect(`/app/settings/types?type=${input.typeId}&node=${input.statusId}&saved=1`);
+  redirect(`/app/settings/types?type=${input.typeId}&saved=1`);
 }
 
 const typeSchema = z.object({
@@ -162,4 +169,280 @@ export async function createType(formData: FormData) {
   revalidatePath("/app/settings/types");
   revalidatePath("/app/incidents/new");
   redirect(`/app/settings/types?type=${created}&saved=1`);
+}
+
+/* ---------- The type itself ---------- */
+
+const typeSheetSchema = z.object({
+  typeId: z.string().uuid(),
+  name: z.string().trim().min(2).max(60),
+  description: z.string().trim().max(200).optional(),
+  teamId: z.string().uuid().or(z.literal("")).optional(),
+});
+
+/** Name, description, who may declare it, whether its incidents start private. */
+export async function saveType(formData: FormData) {
+  const current = await requireManager();
+  const parsed = typeSheetSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect("/app/settings/types?error=invalid");
+  const input = parsed.data;
+  const privateByDefault = formData.get("privateByDefault") === "on";
+  await withTenant(current.tenant.id, async (tx) => {
+    const types = await tx
+      .select()
+      .from(incidentTypes)
+      .where(eq(incidentTypes.tenantId, current.tenant.id));
+    const row = types.find((x) => x.id === input.typeId);
+    if (!row) return;
+    if (types.some((x) => x.id !== row.id && x.name.toLowerCase() === input.name.toLowerCase()))
+      redirect(`/app/settings/types?type=${row.id}&error=duplicate`);
+    await tx
+      .update(incidentTypes)
+      .set({
+        name: input.name,
+        description: input.description || null,
+        // The default type is everyone's: it cannot be narrowed to a team.
+        restrictedToTeamIds: row.isDefault || !input.teamId ? null : [input.teamId],
+        privateByDefault,
+      })
+      .where(eq(incidentTypes.id, row.id));
+    await recordAudit(tx, current, "config", "incident_type.updated", {
+      from: row.name,
+      to: input.name,
+      team: row.isDefault ? null : input.teamId || null,
+      privateByDefault,
+    });
+  });
+  revalidatePath("/app/settings/types");
+  revalidatePath("/app/incidents/new");
+  redirect(`/app/settings/types?type=${input.typeId}&saved=1`);
+}
+
+/** When a resolved incident of this type enters the post-incident flow. */
+export async function savePostIncident(formData: FormData) {
+  const current = await requireManager();
+  const parsed = z
+    .object({ typeId: z.string().uuid(), rule: z.string() })
+    .safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect("/app/settings/types?error=invalid");
+  const { typeId, rule } = parsed.data;
+  // "never" | "always" | "<severity rank>"
+  const fromRank = rule === "never" ? null : rule === "always" ? -1 : Number(rule);
+  if (fromRank !== null && !Number.isInteger(fromRank))
+    redirect(`/app/settings/types?type=${typeId}&error=invalid`);
+  await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(incidentTypes)
+      .where(and(eq(incidentTypes.tenantId, current.tenant.id), eq(incidentTypes.id, typeId)));
+    if (!row) return;
+    await tx
+      .update(incidentTypes)
+      .set({ postIncidentFromRank: fromRank })
+      .where(eq(incidentTypes.id, row.id));
+    await recordAudit(tx, current, "config", "incident_type.post_incident_rule", {
+      type: row.name,
+      rule,
+    });
+  });
+  revalidatePath("/app/settings/types");
+  revalidatePath("/app/settings/post-incident");
+  redirect(`/app/settings/types?type=${typeId}&saved=1`);
+}
+
+/**
+ * What the declaration form asks for this type. One choice per field —
+ * required, optional, not asked — posted as `ask.<key>`. The title is always
+ * asked and always required; the form itself enforces that.
+ */
+export async function saveDeclareForm(formData: FormData) {
+  const current = await requireManager();
+  const typeId = z.string().uuid().parse(formData.get("typeId"));
+  const asks = new Map<string, "required" | "optional" | "off">();
+  for (const [k, v] of formData.entries()) {
+    if (!k.startsWith("ask.")) continue;
+    const choice = String(v);
+    if (choice === "required" || choice === "optional" || choice === "off")
+      asks.set(k.slice(4), choice);
+  }
+  await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(incidentTypes)
+      .where(and(eq(incidentTypes.tenantId, current.tenant.id), eq(incidentTypes.id, typeId)));
+    if (!row) return;
+    // Only keys the form may carry: the four system fields, and the custom
+    // fields that belong to this type or to every type.
+    const fields = await tx
+      .select({ key: incidentFields.key, typeId: incidentFields.incidentTypeId })
+      .from(incidentFields)
+      .where(eq(incidentFields.tenantId, current.tenant.id));
+    const allowed = new Set([
+      "title",
+      "severity",
+      "service",
+      "summary",
+      ...fields.filter((f) => f.typeId === null || f.typeId === typeId).map((f) => f.key),
+    ]);
+    const next = [{ key: "title", required: true }];
+    for (const key of allowed) {
+      if (key === "title") continue;
+      const ask = asks.get(key);
+      if (ask === "required") next.push({ key, required: true });
+      if (ask === "optional") next.push({ key, required: false });
+    }
+    await tx.update(incidentTypes).set({ declareForm: next }).where(eq(incidentTypes.id, row.id));
+    await recordAudit(tx, current, "config", "incident_type.form_updated", {
+      type: row.name,
+      fields: next.map((f) => `${f.key}${f.required ? "*" : ""}`),
+    });
+  });
+  revalidatePath("/app/settings/types");
+  revalidatePath("/app/settings/fields");
+  revalidatePath("/app/incidents/new");
+  redirect(`/app/settings/types?type=${typeId}&saved=1`);
+}
+
+/** Removes a type nobody has used. A type with incidents stays: they point at it. */
+export async function deleteType(formData: FormData) {
+  const current = await requireManager();
+  const typeId = z.string().uuid().parse(formData.get("typeId"));
+  const outcome = await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(incidentTypes)
+      .where(and(eq(incidentTypes.tenantId, current.tenant.id), eq(incidentTypes.id, typeId)));
+    if (!row || row.isDefault) return "refused";
+    const [used] = await tx
+      .select({ n: sql<number>`count(*)`.mapWith(Number) })
+      .from(incidents)
+      .where(and(eq(incidents.tenantId, current.tenant.id), eq(incidents.typeId, typeId)));
+    if ((used?.n ?? 0) > 0) return "in_use";
+    await tx.delete(incidentStatuses).where(eq(incidentStatuses.typeId, row.id));
+    await tx.delete(incidentTypes).where(eq(incidentTypes.id, row.id));
+    await recordAudit(tx, current, "config", "incident_type.deleted", { name: row.name });
+    return "deleted";
+  });
+  revalidatePath("/app/settings/types");
+  revalidatePath("/app/incidents/new");
+  if (outcome === "deleted") redirect("/app/settings/types?saved=1");
+  redirect(`/app/settings/types?type=${typeId}&error=${outcome}`);
+}
+
+/* ---------- The active statuses ---------- */
+
+/** A new status at the end of the type's list. */
+export async function addStatus(formData: FormData) {
+  const current = await requireManager();
+  const parsed = z
+    .object({ typeId: z.string().uuid(), name: z.string().trim().min(1).max(60) })
+    .safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect("/app/settings/types?error=invalid");
+  const { typeId, name } = parsed.data;
+  await withTenant(current.tenant.id, async (tx) => {
+    const [type] = await tx
+      .select()
+      .from(incidentTypes)
+      .where(and(eq(incidentTypes.tenantId, current.tenant.id), eq(incidentTypes.id, typeId)));
+    if (!type) return;
+    const existing = await tx
+      .select({ rank: incidentStatuses.rank })
+      .from(incidentStatuses)
+      .where(eq(incidentStatuses.typeId, typeId));
+    await tx.insert(incidentStatuses).values({
+      tenantId: current.tenant.id,
+      typeId,
+      name,
+      rank: Math.max(-1, ...existing.map((s) => s.rank)) + 1,
+      countsInMttr: true,
+    });
+    await recordAudit(tx, current, "config", "incident_status.created", {
+      type: type.name,
+      name,
+    });
+  });
+  revalidatePath("/app/settings/types");
+  revalidatePath("/app/incidents");
+  redirect(`/app/settings/types?type=${typeId}&saved=1`);
+}
+
+/** Swaps the status with its neighbour; ranks stay dense. */
+export async function moveStatus(formData: FormData) {
+  const current = await requireManager();
+  const parsed = z
+    .object({ statusId: z.string().uuid(), typeId: z.string().uuid(), dir: z.enum(["up", "down"]) })
+    .safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect("/app/settings/types?error=invalid");
+  const { statusId, typeId, dir } = parsed.data;
+  await withTenant(current.tenant.id, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(incidentStatuses)
+      .where(
+        and(eq(incidentStatuses.tenantId, current.tenant.id), eq(incidentStatuses.typeId, typeId)),
+      )
+      .orderBy(asc(incidentStatuses.rank));
+    const i = rows.findIndex((s) => s.id === statusId);
+    const j = dir === "up" ? i - 1 : i + 1;
+    if (i < 0 || j < 0 || j >= rows.length) return;
+    const order = rows.map((s) => s.id);
+    [order[i], order[j]] = [order[j]!, order[i]!];
+    // Park every rank above the range first: (type, rank) is unique.
+    for (const [k, id] of order.entries())
+      await tx
+        .update(incidentStatuses)
+        .set({ rank: 1000 + k })
+        .where(eq(incidentStatuses.id, id));
+    for (const [k, id] of order.entries())
+      await tx.update(incidentStatuses).set({ rank: k }).where(eq(incidentStatuses.id, id));
+    await recordAudit(tx, current, "config", "incident_status.moved", {
+      name: rows[i]!.name,
+      dir,
+    });
+  });
+  revalidatePath("/app/settings/types");
+  redirect(`/app/settings/types?type=${typeId}&saved=1`);
+}
+
+/**
+ * Removes a status no active incident is in. The column is `on delete set
+ * null`, so deleting a status under an incident would leave it with no status
+ * at all; the screen says how many are there and refuses instead.
+ */
+export async function deleteStatus(formData: FormData) {
+  const current = await requireManager();
+  const parsed = z
+    .object({ statusId: z.string().uuid(), typeId: z.string().uuid() })
+    .safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect("/app/settings/types?error=invalid");
+  const { statusId, typeId } = parsed.data;
+  const outcome = await withTenant(current.tenant.id, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(incidentStatuses)
+      .where(
+        and(eq(incidentStatuses.tenantId, current.tenant.id), eq(incidentStatuses.typeId, typeId)),
+      );
+    const row = rows.find((s) => s.id === statusId);
+    if (!row) return "refused";
+    if (rows.length <= 1) return "last_status";
+    const [inIt] = await tx
+      .select({ n: sql<number>`count(*)`.mapWith(Number) })
+      .from(incidents)
+      .where(
+        and(
+          eq(incidents.tenantId, current.tenant.id),
+          eq(incidents.statusId, statusId),
+          eq(incidents.phase, "active"),
+        ),
+      );
+    if ((inIt?.n ?? 0) > 0) return "status_in_use";
+    await tx.delete(incidentStatuses).where(eq(incidentStatuses.id, row.id));
+    await recordAudit(tx, current, "config", "incident_status.deleted", { name: row.name });
+    return "deleted";
+  });
+  revalidatePath("/app/settings/types");
+  revalidatePath("/app/incidents");
+  if (outcome === "deleted") redirect(`/app/settings/types?type=${typeId}&saved=1`);
+  redirect(`/app/settings/types?type=${typeId}&error=${outcome}`);
 }

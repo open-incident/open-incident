@@ -1804,7 +1804,7 @@ export const fr: Dictionary = {
     "Quatre rôles : Propriétaire, Admin, Répondeur, Observateur. RBAC fin, SCIM et SAML arrivent en V2 (édition ee/).",
   "settings.types.title": "Types & cycle de vie",
   "settings.types.subtitle":
-    "chaque type porte son cycle de vie et son formulaire — les sévérités sont partagées",
+    "ce qu'un incident de ce type demande à la déclaration, et les statuts qu'il traverse",
   "settings.types.segTypes": "Types",
   "settings.types.segSeverities": "Sévérités",
   "settings.types.badgeSeeded": "seedé",
@@ -2394,6 +2394,49 @@ export const fr: Dictionary = {
   "settings.types.newTypeNote":
     "Le nouveau type hérite du cycle de vie et du formulaire du type de base — ajustez-les ensuite.",
   "settings.types.errorDuplicate": "Un type porte déjà ce nom.",
+  "settings.types.sectionType": "Le type",
+  "settings.types.typeDescription": "Description",
+  "settings.types.privateByDefault": "Les incidents de ce type démarrent privés",
+  "settings.types.privateHint":
+    "visibles des seuls participants jusqu'à ce qu'un répondeur les ouvre",
+  "settings.types.defaultTypeNote":
+    "Type par défaut : tout le monde peut le déclarer, et il ne peut pas être supprimé.",
+  "settings.types.deleteType": "Supprimer ce type",
+  "settings.types.deleteTypeInUse": {
+    one: "{count} incident porte ce type — il ne peut pas être supprimé.",
+    other: "{count} incidents portent ce type — il ne peut pas être supprimé.",
+  },
+  "settings.types.formTitle": "Formulaire de déclaration",
+  "settings.types.formHint":
+    "Ce que « Déclarer un incident » demande pour ce type. Le titre est toujours demandé.",
+  "settings.types.ask.required": "Obligatoire",
+  "settings.types.ask.optional": "Facultatif",
+  "settings.types.ask.off": "Non demandé",
+  "settings.types.manageFields": "Gérer les champs →",
+  "settings.types.statusesTitle": "Statuts pendant l'incident",
+  "settings.types.statusesHint":
+    "Dans l'ordre : un incident accepté démarre au premier et n'avance que par une mise à jour explicite. Avant, le triage ; après, le post-incident puis la clôture — ces trois phases sont les mêmes pour tous les types.",
+  "settings.types.addStatus": "+ Ajouter un statut",
+  "settings.types.newStatusPlaceholder": "Correctif en cours",
+  "settings.types.statusMeta.reminder": "rappel {minutes} min",
+  "settings.types.statusMeta.noReminder": "sans rappel",
+  "settings.types.statusMeta.public": "public : {status}",
+  "settings.types.statusMeta.notPublic": "non publié",
+  "settings.types.statusMeta.mttr": "compte dans le MTTR",
+  "settings.types.statusMeta.noMttr": "hors MTTR",
+  "settings.types.statusIncidents": { one: "{count} incident", other: "{count} incidents" },
+  "settings.types.errorStatusInUse":
+    "Des incidents sont dans ce statut — déplacez-les avant de le supprimer.",
+  "settings.types.errorLastStatus": "Un type garde au moins un statut.",
+  "settings.types.errorInUse": "Des incidents portent ce type — il ne peut pas être supprimé.",
+  "settings.types.errorRefused": "Cette action n'est pas possible sur ce type.",
+  "settings.types.postIncidentTitle": "Post-incident",
+  "settings.types.postIncidentRule":
+    "Un incident résolu de ce type entre dans le flux post-incident",
+  "settings.types.postRule.never": "jamais",
+  "settings.types.postRule.always": "toujours",
+  "settings.types.postRule.from": "à partir de {severity}",
+  "settings.types.postIncidentFlowLink": "Les tâches du flux →",
   "common.edit": "Modifier",
   "common.next": "Suivant",
   "common.previous": "Précédent",
