@@ -24,6 +24,8 @@ export const en = {
   "common.saving": "Saving…",
   "common.add": "Add",
   "common.apply": "Apply",
+  "common.more": "More actions",
+  "common.why": "Why this setting",
   "common.on": "On",
   "common.off": "Off",
   "common.optional": "optional",
@@ -1755,7 +1757,7 @@ export const en = {
     "Deleting the workspace is done from your subscription — the data is really purged, and the purge is verified.",
   "settings.general.dangerSelfHosted":
     "On a self-hosted instance the workspace is deleted by whoever operates it, with the command below. The purge is real.",
-  "settings.members.title": "Members & roles",
+  "settings.members.title": "Members",
   "settings.members.count": { one: "{count} member", other: "{count} members" },
   "settings.members.pending": {
     one: "{count} pending invitation",
@@ -1777,6 +1779,8 @@ export const en = {
   "settings.members.invitedLine": "Invitation sent {when} · role {role}",
   "settings.members.resend": "Resend",
   "settings.members.revoke": "Revoke",
+  "settings.members.pendingTitle": "Pending invitations",
+  "settings.members.disabledTitle": "Disabled",
   "settings.members.rolesNote":
     "Four roles: Owner, Admin, Responder, Viewer. Fine-grained roles, SCIM and SAML arrive in V2 (ee/ edition).",
   "settings.types.title": "Types & lifecycle",
@@ -3299,7 +3303,7 @@ export const en = {
   "settings.ai.source.incidents": "Incidents and post-mortems",
   "settings.ai.sourceAlways": "always",
   "settings.ai.sources": "Sources the assistant reads",
-  "settings.ai.title": "AI governance",
+  "settings.ai.title": "AI assistant",
   "settings.ai.unconfiguredNote":
     "No inference provider is configured on this instance (AI_API_BASE, AI_MODEL). Every assistant function is shown as unavailable until then; nothing is simulated.",
   "insights.days": { one: "{count} day", other: "{count} days" },
@@ -3403,6 +3407,7 @@ export const en = {
   "heartbeats.resume": "Resume",
   "heartbeats.rotate": "Rotate token",
   "heartbeats.rotateHint": "A new URL; the old one stops working at once",
+  "heartbeats.showUrl": "URL to call",
   "heartbeats.service": "Service",
   "heartbeats.status.down": "down",
   "heartbeats.status.up": "up",

@@ -16,6 +16,8 @@ export const fr: Dictionary = {
   "common.saving": "Enregistrement…",
   "common.add": "Ajouter",
   "common.apply": "Appliquer",
+  "common.more": "Plus d'actions",
+  "common.why": "Pourquoi ce réglage",
   "common.on": "Activée",
   "common.off": "Désactivée",
   "common.optional": "facultatif",
@@ -1774,7 +1776,7 @@ export const fr: Dictionary = {
     "La suppression de l'espace se fait depuis votre abonnement — la purge est réelle, et vérifiée.",
   "settings.general.dangerSelfHosted":
     "Sur une instance auto-hébergée, l'espace est supprimé par qui l'exploite, avec la commande ci-dessous. La purge est réelle.",
-  "settings.members.title": "Membres & rôles",
+  "settings.members.title": "Membres",
   "settings.members.count": { one: "{count} membre", other: "{count} membres" },
   "settings.members.pending": {
     one: "{count} invitation en attente",
@@ -1796,6 +1798,8 @@ export const fr: Dictionary = {
   "settings.members.invitedLine": "Invitation envoyée {when} · rôle {role}",
   "settings.members.resend": "Renvoyer",
   "settings.members.revoke": "Révoquer",
+  "settings.members.pendingTitle": "Invitations en attente",
+  "settings.members.disabledTitle": "Désactivés",
   "settings.members.rolesNote":
     "Quatre rôles : Propriétaire, Admin, Répondeur, Observateur. RBAC fin, SCIM et SAML arrivent en V2 (édition ee/).",
   "settings.types.title": "Types & cycle de vie",
@@ -3344,7 +3348,7 @@ export const fr: Dictionary = {
   "settings.ai.source.incidents": "Incidents et post-mortems",
   "settings.ai.sourceAlways": "toujours",
   "settings.ai.sources": "Sources lues par l'assistant",
-  "settings.ai.title": "Gouvernance IA",
+  "settings.ai.title": "Assistant IA",
   "settings.ai.unconfiguredNote":
     "Aucun fournisseur d'inférence n'est configuré sur cette instance (AI_API_BASE, AI_MODEL). Toutes les fonctions de l'assistant sont affichées indisponibles jusque-là ; rien n'est simulé.",
   "insights.days": { one: "{count} jour", other: "{count} jours" },
@@ -3449,6 +3453,7 @@ export const fr: Dictionary = {
   "heartbeats.resume": "Reprendre",
   "heartbeats.rotate": "Régénérer le jeton",
   "heartbeats.rotateHint": "Une nouvelle URL ; l'ancienne cesse aussitôt de fonctionner",
+  "heartbeats.showUrl": "URL à appeler",
   "heartbeats.service": "Service",
   "heartbeats.status.down": "en panne",
   "heartbeats.status.up": "ok",

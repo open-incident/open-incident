@@ -10,6 +10,7 @@ import {
 } from "@openincident/ai";
 import { isManagerRole } from "@openincident/config";
 import { getT } from "@/i18n/server";
+import { Why } from "@/components/settings/why";
 import { requireMember } from "@/lib/session";
 import { saveAiSettings } from "./actions";
 
@@ -419,15 +420,11 @@ export default async function AiGovernancePage({
                   : t("settings.ai.providerNone")}
               </option>
             </select>
-            <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
-              {t("settings.ai.providerNote")}
-            </div>
-            <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
-              {t("set2.ai.regionNote")}
-            </div>
-            <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
-              {t("set2.ai.retention")}
-            </div>
+            <Why label={t("common.why")}>
+              <p style={{ margin: 0 }}>{t("settings.ai.providerNote")}</p>
+              <p style={{ margin: "6px 0 0" }}>{t("set2.ai.regionNote")}</p>
+              <p style={{ margin: "6px 0 0" }}>{t("set2.ai.retention")}</p>
+            </Why>
           </section>
           <div
             style={{

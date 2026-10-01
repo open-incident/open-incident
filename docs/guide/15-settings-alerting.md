@@ -62,7 +62,7 @@ The first tab of **Settings → Severities & attributes**. Priorities qualify th
 
 **Settings → Rules** holds the exceptions to what your sources already decide. Every source carries three choices of its own — who to page, whether an incident opens, whether recovery closes it — and an alert that matches no rule follows them. That is why a workspace with no rule at all still pages somebody.
 
-Rules are tried **in order** and the **first matching rule wins**. A rule with no condition catches everything it sees, which makes it a default rather than an exception: anything below it never runs for those alerts, and the screen marks it _default_ and says so. A new workspace starts with exactly one, **Every alert**; the arrows on the list reorder them.
+Rules are tried **in order** and the **first matching rule wins**. A rule with no condition catches everything it sees, which makes it a default rather than an exception: anything below it never runs for those alerts, and the screen marks it _default_ and says so. A new workspace starts with exactly one, **Every alert**; the arrows on the list reorder them. Each row carries **Edit** and **Deactivate**; **Duplicate** and **Delete** wait behind the row's **⋯**.
 
 Each rule is edited on a page of its own:
 

@@ -5,6 +5,7 @@ import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
 import { avatarTone, initials } from "@/lib/avatar";
 import { InviteDialog } from "./invite-dialog";
+import { RoleSelect } from "./role-select";
 import { disableMember, resendInvite, revokeInvite, updateRole } from "./actions";
 
 /**
@@ -20,11 +21,11 @@ import { disableMember, resendInvite, revokeInvite, updateRole } from "./actions
 export default async function MembersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; error?: string }>;
+  searchParams: Promise<{ saved?: string; error?: string; disabled?: string }>;
 }) {
   const { tenant, member: me } = await requireMember();
   const t = await getT();
-  const { saved, error } = await searchParams;
+  const { saved, error, disabled: justDisabled } = await searchParams;
   const { rows, roles } = await withTenant(tenant.id, async (tx) => ({
     rows: await tx
       .select()
@@ -39,7 +40,11 @@ export default async function MembersPage({
           .orderBy(asc(customRoles.name))
       : [],
   }));
-  const active = rows.filter((m) => m.status !== "invited");
+  // Three lists, not one: the people who work here, the people who used to,
+  // and the people who have not answered yet. Twenty disabled accounts used to
+  // sit between the active ones, each with a Reactivate button.
+  const active = rows.filter((m) => m.status === "active");
+  const disabled = rows.filter((m) => m.status === "disabled");
   const invited = rows.filter((m) => m.status === "invited");
   const roleLabel = (r: string) =>
     t(`member.role.${r as "owner" | "admin" | "responder" | "viewer"}`);
@@ -54,6 +59,156 @@ export default async function MembersPage({
       : s === "disabled"
         ? { bg: "var(--sunk)", ink: "var(--ink-3)" }
         : { bg: "var(--wait-t)", ink: "var(--wait)" };
+
+  const memberRow = (m: (typeof rows)[number]) => {
+    const tone = avatarTone(m.name);
+    const st = statusTone(m.status);
+    const isMe = m.id === me.id;
+    const canEdit = !isMe && (me.role === "owner" || m.role !== "owner");
+    return (
+      <div
+        key={m.id}
+        data-member-email={m.email}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "11px 16px",
+          borderBottom: "1px solid var(--line-2)",
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: "50%",
+            background: tone.bg,
+            color: tone.ink,
+            display: "grid",
+            placeItems: "center",
+            fontSize: 11,
+            fontWeight: 700,
+            border: `1px solid ${m.role === "owner" ? "var(--brand-b)" : "transparent"}`,
+            flex: "none",
+            opacity: m.status === "disabled" ? 0.5 : 1,
+          }}
+        >
+          {initials(m.name)}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: m.status === "disabled" ? "var(--ink-3)" : "var(--ink)",
+            }}
+          >
+            {m.name}
+            {isMe && (
+              <span style={{ fontWeight: 400, color: "var(--ink-3)" }}>
+                {" "}
+                · {t("settings.members.you")}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{m.email}</div>
+        </div>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "2px 9px",
+            borderRadius: 999,
+            background: st.bg,
+            color: st.ink,
+            fontSize: 10.5,
+            fontWeight: 700,
+          }}
+        >
+          {t(`member.status.${m.status}`)}
+        </span>
+        {m.source !== "ui" && (
+          <span
+            data-testid="member-source"
+            title={t(`member.source.${m.source}`)}
+            style={{
+              padding: "1px 8px",
+              borderRadius: 999,
+              background: "var(--brand-t)",
+              color: "var(--brand)",
+              fontSize: 10.5,
+              fontWeight: 700,
+            }}
+          >
+            {t(`member.source.${m.source}`)}
+          </span>
+        )}
+        {canEdit && m.status !== "disabled" ? (
+          <form action={updateRole} style={{ display: "contents" }}>
+            <input type="hidden" name="memberId" value={m.id} />
+            <RoleSelect
+              name="role"
+              defaultValue={roleValue(m)}
+              label={t("settings.members.roleOf", { name: m.name })}
+              options={[
+                ...(me.role === "owner"
+                  ? ["owner", "admin", "responder", "viewer"]
+                  : ["admin", "responder", "viewer"]
+                ).map((r) => ({ value: r, label: roleLabel(r) })),
+                ...roles.map((r) => ({
+                  value: `custom:${r.id}`,
+                  label: `${r.name} · ${roleLabel(r.base)}`,
+                })),
+              ]}
+            />
+          </form>
+        ) : (
+          <span
+            style={{
+              height: 30,
+              padding: "0 11px",
+              display: "flex",
+              alignItems: "center",
+              fontSize: 12.5,
+              color: "var(--ink-2)",
+              minWidth: 128,
+            }}
+          >
+            {roleLabel(m.role)}
+          </span>
+        )}
+        {canEdit && (
+          <form action={disableMember}>
+            <input type="hidden" name="memberId" value={m.id} />
+            <button
+              type="submit"
+              data-testid="member-disable"
+              className={m.status === "disabled" ? "oi-hover" : "oi-hover-dang"}
+              style={{
+                height: 28,
+                padding: "0 11px",
+                border: "1px solid var(--line)",
+                borderRadius: 8,
+                background: "var(--panel)",
+                fontSize: 11.5,
+                color: m.status === "disabled" ? "var(--ink)" : "var(--dang)",
+                cursor: "pointer",
+              }}
+            >
+              {m.status === "disabled"
+                ? t("settings.members.reactivate")
+                : t("settings.members.disable")}
+            </button>
+          </form>
+        )}
+        <span style={{ fontSize: 11.5, color: "var(--ink-3)", width: 76, textAlign: "right" }}>
+          {m.lastSeenAt ? t.fmt.relative(m.lastSeenAt) : "—"}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -84,131 +239,81 @@ export default async function MembersPage({
         <InviteDialog />
       </div>
       <div className="oi-panel" style={{ overflow: "hidden" }}>
-        {active.map((m) => {
-          const tone = avatarTone(m.name);
-          const st = statusTone(m.status);
-          const isMe = m.id === me.id;
-          const canEdit = !isMe && (me.role === "owner" || m.role !== "owner");
-          return (
-            <div
-              key={m.id}
-              data-member-email={m.email}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "11px 16px",
-                borderBottom: "1px solid var(--line-2)",
-              }}
-            >
-              <span
-                aria-hidden
+        {active.map(memberRow)}
+      </div>
+      {disabled.length > 0 && (
+        <details open={Boolean(justDisabled)} data-testid="members-disabled">
+          <summary
+            style={{
+              cursor: "pointer",
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: "var(--ink-3)",
+              padding: "4px 2px",
+            }}
+          >
+            {t("settings.members.disabledTitle")} · {disabled.length}
+          </summary>
+          <div className="oi-panel" style={{ overflow: "hidden", marginTop: 8 }}>
+            {disabled.map(memberRow)}
+          </div>
+        </details>
+      )}
+      {invited.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <span
+            style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink-3)", padding: "4px 2px" }}
+          >
+            {t("settings.members.pendingTitle")} · {invited.length}
+          </span>
+          <div className="oi-panel" style={{ overflow: "hidden" }}>
+            {invited.map((m) => (
+              <div
+                key={m.id}
+                data-member-email={m.email}
                 style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: "50%",
-                  background: tone.bg,
-                  color: tone.ink,
-                  display: "grid",
-                  placeItems: "center",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  border: `1px solid ${m.role === "owner" ? "var(--brand-b)" : "transparent"}`,
-                  flex: "none",
-                  opacity: m.status === "disabled" ? 0.5 : 1,
-                }}
-              >
-                {initials(m.name)}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: m.status === "disabled" ? "var(--ink-3)" : "var(--ink)",
-                  }}
-                >
-                  {m.name}
-                  {isMe && (
-                    <span style={{ fontWeight: 400, color: "var(--ink-3)" }}>
-                      {" "}
-                      · {t("settings.members.you")}
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{m.email}</div>
-              </div>
-              <span
-                style={{
-                  display: "inline-flex",
+                  display: "flex",
                   alignItems: "center",
-                  gap: 5,
-                  padding: "2px 9px",
-                  borderRadius: 999,
-                  background: st.bg,
-                  color: st.ink,
-                  fontSize: 10.5,
-                  fontWeight: 700,
+                  gap: 12,
+                  padding: "11px 16px",
+                  background: "var(--sunk)",
+                  borderBottom: "1px solid var(--line-2)",
                 }}
               >
-                {t(`member.status.${m.status}`)}
-              </span>
-              {m.source !== "ui" && (
                 <span
-                  data-testid="member-source"
-                  title={t(`member.source.${m.source}`)}
+                  aria-hidden
                   style={{
-                    padding: "1px 8px",
-                    borderRadius: 999,
-                    background: "var(--brand-t)",
-                    color: "var(--brand)",
-                    fontSize: 10.5,
+                    width: 32,
+                    height: 32,
+                    borderRadius: "50%",
+                    border: "1.5px dashed var(--ink-3)",
+                    color: "var(--ink-3)",
+                    display: "grid",
+                    placeItems: "center",
+                    fontSize: 11,
                     fontWeight: 700,
+                    flex: "none",
                   }}
                 >
-                  {t(`member.source.${m.source}`)}
+                  ?
                 </span>
-              )}
-              {canEdit && m.status !== "disabled" ? (
-                <form action={updateRole} style={{ display: "contents" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{m.email}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                    {t("settings.members.invitedLine", {
+                      when: t.fmt.relative(m.createdAt),
+                      role: roleLabel(m.role),
+                    })}
+                  </div>
+                </div>
+                <form action={resendInvite}>
                   <input type="hidden" name="memberId" value={m.id} />
-                  <select
-                    name="role"
-                    defaultValue={roleValue(m)}
-                    aria-label={t("settings.members.roleOf", { name: m.name })}
-                    onChange={undefined}
-                    className="oi-field"
-                    style={{
-                      height: 30,
-                      padding: "0 11px",
-                      border: "1px solid var(--line)",
-                      borderRadius: 8,
-                      fontSize: 12.5,
-                      background: "var(--panel)",
-                      minWidth: 128,
-                      outline: "none",
-                    }}
-                  >
-                    {(me.role === "owner"
-                      ? ["owner", "admin", "responder", "viewer"]
-                      : ["admin", "responder", "viewer"]
-                    ).map((r) => (
-                      <option key={r} value={r}>
-                        {roleLabel(r)}
-                      </option>
-                    ))}
-                    {roles.map((r) => (
-                      <option key={r.id} value={`custom:${r.id}`}>
-                        {r.name} · {roleLabel(r.base)}
-                      </option>
-                    ))}
-                  </select>
                   <button
                     type="submit"
-                    className="oi-hover"
+                    className="oi-hover-edge-fill"
                     style={{
-                      height: 30,
-                      padding: "0 10px",
+                      height: 28,
+                      padding: "0 11px",
                       border: "1px solid var(--line)",
                       borderRadius: 8,
                       background: "var(--panel)",
@@ -217,31 +322,14 @@ export default async function MembersPage({
                       cursor: "pointer",
                     }}
                   >
-                    {t("common.apply")}
+                    {t("settings.members.resend")}
                   </button>
                 </form>
-              ) : (
-                <span
-                  style={{
-                    height: 30,
-                    padding: "0 11px",
-                    display: "flex",
-                    alignItems: "center",
-                    fontSize: 12.5,
-                    color: "var(--ink-2)",
-                    minWidth: 128,
-                  }}
-                >
-                  {roleLabel(m.role)}
-                </span>
-              )}
-              {canEdit && (
-                <form action={disableMember}>
+                <form action={revokeInvite}>
                   <input type="hidden" name="memberId" value={m.id} />
                   <button
                     type="submit"
-                    data-testid="member-disable"
-                    className={m.status === "disabled" ? "oi-hover" : "oi-hover-dang"}
+                    className="oi-hover-dang"
                     style={{
                       height: 28,
                       padding: "0 11px",
@@ -249,104 +337,18 @@ export default async function MembersPage({
                       borderRadius: 8,
                       background: "var(--panel)",
                       fontSize: 11.5,
-                      color: m.status === "disabled" ? "var(--ink)" : "var(--dang)",
+                      color: "var(--dang)",
                       cursor: "pointer",
                     }}
                   >
-                    {m.status === "disabled"
-                      ? t("settings.members.reactivate")
-                      : t("settings.members.disable")}
+                    {t("settings.members.revoke")}
                   </button>
                 </form>
-              )}
-              <span
-                style={{ fontSize: 11.5, color: "var(--ink-3)", width: 76, textAlign: "right" }}
-              >
-                {m.lastSeenAt ? t.fmt.relative(m.lastSeenAt) : "—"}
-              </span>
-            </div>
-          );
-        })}
-        {invited.map((m) => (
-          <div
-            key={m.id}
-            data-member-email={m.email}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              padding: "11px 16px",
-              background: "var(--sunk)",
-              borderBottom: "1px solid var(--line-2)",
-            }}
-          >
-            <span
-              aria-hidden
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                border: "1.5px dashed var(--ink-3)",
-                color: "var(--ink-3)",
-                display: "grid",
-                placeItems: "center",
-                fontSize: 11,
-                fontWeight: 700,
-                flex: "none",
-              }}
-            >
-              ?
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{m.email}</div>
-              <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                {t("settings.members.invitedLine", {
-                  when: t.fmt.relative(m.createdAt),
-                  role: roleLabel(m.role),
-                })}
               </div>
-            </div>
-            <form action={resendInvite}>
-              <input type="hidden" name="memberId" value={m.id} />
-              <button
-                type="submit"
-                className="oi-hover-edge-fill"
-                style={{
-                  height: 28,
-                  padding: "0 11px",
-                  border: "1px solid var(--line)",
-                  borderRadius: 8,
-                  background: "var(--panel)",
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                {t("settings.members.resend")}
-              </button>
-            </form>
-            <form action={revokeInvite}>
-              <input type="hidden" name="memberId" value={m.id} />
-              <button
-                type="submit"
-                className="oi-hover-dang"
-                style={{
-                  height: 28,
-                  padding: "0 11px",
-                  border: "1px solid var(--line)",
-                  borderRadius: 8,
-                  background: "var(--panel)",
-                  fontSize: 11.5,
-                  color: "var(--dang)",
-                  cursor: "pointer",
-                }}
-              >
-                {t("settings.members.revoke")}
-              </button>
-            </form>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
       <div className="oi-note">{t("settings.members.rolesNote")}</div>
     </div>
   );

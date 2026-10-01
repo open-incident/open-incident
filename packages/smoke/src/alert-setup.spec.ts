@@ -139,6 +139,8 @@ test.describe("Alert configuration", () => {
 
     await page.goto("/app/settings/alert-routes");
     const rule = page.getByTestId("route-row").filter({ hasText: ruleName });
+    // Deleting waits behind the row's "more" glyph.
+    await rule.locator("summary").click();
     await rule.getByRole("button", { name: DELETE }).click();
     await expect(rule).toHaveCount(0);
 

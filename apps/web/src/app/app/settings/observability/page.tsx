@@ -3,6 +3,7 @@ import Link from "next/link";
 import { rumApplications, telemetrySettings, withTenant } from "@openincident/db";
 import { isManagerRole } from "@openincident/config";
 import { getT } from "@/i18n/server";
+import { Why } from "@/components/settings/why";
 import { requireMember } from "@/lib/session";
 import { currentOrigin } from "@/lib/tenant";
 import { telemetryInstalled } from "@/lib/telemetry";
@@ -187,7 +188,7 @@ export default async function ObservabilitySettingsPage({
               </label>
             ))}
           </div>
-          <span style={HINT}>{t("settings.telemetry.retentionHint")}</span>
+          <Why label={t("common.why")}>{t("settings.telemetry.retentionHint")}</Why>
         </div>
 
         <div style={CARD}>
@@ -208,7 +209,7 @@ export default async function ObservabilitySettingsPage({
               resize: "vertical",
             }}
           />
-          <span style={HINT}>{t("settings.telemetry.scrubHint")}</span>
+          <Why label={t("common.why")}>{t("settings.telemetry.scrubHint")}</Why>
         </div>
 
         <div style={CARD}>
@@ -227,7 +228,7 @@ export default async function ObservabilitySettingsPage({
               style={{ ...CONTROL, fontFamily: "var(--mono)" }}
             />
           </label>
-          <span style={HINT}>{t("settings.telemetry.budgetHint")}</span>
+          <Why label={t("common.why")}>{t("settings.telemetry.budgetHint")}</Why>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5, maxWidth: 240 }}>
             <span style={LABEL}>{t("settings.telemetry.softCap")}</span>
@@ -243,7 +244,7 @@ export default async function ObservabilitySettingsPage({
               style={{ ...CONTROL, fontFamily: "var(--mono)" }}
             />
           </label>
-          <span style={HINT}>{t("settings.telemetry.softCapHint")}</span>
+          <Why label={t("common.why")}>{t("settings.telemetry.softCapHint")}</Why>
         </div>
 
         <div style={CARD}>

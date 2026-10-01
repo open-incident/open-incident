@@ -359,12 +359,6 @@ export default async function RulesPage({
                     <Link href={`${PAGE}?edit=${r.id}`} className="oi-hover" style={ghost}>
                       {t("common.edit")}
                     </Link>
-                    <form action={duplicateRoute}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <button type="submit" className="oi-hover" style={ghost}>
-                        {t("settings.routes.duplicate")}
-                      </button>
-                    </form>
                     <form action={toggleRoute}>
                       <input type="hidden" name="id" value={r.id} />
                       <button type="submit" className="oi-hover" style={ghost}>
@@ -373,17 +367,34 @@ export default async function RulesPage({
                           : t("settings.routes.deactivate")}
                       </button>
                     </form>
-                    <form action={deleteRoute}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <button
-                        type="submit"
-                        className="oi-hover-dang"
-                        style={iconBtn}
-                        aria-label={t("common.delete")}
+                    {/* Duplicating and deleting are once-a-quarter gestures;
+                        they wait behind one glyph rather than widening every row. */}
+                    <details style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <summary
+                        aria-label={t("common.more")}
+                        title={t("common.more")}
+                        className="oi-hover"
+                        style={{ ...iconBtn, listStyle: "none", display: "inline-flex" }}
                       >
-                        ✕
-                      </button>
-                    </form>
+                        ⋯
+                      </summary>
+                      <form action={duplicateRoute} style={{ display: "contents" }}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <button type="submit" className="oi-hover" style={ghost}>
+                          {t("settings.routes.duplicate")}
+                        </button>
+                      </form>
+                      <form action={deleteRoute} style={{ display: "contents" }}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <button
+                          type="submit"
+                          className="oi-hover-dang"
+                          style={{ ...ghost, color: "var(--dang)" }}
+                        >
+                          {t("common.delete")}
+                        </button>
+                      </form>
+                    </details>
                   </div>
                 )}
               </div>

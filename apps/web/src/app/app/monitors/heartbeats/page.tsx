@@ -211,17 +211,6 @@ export default async function HeartbeatsPage({
                         {hb.active ? t("heartbeats.pause") : t("heartbeats.resume")}
                       </button>
                     </form>
-                    <form action={rotateHeartbeatToken}>
-                      <input type="hidden" name="id" value={hb.id} />
-                      <button
-                        type="submit"
-                        className="oi-hover"
-                        style={ghostBtn}
-                        title={t("heartbeats.rotateHint")}
-                      >
-                        {t("heartbeats.rotate")}
-                      </button>
-                    </form>
                     <form action={deleteHeartbeat}>
                       <input type="hidden" name="id" value={hb.id} />
                       <button
@@ -236,8 +225,44 @@ export default async function HeartbeatsPage({
                   </div>
                 )}
               </div>
+              {/* The URL carries the token: shown on request, open right after
+                  it was created or rotated — the one moment it is needed. */}
               {token && (
-                <CopyField value={heartbeatPingUrl(origin, hb.id, token)} testId="heartbeat-url" />
+                <details open={highlight}>
+                  <summary
+                    style={{
+                      cursor: "pointer",
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      color: "var(--ink-3)",
+                      listStyle: "none",
+                    }}
+                  >
+                    <span aria-hidden style={{ fontSize: 9, marginRight: 5 }}>
+                      ▸
+                    </span>
+                    {t("heartbeats.showUrl")}
+                  </summary>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <CopyField
+                        value={heartbeatPingUrl(origin, hb.id, token)}
+                        testId="heartbeat-url"
+                      />
+                    </div>
+                    <form action={rotateHeartbeatToken}>
+                      <input type="hidden" name="id" value={hb.id} />
+                      <button
+                        type="submit"
+                        className="oi-hover"
+                        style={ghostBtn}
+                        title={t("heartbeats.rotateHint")}
+                      >
+                        {t("heartbeats.rotate")}
+                      </button>
+                    </form>
+                  </div>
+                </details>
               )}
             </div>
           );

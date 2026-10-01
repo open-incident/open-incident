@@ -42,12 +42,12 @@ The **Members** tab, then the three enterprise screens — **Single sign-on**, *
 
 ### Members
 
-![Members & roles](img/settings-members.png "Active members with their role select, the pending invitations, the note on roles.")
+![Members](img/settings-members.png "Active members with their role select; the disabled members folded below, the pending invitations after them.")
 
 - **+ Invite** takes a list of addresses and a shared role; each receives a link valid for seven days. An address that is already a member is skipped.
 - The **role select** on a row saves on change: **Owner** (only an owner appoints one), **Admin**, **Responder**, **Viewer** — and the workspace's custom roles when the enterprise edition is entitled, shown as _Name · base_. You cannot change your own role.
-- **Disable** refuses the member at the door from then on; what they did stays attributed. **Reactivate** reverses it.
-- Pending invitations can be **resent** or **revoked**.
+- **Disable** refuses the member at the door from then on; what they did stays attributed. Disabled members move to a folded **Disabled** list under the active ones — it opens on its own right after you disable someone — where **Reactivate** reverses it.
+- **Pending invitations** sit in their own list and can be **resent** or **revoked**.
 
 Members created by single sign-on or SCIM appear here like the others, with their source recorded. What each role may do is in [Concepts](concepts#roles-and-permissions); custom roles in [Custom roles](custom-roles).
 

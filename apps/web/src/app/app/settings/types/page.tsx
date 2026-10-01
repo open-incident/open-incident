@@ -183,7 +183,23 @@ export default async function TypesPage({
 
       {seg === "types" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "stretch" }}>
+          {/* Up to eight types read well as cards. Past that — a workspace that
+              declares a type per team, or a demo full of them — the cards push
+              the lifecycle below the fold, and a list is what scales. */}
+          <div
+            style={
+              data.types.length > 8
+                ? {
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+                    gap: 6,
+                    maxHeight: 232,
+                    overflowY: "auto",
+                    padding: 2,
+                  }
+                : { display: "flex", gap: 10, flexWrap: "wrap", alignItems: "stretch" }
+            }
+          >
             {data.types.map((ty) => {
               const on = ty.id === type.id;
               const badge = ty.isDefault
@@ -210,20 +226,35 @@ export default async function TypesPage({
                   key={ty.id}
                   href={`/app/settings/types?type=${ty.id}`}
                   className="oi-hover-edge"
-                  style={{
-                    flex: "1 1 210px",
-                    maxWidth: 280,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 5,
-                    padding: "13px 15px",
-                    background: "var(--panel)",
-                    border: `1.5px solid ${on ? "var(--brand)" : "var(--line)"}`,
-                    borderRadius: 13,
-                    boxShadow: on ? "var(--shadow-card-hover)" : "var(--shadow-card)",
-                    textDecoration: "none",
-                    color: "inherit",
-                  }}
+                  style={
+                    data.types.length > 8
+                      ? {
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "7px 10px",
+                          background: on ? "var(--brand-t)" : "var(--panel)",
+                          border: `1px solid ${on ? "var(--brand)" : "var(--line)"}`,
+                          borderRadius: 9,
+                          textDecoration: "none",
+                          color: "inherit",
+                          minWidth: 0,
+                        }
+                      : {
+                          flex: "1 1 210px",
+                          maxWidth: 280,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 5,
+                          padding: "13px 15px",
+                          background: "var(--panel)",
+                          border: `1.5px solid ${on ? "var(--brand)" : "var(--line)"}`,
+                          borderRadius: 13,
+                          boxShadow: on ? "var(--shadow-card-hover)" : "var(--shadow-card)",
+                          textDecoration: "none",
+                          color: "inherit",
+                        }
+                  }
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 14, fontWeight: 600 }}>{ty.name}</span>
@@ -240,15 +271,19 @@ export default async function TypesPage({
                       {badge.l}
                     </span>
                   </div>
-                  <div style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.45 }}>
-                    {ty.description}
-                  </div>
+                  {data.types.length <= 8 && (
+                    <div style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.45 }}>
+                      {ty.description}
+                    </div>
+                  )}
                   <div
                     style={{
                       fontSize: 11,
                       color: "var(--ink-3)",
                       fontVariantNumeric: "tabular-nums",
-                      marginTop: "auto",
+                      marginTop: data.types.length > 8 ? 0 : "auto",
+                      marginLeft: data.types.length > 8 ? "auto" : 0,
+                      whiteSpace: "nowrap",
                     }}
                   >
                     {t("settings.types.incidentCount", { count: data.counts.get(ty.id) ?? 0 })}

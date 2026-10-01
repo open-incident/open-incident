@@ -110,6 +110,7 @@ export async function disableMember(formData: FormData) {
   const current = await requireManager();
   const memberId = z.string().uuid().parse(formData.get("memberId"));
   if (memberId === current.member.id) return;
+  let becameDisabled = false;
   await withTenant(current.tenant.id, async (tx) => {
     const [target] = await tx
       .select()
@@ -117,6 +118,7 @@ export async function disableMember(formData: FormData) {
       .where(and(eq(members.tenantId, current.tenant.id), eq(members.id, memberId)));
     if (!target || (target.role === "owner" && current.member.role !== "owner")) return;
     const next = target.status === "disabled" ? "active" : "disabled";
+    becameDisabled = next === "disabled";
     await tx.update(members).set({ status: next }).where(eq(members.id, target.id));
     await recordAudit(
       tx,
@@ -127,6 +129,9 @@ export async function disableMember(formData: FormData) {
     );
   });
   revalidatePath("/app/settings/members");
+  // The row moves to the folded "Disabled" list; open it so the person who
+  // just clicked sees where it went.
+  if (becameDisabled) redirect("/app/settings/members?disabled=1");
 }
 
 export async function resendInvite(formData: FormData) {

@@ -118,7 +118,7 @@ The fastest way to create one is not this form at all: narrow the [explorer](tel
 
 A cron that stops running emits nothing, and nothing is exactly what no check can see. **Monitors → Heartbeats** is the feature for it: each heartbeat has a URL, your job calls it when it finishes (any method, no body), and silence for longer than the interval plus the grace raises an alert through the workspace's **Heartbeats** source — same routes, same priorities, same escalation. The next ping resolves it, and nothing is alerted before the first ping ever arrives.
 
-Rotating a heartbeat's token issues a new URL and stops the old one working at once.
+The URL carries the token, so each row shows it on request — **URL to call** — and opens it on its own right after the heartbeat is created or its token rotated. Rotating the token issues a new URL and stops the old one working at once.
 
 > The **Incoming request** monitor type describes the same idea and is not finished: it has no URL to call. Use a heartbeat.
 

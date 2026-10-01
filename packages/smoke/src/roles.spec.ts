@@ -32,13 +32,13 @@ test.describe("Custom roles", () => {
       .locator("option", { hasText: "Alerting admin" })
       .getAttribute("value");
     expect(option).toMatch(/^custom:/);
-    await select.selectOption(option!);
-    // The role form posts without navigating: wait for the action itself.
+    // The select saves on change and the form posts without navigating:
+    // wait for the action itself.
     await Promise.all([
       page.waitForResponse(
         (r) => r.request().method() === "POST" && r.url().includes("/app/settings/members"),
       ),
-      karim.locator('button[type="submit"]').first().click(),
+      select.selectOption(option!),
     ]);
     await page.reload();
     await expect(karim.locator("select")).toHaveValue(option!);
@@ -74,12 +74,11 @@ test.describe("Custom roles", () => {
     // Back to a built-in role: the role can go.
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/settings/members");
-    await karim.locator("select").selectOption("responder");
     await Promise.all([
       page.waitForResponse(
         (r) => r.request().method() === "POST" && r.url().includes("/app/settings/members"),
       ),
-      karim.locator('button[type="submit"]').first().click(),
+      karim.locator("select").selectOption("responder"),
     ]);
     await page.reload();
     await expect(karim.locator("select")).toHaveValue("responder");

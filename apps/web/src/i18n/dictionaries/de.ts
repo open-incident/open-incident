@@ -15,6 +15,8 @@ export const de: Dictionary = {
   "common.saving": "Wird gespeichert…",
   "common.add": "Hinzufügen",
   "common.apply": "Übernehmen",
+  "common.more": "Weitere Aktionen",
+  "common.why": "Warum diese Einstellung",
   "common.on": "An",
   "common.off": "Aus",
   "common.optional": "optional",
@@ -1780,7 +1782,7 @@ export const de: Dictionary = {
     "Der Arbeitsbereich wird über Ihr Abonnement gelöscht — die Daten werden wirklich gelöscht, und die Löschung wird geprüft.",
   "settings.general.dangerSelfHosted":
     "Auf einer selbst gehosteten Instanz löscht die betreibende Person den Arbeitsbereich mit dem Befehl unten. Die Löschung ist echt.",
-  "settings.members.title": "Mitglieder & Rollen",
+  "settings.members.title": "Mitglieder",
   "settings.members.count": { one: "{count} Mitglied", other: "{count} Mitglieder" },
   "settings.members.pending": {
     one: "{count} offene Einladung",
@@ -1802,6 +1804,8 @@ export const de: Dictionary = {
   "settings.members.invitedLine": "Einladung gesendet {when} · Rolle {role}",
   "settings.members.resend": "Erneut senden",
   "settings.members.revoke": "Zurückziehen",
+  "settings.members.pendingTitle": "Offene Einladungen",
+  "settings.members.disabledTitle": "Deaktiviert",
   "settings.members.rolesNote":
     "Vier Rollen: Eigentümer, Admin, Responder, Beobachter. Feingranulare Rollen, SCIM und SAML kommen in V2 (Edition ee/).",
   "settings.types.title": "Typen & Lebenszyklus",
@@ -3369,7 +3373,7 @@ export const de: Dictionary = {
   "settings.ai.source.incidents": "Vorfälle und Post-mortems",
   "settings.ai.sourceAlways": "immer",
   "settings.ai.sources": "Quellen, die der Assistent liest",
-  "settings.ai.title": "KI-Governance",
+  "settings.ai.title": "KI-Assistent",
   "settings.ai.unconfiguredNote":
     "Auf dieser Instanz ist kein Inferenzanbieter konfiguriert (AI_API_BASE, AI_MODEL). Bis dahin werden alle Assistentenfunktionen als nicht verfügbar angezeigt; nichts wird simuliert.",
   "insights.days": { one: "{count} Tag", other: "{count} Tage" },
@@ -3476,6 +3480,7 @@ export const de: Dictionary = {
   "heartbeats.resume": "Fortsetzen",
   "heartbeats.rotate": "Token rotieren",
   "heartbeats.rotateHint": "Eine neue URL; die alte funktioniert sofort nicht mehr",
+  "heartbeats.showUrl": "Aufzurufende URL",
   "heartbeats.service": "Dienst",
   "heartbeats.status.down": "ausgefallen",
   "heartbeats.status.up": "ok",
