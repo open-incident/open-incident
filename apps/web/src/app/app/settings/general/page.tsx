@@ -35,41 +35,43 @@ export default async function GeneralSettingsPage({
     color: "var(--ink-3)",
   };
   const control: React.CSSProperties = {
-    height: 38,
-    padding: "0 12px",
+    height: 36,
+    padding: "0 11px",
     border: "1px solid var(--line)",
-    borderRadius: 10,
+    borderRadius: 9,
     outline: "none",
-    fontSize: 13.5,
+    fontSize: 13,
     background: "var(--panel)",
     width: "100%",
   };
   const smallBtn: React.CSSProperties = {
-    height: 30,
-    padding: "0 10px",
+    height: 28,
+    padding: "0 11px",
     border: "1px solid var(--line)",
     borderRadius: 8,
     background: "var(--panel)",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    color: "inherit",
+    textDecoration: "none",
     display: "inline-flex",
     alignItems: "center",
     gap: 6,
-    fontSize: 12,
-    color: "inherit",
+    whiteSpace: "nowrap",
   };
 
   return (
     <form
       action={saveGeneral}
       className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 860 }}
+      style={{ display: "flex", flexDirection: "column", gap: 14 }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div className="oi-head">
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("settings.general.title")}
         </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-          {t("settings.general.subtitle")}
-        </span>
+        <span className="oi-subtitle">{t("settings.general.subtitle")}</span>
         <span style={{ flex: 1 }} />
         {saved === "1" && (
           <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
@@ -83,7 +85,7 @@ export default async function GeneralSettingsPage({
             padding: "0 14px",
             borderRadius: 9,
             background: "var(--brand)",
-            color: "#fff",
+            color: "var(--on-brand)",
             border: 0,
             fontSize: 12.5,
             fontWeight: 600,

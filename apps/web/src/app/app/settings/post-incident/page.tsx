@@ -121,17 +121,12 @@ export default async function PostIncidentSettingsPage({
   };
 
   return (
-    <div
-      className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 920 }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="oi-head">
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("settings.postIncident.title")}
         </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-          {t("settings.postIncident.subtitle")}
-        </span>
+        <span className="oi-subtitle">{t("settings.postIncident.subtitle")}</span>
         <span style={{ flex: 1 }} />
         {saved === "1" && (
           <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
@@ -217,8 +212,8 @@ export default async function PostIncidentSettingsPage({
             maxLength={40}
             className="oi-field"
             style={{
-              height: 34,
-              padding: "0 12px",
+              height: 36,
+              padding: "0 11px",
               border: "1px solid var(--line)",
               borderRadius: 9,
               outline: "none",
@@ -234,12 +229,12 @@ export default async function PostIncidentSettingsPage({
             type="submit"
             className="oi-hover"
             style={{
-              height: 30,
-              padding: "0 12px",
+              height: 32,
+              padding: "0 13px",
               border: "1px solid var(--line)",
-              borderRadius: 8,
+              borderRadius: 9,
               background: "var(--panel)",
-              fontSize: 12,
+              fontSize: 12.5,
               fontWeight: 600,
               cursor: "pointer",
             }}

@@ -110,16 +110,8 @@ export default async function AiGovernancePage({
       className="oi-rise"
       style={{ display: "flex", flexDirection: "column", gap: 14 }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <h1
-          style={{
-            margin: 0,
-            fontFamily: "var(--title)",
-            fontSize: 21,
-            fontWeight: 600,
-            letterSpacing: "-.015em",
-          }}
-        >
+      <div className="oi-head">
+        <h1 className="oi-title" style={{ margin: 0 }}>
           {t("settings.ai.title")}
         </h1>
         <span
@@ -152,7 +144,7 @@ export default async function AiGovernancePage({
               padding: "0 14px",
               borderRadius: 9,
               background: "var(--brand)",
-              color: "#fff",
+              color: "var(--on-brand)",
               border: 0,
               fontSize: 12.5,
               fontWeight: 600,

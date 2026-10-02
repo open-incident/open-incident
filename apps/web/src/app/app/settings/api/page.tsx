@@ -76,22 +76,24 @@ export default async function ApiSettingsPage({
     border: "1px solid var(--line)",
     borderRadius: 8,
     background: "var(--panel)",
-    display: "flex",
-    alignItems: "center",
-    fontSize: 11.5,
+    fontSize: 12,
+    fontWeight: 600,
     cursor: "pointer",
+    color: "inherit",
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    whiteSpace: "nowrap",
   };
 
   return (
-    <div
-      className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 1060 }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="oi-head">
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("settings.api.title")}
         </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("settings.api.subtitle")}</span>
+        <span className="oi-subtitle">{t("settings.api.subtitle")}</span>
       </div>
       <div
         style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}

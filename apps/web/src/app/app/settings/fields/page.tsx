@@ -46,17 +46,12 @@ export default async function FieldsPage({
     );
 
   return (
-    <div
-      className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 920 }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="oi-head">
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("settings.fields.title")}
         </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-          {t("settings.fields.subtitle")}
-        </span>
+        <span className="oi-subtitle">{t("settings.fields.subtitle")}</span>
         <span style={{ flex: 1 }} />
         {saved === "1" && (
           <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
@@ -155,12 +150,13 @@ export default async function FieldsPage({
                   type="submit"
                   className="oi-hover-dang"
                   style={{
-                    height: 26,
-                    padding: "0 10px",
+                    height: 28,
+                    padding: "0 11px",
                     border: "1px solid var(--line)",
-                    borderRadius: 7,
+                    borderRadius: 8,
                     background: "var(--panel)",
-                    fontSize: 11,
+                    fontSize: 12,
+                    fontWeight: 600,
                     color: "var(--dang)",
                     cursor: "pointer",
                   }}

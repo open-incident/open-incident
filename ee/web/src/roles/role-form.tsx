@@ -61,7 +61,7 @@ export function RoleForm({
           mode === "create"
             ? {
                 alignSelf: "flex-start",
-                height: 34,
+                height: 32,
                 padding: "0 14px",
                 borderRadius: 9,
                 background: "var(--brand)",
@@ -172,7 +172,7 @@ export function RoleForm({
           type="submit"
           data-testid="role-save"
           style={{
-            height: 34,
+            height: 32,
             padding: "0 16px",
             borderRadius: 9,
             background: "var(--brand)",
@@ -190,7 +190,7 @@ export function RoleForm({
           onClick={() => setOpen(false)}
           className="oi-hover"
           style={{
-            height: 34,
+            height: 32,
             padding: "0 13px",
             border: "1px solid var(--line)",
             borderRadius: 9,

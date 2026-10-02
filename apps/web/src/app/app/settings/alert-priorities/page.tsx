@@ -72,7 +72,7 @@ export default async function AlertSeveritiesPage({
     border: "1px solid var(--line)",
     borderRadius: 9,
     outline: "none",
-    fontSize: 12.5,
+    fontSize: 13,
     background: "var(--panel)",
     width: "100%",
   };
@@ -87,23 +87,12 @@ export default async function AlertSeveritiesPage({
 
   return (
     <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 320 }}>
-          <h1
-            style={{
-              margin: 0,
-              fontFamily: "var(--title)",
-              fontSize: 21,
-              fontWeight: 600,
-              letterSpacing: "-.015em",
-            }}
-          >
-            {t("set2.sev.title")}
-          </h1>
-          <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 4, lineHeight: 1.5 }}>
-            {t("set2.sev.subtitle")}
-          </div>
-        </div>
+      <div className="oi-head">
+        <h1 className="oi-title" style={{ margin: 0 }}>
+          {t("set2.sev.title")}
+        </h1>
+        <span className="oi-subtitle">{t("set2.sev.subtitle")}</span>
+        <span style={{ flex: 1 }} />
         {q.saved === "1" && (
           <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
             {t("common.saved")}
@@ -274,10 +263,10 @@ export default async function AlertSeveritiesPage({
                     href={`/app/settings/alert-priorities?edit=${p.id}`}
                     className="oi-hover"
                     style={{
-                      height: 26,
-                      padding: "0 10px",
+                      height: 28,
+                      padding: "0 11px",
                       border: "1px solid var(--line)",
-                      borderRadius: 7,
+                      borderRadius: 8,
                       display: "flex",
                       alignItems: "center",
                       fontSize: 11,
@@ -298,7 +287,7 @@ export default async function AlertSeveritiesPage({
                         width: 26,
                         height: 26,
                         border: "1px solid var(--line)",
-                        borderRadius: 7,
+                        borderRadius: 8,
                         background: "var(--panel)",
                         color: "var(--dang)",
                         cursor: "pointer",

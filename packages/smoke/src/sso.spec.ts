@@ -31,6 +31,13 @@ test.describe("Single sign-on", () => {
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/settings/sso");
     await expect(page.getByTestId("ee-unavailable")).toHaveCount(0);
+    // A run that stopped halfway leaves its connection behind, and two on one
+    // domain are refused: start by clearing it.
+    const stale = page.getByTestId("sso-row").filter({ hasText: "Smoke IdP" });
+    if (await stale.count()) {
+      await stale.getByTestId("sso-remove").click();
+      await page.waitForURL(/removed=1/);
+    }
 
     // An OIDC connection: discovery runs against the mock at creation.
     await page.getByTestId("sso-add").click();
@@ -105,12 +112,14 @@ test.describe("Single sign-on", () => {
     expect(xml).toContain("EntityDescriptor");
     expect(xml).toContain("/api/auth/sso/saml2/sp/acs/");
 
-    // Removal: the button leaves the sign-in page.
+    // Removal: the buttons leave the sign-in page, and the workspace is as found.
     await samlRow.getByTestId("sso-remove").click();
+    await page.waitForURL(/removed=1/);
+    await row.getByTestId("sso-remove").click();
     await page.waitForURL(/removed=1/);
     await expect(
       page.getByTestId("sso-row").filter({ hasText: /Smoke IdP|Mock SAML/ }),
-    ).toHaveCount(1);
+    ).toHaveCount(0);
   });
 });
 

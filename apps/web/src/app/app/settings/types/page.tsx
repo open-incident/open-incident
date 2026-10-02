@@ -116,17 +116,17 @@ export default async function TypesPage({
     color: "var(--ink-3)",
   };
   const control: React.CSSProperties = {
-    height: 34,
+    height: 36,
     padding: "0 11px",
     border: "1px solid var(--line)",
     borderRadius: 9,
     outline: "none",
-    fontSize: 12.5,
+    fontSize: 13,
     background: "var(--panel)",
     width: "100%",
   };
   const ghostBtn: React.CSSProperties = {
-    height: 30,
+    height: 28,
     padding: "0 11px",
     border: "1px solid var(--line)",
     borderRadius: 8,
@@ -135,19 +135,27 @@ export default async function TypesPage({
     fontWeight: 600,
     cursor: "pointer",
     color: "inherit",
+    textDecoration: "none",
     display: "inline-flex",
     alignItems: "center",
+    gap: 6,
+    whiteSpace: "nowrap",
   };
   const brandBtn: React.CSSProperties = {
-    height: 30,
-    padding: "0 13px",
-    borderRadius: 8,
+    height: 32,
+    padding: "0 14px",
+    borderRadius: 9,
     background: "var(--brand)",
     color: "var(--on-brand)",
     border: 0,
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: 600,
     cursor: "pointer",
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    whiteSpace: "nowrap",
   };
 
   const teamRows = await withTenant(tenant.id, (tx) =>
@@ -159,17 +167,12 @@ export default async function TypesPage({
   );
 
   return (
-    <div
-      className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 1080 }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="oi-head">
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("settings.types.title")}
         </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-          {t("settings.types.subtitle")}
-        </span>
+        <span className="oi-subtitle">{t("settings.types.subtitle")}</span>
         <span style={{ flex: 1 }} />
         {params.saved === "1" && (
           <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
@@ -982,7 +985,7 @@ export default async function TypesPage({
                             padding: "0 16px",
                             borderRadius: 9,
                             background: "var(--brand)",
-                            color: "#fff",
+                            color: "var(--on-brand)",
                             border: 0,
                             fontSize: 12.5,
                             fontWeight: 600,

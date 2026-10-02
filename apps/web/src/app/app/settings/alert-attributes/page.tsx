@@ -7,13 +7,14 @@ import { attributeCoverage } from "@/lib/alerting-setup";
 import { deleteAttribute, moveAttribute, saveAttribute } from "./actions";
 
 const control: React.CSSProperties = {
-  height: 34,
-  padding: "0 10px",
+  height: 36,
+  padding: "0 11px",
   border: "1px solid var(--line)",
   borderRadius: 9,
-  background: "var(--panel)",
-  fontSize: 13,
   outline: "none",
+  fontSize: 13,
+  background: "var(--panel)",
+  width: "100%",
 };
 const label: React.CSSProperties = {
   fontSize: 11,
@@ -23,7 +24,7 @@ const label: React.CSSProperties = {
   color: "var(--ink-3)",
 };
 const btn: React.CSSProperties = {
-  height: 30,
+  height: 28,
   padding: "0 11px",
   border: "1px solid var(--line)",
   borderRadius: 8,
@@ -32,6 +33,10 @@ const btn: React.CSSProperties = {
   fontWeight: 600,
   cursor: "pointer",
   color: "inherit",
+  textDecoration: "none",
+  display: "inline-flex",
+  alignItems: "center",
+  whiteSpace: "nowrap",
 };
 const icon: React.CSSProperties = {
   ...btn,
@@ -80,17 +85,12 @@ export default async function AlertAttributesPage({
     data.sources.filter((s) => s.mappings.some((m) => m.attribute === key));
 
   return (
-    <div
-      className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="oi-head">
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("settings.attributes.title")}
         </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-          {t("settings.attributes.subtitle")}
-        </span>
+        <span className="oi-subtitle">{t("settings.attributes.subtitle")}</span>
         <span style={{ flex: 1 }} />
         {saved && (
           <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>

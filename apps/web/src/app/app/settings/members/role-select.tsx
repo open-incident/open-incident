@@ -27,11 +27,11 @@ export function RoleSelect({
       onChange={(e) => e.currentTarget.form?.requestSubmit()}
       className="oi-field"
       style={{
-        height: 30,
+        height: 28,
         padding: "0 11px",
         border: "1px solid var(--line)",
         borderRadius: 8,
-        fontSize: 12.5,
+        fontSize: 12,
         background: "var(--panel)",
         minWidth: 128,
         outline: "none",

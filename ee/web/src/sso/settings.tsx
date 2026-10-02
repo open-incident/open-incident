@@ -34,12 +34,12 @@ export function SsoSettings({
   const errorText = (code: string | undefined) =>
     code === "lockout" ? t("ee.sso.error.lockout") : t("ee.sso.error.invalid");
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 760 }}>
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div>
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("ee.sso.title")}
         </h1>
-        <p style={{ margin: "6px 0 0", fontSize: 13.5, color: "var(--ink-2)", lineHeight: 1.55 }}>
+        <p className="oi-lead" style={{ marginTop: 6 }}>
           {t("ee.sso.lead")}
         </p>
       </div>

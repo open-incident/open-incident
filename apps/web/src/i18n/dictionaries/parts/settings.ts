@@ -70,8 +70,7 @@ const en = {
 
   /* ---------- Alert severities ---------- */
   "set2.sev.title": "Alert severities",
-  "set2.sev.subtitle":
-    "P1 and P2 wake people up. P3 and P4 wait for working hours. The mapping to incident severity is a default — change it when promoting.",
+  "set2.sev.subtitle": "P1 and P2 wake people; P3 and P4 wait for working hours",
   "set2.sev.wakes": "wakes people up",
   "set2.sev.waits": "waits for working hours",
   "set2.sev.opensAs": "opens as {severity}",
@@ -193,8 +192,7 @@ const fr = {
 
   /* ---------- Sévérités d'alerte ---------- */
   "set2.sev.title": "Sévérités d'alerte",
-  "set2.sev.subtitle":
-    "P1 et P2 réveillent. P3 et P4 attendent les heures ouvrées. La correspondance vers la sévérité d'incident est un défaut — changez-la à la promotion.",
+  "set2.sev.subtitle": "P1 et P2 réveillent ; P3 et P4 attendent les heures ouvrées",
   "set2.sev.wakes": "réveille",
   "set2.sev.waits": "attend les heures ouvrées",
   "set2.sev.opensAs": "ouvre en {severity}",
@@ -314,8 +312,7 @@ const de = {
 
   /* ---------- Alarm-Schweregrade ---------- */
   "set2.sev.title": "Alarm-Schweregrade",
-  "set2.sev.subtitle":
-    "P1 und P2 wecken Menschen. P3 und P4 warten auf die Arbeitszeit. Die Zuordnung zum Vorfall-Schweregrad ist eine Vorgabe — ändern Sie sie beim Hochstufen.",
+  "set2.sev.subtitle": "P1 und P2 wecken; P3 und P4 warten auf die Arbeitszeit",
   "set2.sev.wakes": "weckt Menschen",
   "set2.sev.waits": "wartet auf die Arbeitszeit",
   "set2.sev.opensAs": "öffnet als {severity}",

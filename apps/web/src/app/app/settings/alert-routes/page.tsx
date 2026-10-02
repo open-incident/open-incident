@@ -18,18 +18,19 @@ import { RouteEditor } from "./route-editor";
 const PAGE = "/app/settings/alert-routes";
 
 const ghost: React.CSSProperties = {
-  height: 26,
-  padding: "0 10px",
+  height: 28,
+  padding: "0 11px",
   border: "1px solid var(--line)",
-  borderRadius: 7,
+  borderRadius: 8,
   background: "var(--panel)",
-  display: "inline-flex",
-  alignItems: "center",
-  fontSize: 11.5,
+  fontSize: 12,
   fontWeight: 600,
   cursor: "pointer",
   color: "inherit",
   textDecoration: "none",
+  display: "inline-flex",
+  alignItems: "center",
+  whiteSpace: "nowrap",
 };
 const iconBtn: React.CSSProperties = {
   ...ghost,
@@ -94,19 +95,11 @@ export default async function RulesPage({
 
   return (
     <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <h1
-          style={{
-            margin: 0,
-            fontFamily: "var(--title)",
-            fontSize: 21,
-            fontWeight: 600,
-            letterSpacing: "-.015em",
-          }}
-        >
+      <div className="oi-head">
+        <h1 className="oi-title" style={{ margin: 0 }}>
           {t("set2.rules.title")}
         </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("set2.rules.subtitle")}</span>
+        <span className="oi-subtitle">{t("set2.rules.subtitle")}</span>
         <span style={{ flex: 1 }} />
         {saved && (
           <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>

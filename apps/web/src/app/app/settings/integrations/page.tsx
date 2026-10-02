@@ -492,53 +492,55 @@ export default async function IntegrationsPage({
     color: "var(--ink-3)",
   };
   const control: React.CSSProperties = {
-    height: 38,
-    padding: "0 12px",
+    height: 36,
+    padding: "0 11px",
     border: "1px solid var(--line)",
-    borderRadius: 10,
+    borderRadius: 9,
     outline: "none",
     fontSize: 13,
     background: "var(--panel)",
     width: "100%",
   };
   const brandBtn: React.CSSProperties = {
-    height: 34,
-    padding: "0 16px",
+    height: 32,
+    padding: "0 14px",
     borderRadius: 9,
     background: "var(--brand)",
-    color: "#fff",
+    color: "var(--on-brand)",
     border: 0,
-    display: "inline-flex",
-    alignItems: "center",
     fontSize: 12.5,
     fontWeight: 600,
     cursor: "pointer",
     textDecoration: "none",
-  };
-  const ghostBtn: React.CSSProperties = {
-    height: 34,
-    padding: "0 13px",
-    border: "1px solid var(--line)",
-    borderRadius: 9,
-    background: "var(--panel)",
     display: "inline-flex",
     alignItems: "center",
-    fontSize: 12.5,
+    gap: 6,
+    whiteSpace: "nowrap",
+  };
+  const ghostBtn: React.CSSProperties = {
+    height: 28,
+    padding: "0 11px",
+    border: "1px solid var(--line)",
+    borderRadius: 8,
+    background: "var(--panel)",
+    fontSize: 12,
+    fontWeight: 600,
     cursor: "pointer",
     color: "inherit",
     textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    whiteSpace: "nowrap",
   };
 
   return (
-    <div
-      className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 1060 }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="oi-head">
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("settings.integrations.title")}
         </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+        <span className="oi-subtitle">
           {t("settings.integrations.subtitle", { count: connected })}
         </span>
         <span style={{ flex: 1 }} />
@@ -564,11 +566,11 @@ export default async function IntegrationsPage({
           placeholder={t("settings.integrations.search")}
           className="oi-field"
           style={{
-            height: 34,
+            height: 36,
             padding: "0 12px",
             background: "var(--panel)",
             border: "1px solid var(--line)",
-            borderRadius: 10,
+            borderRadius: 9,
             width: 270,
             fontSize: 13,
           }}

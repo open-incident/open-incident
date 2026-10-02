@@ -24,12 +24,12 @@ export function ScimSettings({
   const { t } = deps;
   if (!deps.entitled) return <>{deps.unavailable}</>;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 760 }}>
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div>
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("ee.scim.title")}
         </h1>
-        <p style={{ margin: "6px 0 0", fontSize: 13.5, color: "var(--ink-2)", lineHeight: 1.55 }}>
+        <p className="oi-lead" style={{ marginTop: 6 }}>
           {t("ee.scim.lead")}
         </p>
       </div>

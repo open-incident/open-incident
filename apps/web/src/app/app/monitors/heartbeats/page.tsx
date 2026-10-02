@@ -75,17 +75,17 @@ export default async function HeartbeatsPage({
     color: "var(--ink-3)",
   };
   const control: React.CSSProperties = {
-    height: 38,
-    padding: "0 12px",
+    height: 36,
+    padding: "0 11px",
     border: "1px solid var(--line)",
-    borderRadius: 10,
+    borderRadius: 9,
     outline: "none",
-    fontSize: 13.5,
+    fontSize: 13,
     background: "var(--panel)",
     width: "100%",
   };
   const ghostBtn: React.CSSProperties = {
-    height: 30,
+    height: 28,
     padding: "0 11px",
     border: "1px solid var(--line)",
     borderRadius: 8,
@@ -97,13 +97,15 @@ export default async function HeartbeatsPage({
     textDecoration: "none",
     display: "inline-flex",
     alignItems: "center",
+    gap: 6,
+    whiteSpace: "nowrap",
   };
   const brandBtn: React.CSSProperties = {
-    height: 34,
+    height: 32,
     padding: "0 14px",
     borderRadius: 9,
     background: "var(--brand)",
-    color: "#fff",
+    color: "var(--on-brand)",
     border: 0,
     fontSize: 12.5,
     fontWeight: 600,
@@ -111,6 +113,8 @@ export default async function HeartbeatsPage({
     textDecoration: "none",
     display: "inline-flex",
     alignItems: "center",
+    gap: 6,
+    whiteSpace: "nowrap",
   };
   const down = data.rows.filter((r) => r.hb.status === "down").length;
 
@@ -135,11 +139,11 @@ export default async function HeartbeatsPage({
           ]}
         />
       </Suspense>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div className="oi-head">
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("heartbeats.title")}
         </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+        <span className="oi-subtitle">
           {data.rows.length === 0
             ? t("heartbeats.subtitleEmpty")
             : down > 0

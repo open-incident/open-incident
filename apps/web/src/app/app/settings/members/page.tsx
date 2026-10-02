@@ -211,15 +211,12 @@ export default async function MembersPage({
   };
 
   return (
-    <div
-      className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 920 }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="oi-head">
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("settings.members.title")}
         </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+        <span className="oi-subtitle">
           {t("settings.members.count", { count: active.length })}
           {invited.length > 0
             ? ` · ${t("settings.members.pending", { count: invited.length })}`

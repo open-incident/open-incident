@@ -208,15 +208,12 @@ export default async function BillingPage({
       : t("billing.requiresControlPlane");
 
   return (
-    <div
-      className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 980 }}
-    >
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div>
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("billing.title")}
         </h1>
-        <p style={{ margin: "6px 0 0", fontSize: 13.5, color: "var(--ink-2)", maxWidth: 720 }}>
+        <p className="oi-lead" style={{ marginTop: 6 }}>
           {t("billing.lead")}
         </p>
       </div>

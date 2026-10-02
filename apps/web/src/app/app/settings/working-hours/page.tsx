@@ -67,7 +67,7 @@ export default async function WorkingHoursPage({
     border: "1px solid var(--line)",
     borderRadius: 9,
     outline: "none",
-    fontSize: 12.5,
+    fontSize: 13,
     background: "var(--panel)",
     width: "100%",
   };
@@ -81,17 +81,12 @@ export default async function WorkingHoursPage({
     return `${daysText} · ${s.startTime} – ${s.endTime} · ${s.timezone}`;
   };
   return (
-    <div
-      className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 860 }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="oi-head">
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("settings.hours.title")}
         </h1>
-        <span style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-          {t("settings.hours.subtitle")}
-        </span>
+        <span className="oi-subtitle">{t("settings.hours.subtitle")}</span>
         <span style={{ flex: 1 }} />
         {q.saved === "1" && (
           <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
@@ -111,7 +106,7 @@ export default async function WorkingHoursPage({
             padding: "0 14px",
             borderRadius: 9,
             background: "var(--brand)",
-            color: "#fff",
+            color: "var(--on-brand)",
             display: "flex",
             alignItems: "center",
             fontSize: 12.5,
@@ -163,7 +158,7 @@ export default async function WorkingHoursPage({
                 borderRadius: 8,
                 display: "flex",
                 alignItems: "center",
-                fontSize: 11.5,
+                fontSize: 12,
                 fontWeight: 600,
                 color: "inherit",
                 textDecoration: "none",
@@ -397,7 +392,7 @@ export default async function WorkingHoursPage({
                   padding: "0 16px",
                   borderRadius: 9,
                   background: "var(--brand)",
-                  color: "#fff",
+                  color: "var(--on-brand)",
                   border: 0,
                   fontSize: 12.5,
                   fontWeight: 600,
