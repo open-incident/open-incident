@@ -96,8 +96,10 @@ test.describe("Settings — Response", () => {
     await page.locator('form[data-testid="type-form"] button[type=submit]').click();
     await page.waitForURL(/settings\/types\?type=/);
     await expect(page.getByText(name).first()).toBeVisible();
-    // Its statuses are the base's: the lifecycle strip lists the same active statuses.
-    await expect(page.getByText(/Surveillance|Monitoring|Beobachtung/).first()).toBeVisible();
+    // Its statuses are the base's: the status list carries the same active statuses.
+    await expect(
+      page.getByTestId("status-row").filter({ hasText: /Surveillance|Monitoring|Beobachtung/ }),
+    ).toHaveCount(1);
     await page.goto("/app/incidents/new");
     await expect(page.locator('select[name="typeId"] option', { hasText: name })).toHaveCount(1);
     await signOut(page);

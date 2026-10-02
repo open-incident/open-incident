@@ -637,29 +637,35 @@ export const de: Dictionary = {
   "settings.nav.observability": "Telemetrie",
   "settings.telemetry.intro":
     "Wie lange dieser Workspace behält, was seine Dienste senden, was vor dem Schreiben geschwärzt wird, und ob ein auftauchender Fehler von sich aus meldet.",
+  "settings.telemetry.regressionsShort":
+    "Eine Ausnahme, die auftaucht oder zurückkehrt, löst von selbst einen Alarm aus.",
+  "settings.telemetry.budgetShort":
+    "Die Obergrenze an unterschiedlichen Reihen und das Tageskontingent.",
+  "settings.telemetry.scrubShort": "Ein Ausdruck pro Zeile, ersetzt bevor etwas geschrieben wird.",
+  "settings.telemetry.retentionShort": "In Tagen; danach löscht die Datenbank selbst.",
   "settings.telemetry.notInstalled":
     "Diese Instanz hat keinen Spaltenspeicher, es wird also noch nichts aufbewahrt. Diese Einstellungen gelten, sobald ClickHouse gestartet ist — der Telemetrie-Bildschirm nennt den Befehl.",
   "settings.telemetry.saved": "Gespeichert.",
   "settings.telemetry.invalid": "Ein Wert lag außerhalb des Bereichs, es wurde nichts gespeichert.",
   "settings.telemetry.badRegex":
     "„{rule}“ ist kein gültiger regulärer Ausdruck, es wurde nichts gespeichert. Eine Regel, die nicht kompiliert, wird bei der Aufnahme verworfen — Sie hätten geglaubt, etwas sei geschwärzt, obwohl es das nicht war.",
-  "settings.telemetry.retention": "WIE LANGE ES BLEIBT",
+  "settings.telemetry.retention": "Aufbewahrung",
   "settings.telemetry.logs": "Logs",
   "settings.telemetry.traces": "Traces",
   "settings.telemetry.metrics": "Metriken",
   "settings.telemetry.retentionHint":
     "In Tagen. Alles Ältere löscht der Spaltenspeicher selbst, es wird nicht archiviert — es gibt keinen Kaltspeicher zum Zurückholen. Metriken stehen länger, weil sie pro Zeile weniger kosten und über die Zeit mehr aussagen.",
-  "settings.telemetry.scrub": "WAS GESCHWÄRZT WIRD",
+  "settings.telemetry.scrub": "Schwärzung",
   "settings.telemetry.scrubHint":
     "Ein regulärer Ausdruck pro Zeile, bei der Aufnahme durch [redacted] ersetzt — vor jedem Schreiben, denn eine beim Lesen angewandte Regel hätte das Geheimnis bereits gespeichert. Sie kommen zu den Geheimnis-Erkennern hinzu, die nie optional sind.",
-  "settings.telemetry.budget": "KARDINALITÄTSBUDGET",
+  "settings.telemetry.budget": "Kardinalitätsbudget",
   "settings.telemetry.series": "Verschiedene Reihen",
   "settings.telemetry.budgetHint":
     "Ein falsch beschrifteter Zähler — eine Benutzer-ID in einem Label — macht aus einer Reihe eine Million und bremst den Speicher für alle. Oberhalb dieser Grenze werden neue Reihen abgelehnt und gezählt, während bestehende weiterlaufen: funktionierende Dashboards funktionieren weiter, während der Fehler gesucht wird. Leer bedeutet der Instanzwert von 50 000.",
   "settings.telemetry.softCap": "Tageslimit (GB)",
   "settings.telemetry.softCapHint":
     "Ein weiches Limit, und weich ist der ganze Entwurf: darüber werden Logs und Traces ausgedünnt statt abgeschnitten, damit die Ansichten weiter antworten, während jemand entscheidet. Fehler werden nie ausgedünnt, und ein Trace wird ganz oder gar nicht behalten — ein Wasserfall mit Lücken liest sich als Beweis und ist keiner. Der behaltene Anteil sinkt im Lauf des Tages: wer das Zehnfache sendet, speichert etwa das Dreifache, nicht das Zehnfache. Leer bedeutet kein Limit.",
-  "settings.telemetry.regressionsTitle": "WANN EIN FEHLER EINE NACHRICHT IST",
+  "settings.telemetry.regressionsTitle": "Wann ein Fehler eine Nachricht ist",
   "settings.telemetry.seeExceptions": "Ausnahmegruppen ansehen →",
   "services.calls": "Ruft auf",
   "services.calledBy": "Aufgerufen von",
@@ -1765,6 +1771,11 @@ export const de: Dictionary = {
   "settings.soonResponse": "Meilenstein Reaktion",
   "settings.soonInsights": "Meilenstein Berichte",
   "settings.general.title": "Allgemein & Marke",
+  "settings.general.brandHint":
+    "Logo und Akzentfarbe, auf der Statusseite, in E-Mails und auf Avataren.",
+  "settings.general.identityHint":
+    "Name, Sprache und Standard-Zeitzone des Arbeitsbereichs — auf der Statusseite und in E-Mails wiederverwendet.",
+  "settings.general.identityTitle": "Identität",
   "settings.general.subtitle":
     "Identität des Arbeitsbereichs — auf der Statusseite und in E-Mails wiederverwendet",
   "settings.general.name": "Name des Arbeitsbereichs",
@@ -2030,6 +2041,12 @@ export const de: Dictionary = {
   "settings.fields.errorInvalid":
     "Prüfen Sie das Formular: Der API-Name besteht aus Kleinbuchstaben, Ziffern und Unterstrichen.",
   "settings.postIncident.title": "Post-Incident-Ablauf",
+  "settings.postIncident.tasksHint":
+    "Was ein gelöster Vorfall liefern muss, bevor er geschlossen wird. Eine Aufgabe wird angelegt oder entfernt; nichts zu speichern.",
+  "settings.postIncident.tasksTitle": "Die Aufgaben der zwei Phasen",
+  "settings.postIncident.termSectionHint":
+    "Wie Ihr Arbeitsbereich das Dokument nennt — überall verwendet.",
+  "settings.postIncident.termTitle": "Das Wort",
   "settings.postIncident.subtitle":
     "zwei Phasen, ihre Aufgaben und das Wort, das der Workspace für sein Post-Mortem verwendet",
   "settings.postIncident.phaseTitle": "Phase {n} · {name}",
@@ -3416,6 +3433,11 @@ export const de: Dictionary = {
   "settings.ai.sourceAlways": "immer",
   "settings.ai.sources": "Quellen, die der Assistent liest",
   "settings.ai.title": "KI-Assistent",
+  "settings.ai.providerHint": "Der vom Betreiber dieser Instanz konfigurierte Endpunkt.",
+  "settings.ai.sourcesHint": "Was der Assistent liest, um zu antworten.",
+  "settings.ai.boundariesHint": "Was den Arbeitsbereich verlässt, und was nie.",
+  "settings.ai.capsHint":
+    "Jede Fähigkeit lässt sich einzeln abschalten; der Hauptschalter stoppt alles.",
   "settings.ai.unconfiguredNote":
     "Auf dieser Instanz ist kein Inferenzanbieter konfiguriert (AI_API_BASE, AI_MODEL). Bis dahin werden alle Assistentenfunktionen als nicht verfügbar angezeigt; nichts wird simuliert.",
   "insights.days": { one: "{count} Tag", other: "{count} Tage" },

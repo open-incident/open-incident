@@ -4,6 +4,7 @@ import { rumApplications, telemetrySettings, withTenant } from "@openincident/db
 import { isManagerRole } from "@openincident/config";
 import { getT } from "@/i18n/server";
 import { Why } from "@/components/settings/why";
+import { SaveBar, Section } from "@/components/settings/form";
 import { requireMember } from "@/lib/session";
 import { currentOrigin } from "@/lib/tenant";
 import { telemetryInstalled } from "@/lib/telemetry";
@@ -112,45 +113,13 @@ export default async function ObservabilitySettingsPage({
         </div>
       )}
 
-      {q.saved && (
-        <div
-          role="status"
-          style={{
-            ...CARD,
-            padding: "10px 14px",
-            borderColor: "var(--ok)",
-            background: "var(--ok-t)",
-            color: "var(--ok)",
-            fontSize: 12.5,
-          }}
+      <form action={saveObservabilitySettings} style={{ display: "flex", flexDirection: "column" }}>
+        <Section
+          n={1}
+          title={t("settings.telemetry.retention")}
+          hint={t("settings.telemetry.retentionShort")}
+          more={<Why label={t("common.why")}>{t("settings.telemetry.retentionHint")}</Why>}
         >
-          {t("settings.telemetry.saved")}
-        </div>
-      )}
-      {q.error && (
-        <div
-          role="alert"
-          data-testid="observability-error"
-          style={{
-            ...CARD,
-            padding: "10px 14px",
-            borderColor: "var(--dang)",
-            background: "var(--dang-t)",
-            color: "var(--dang)",
-            fontSize: 12.5,
-          }}
-        >
-          {q.error === "regex"
-            ? t("settings.telemetry.badRegex", { rule: q.rule ?? "" })
-            : q.error === "origin"
-              ? t("settings.rum.badOrigin", { rule: q.rule ?? "" })
-              : t("settings.telemetry.invalid")}
-        </div>
-      )}
-
-      <form action={saveObservabilitySettings} style={{ display: "contents" }}>
-        <div style={CARD}>
-          <span className="oi-eyebrow">{t("settings.telemetry.retention")}</span>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
             {(
               [
@@ -181,11 +150,14 @@ export default async function ObservabilitySettingsPage({
               </label>
             ))}
           </div>
-          <Why label={t("common.why")}>{t("settings.telemetry.retentionHint")}</Why>
-        </div>
+        </Section>
 
-        <div style={CARD}>
-          <span className="oi-eyebrow">{t("settings.telemetry.scrub")}</span>
+        <Section
+          n={2}
+          title={t("settings.telemetry.scrub")}
+          hint={t("settings.telemetry.scrubShort")}
+          more={<Why label={t("common.why")}>{t("settings.telemetry.scrubHint")}</Why>}
+        >
           <textarea
             name="scrubRules"
             rows={5}
@@ -202,11 +174,19 @@ export default async function ObservabilitySettingsPage({
               resize: "vertical",
             }}
           />
-          <Why label={t("common.why")}>{t("settings.telemetry.scrubHint")}</Why>
-        </div>
+        </Section>
 
-        <div style={CARD}>
-          <span className="oi-eyebrow">{t("settings.telemetry.budget")}</span>
+        <Section
+          n={3}
+          title={t("settings.telemetry.budget")}
+          hint={t("settings.telemetry.budgetShort")}
+          more={
+            <Why label={t("common.why")}>
+              <p style={{ margin: 0 }}>{t("settings.telemetry.budgetHint")}</p>
+              <p style={{ margin: "6px 0 0" }}>{t("settings.telemetry.softCapHint")}</p>
+            </Why>
+          }
+        >
           <label style={{ display: "flex", flexDirection: "column", gap: 5, maxWidth: 240 }}>
             <span style={LABEL}>{t("settings.telemetry.series")}</span>
             <input
@@ -221,7 +201,6 @@ export default async function ObservabilitySettingsPage({
               style={{ ...CONTROL, fontFamily: "var(--mono)" }}
             />
           </label>
-          <Why label={t("common.why")}>{t("settings.telemetry.budgetHint")}</Why>
 
           <label style={{ display: "flex", flexDirection: "column", gap: 5, maxWidth: 240 }}>
             <span style={LABEL}>{t("settings.telemetry.softCap")}</span>
@@ -237,11 +216,13 @@ export default async function ObservabilitySettingsPage({
               style={{ ...CONTROL, fontFamily: "var(--mono)" }}
             />
           </label>
-          <Why label={t("common.why")}>{t("settings.telemetry.softCapHint")}</Why>
-        </div>
+        </Section>
 
-        <div style={CARD}>
-          <span className="oi-eyebrow">{t("settings.telemetry.regressionsTitle")}</span>
+        <Section
+          n={4}
+          title={t("settings.telemetry.regressionsTitle")}
+          hint={t("settings.telemetry.regressionsShort")}
+        >
           <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13 }}>
             <input
               type="checkbox"
@@ -277,29 +258,23 @@ export default async function ObservabilitySettingsPage({
               {t("settings.telemetry.seeExceptions")}
             </Link>
           </span>
-        </div>
+        </Section>
 
         {manages && (
-          <div style={{ display: "flex" }}>
-            <button
-              type="submit"
-              data-testid="observability-save"
-              className="oi-hover-brand-2"
-              style={{
-                height: 32,
-                padding: "0 14px",
-                borderRadius: 9,
-                background: "var(--brand)",
-                color: "var(--on-brand)",
-                border: 0,
-                fontSize: 12.5,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              {t("common.save")}
-            </button>
-          </div>
+          <SaveBar
+            label={t("common.save")}
+            testId="observability-save"
+            status={q.saved ? t("settings.telemetry.saved") : undefined}
+            error={
+              q.error
+                ? q.error === "regex"
+                  ? t("settings.telemetry.badRegex", { rule: q.rule ?? "" })
+                  : q.error === "origin"
+                    ? t("settings.rum.badOrigin", { rule: q.rule ?? "" })
+                    : t("settings.telemetry.invalid")
+                : undefined
+            }
+          />
         )}
       </form>
 
@@ -308,10 +283,12 @@ export default async function ObservabilitySettingsPage({
         created and deleted, not a value that is saved, and putting it inside
         would make "Save" mean two different things.
       */}
-      <div style={CARD} data-testid="rum-applications">
-        <span className="oi-eyebrow">{t("settings.rum.title")}</span>
-        <span style={HINT}>{t("settings.rum.intro")}</span>
-
+      <Section
+        n={5}
+        title={t("settings.rum.title")}
+        hint={t("settings.rum.intro")}
+        testId="rum-applications"
+      >
         {q.created && (
           <div
             style={{
@@ -540,7 +517,7 @@ export default async function ObservabilitySettingsPage({
           </form>
         )}
         <span style={HINT}>{t("settings.rum.originsHint")}</span>
-      </div>
+      </Section>
     </div>
   );
 }

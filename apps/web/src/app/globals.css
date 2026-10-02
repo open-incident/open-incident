@@ -296,6 +296,78 @@ button {
   cursor: default;
 }
 
+/* Settings form as a document: numbered sections, explanation left, fields right. */
+.oi-section {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 32px;
+  padding: 24px 0;
+  border-top: 1px solid var(--line-2);
+  align-items: start;
+}
+
+.oi-section:first-of-type {
+  border-top: 0;
+  padding-top: 6px;
+}
+
+.oi-section-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.oi-section-n {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+}
+
+.oi-section-title {
+  margin: 0;
+  font-family: var(--font-title);
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.oi-section-hint {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.oi-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* The one Save of a settings form: sticks to the bottom while the form is on screen. */
+.oi-savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--canvas) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+@media (max-width: 960px) {
+  .oi-section {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
 /* Field box of the administration — 36px, radius 9, 13px. Pair with .oi-field for focus. */
 .oi-control {
   height: 36px;

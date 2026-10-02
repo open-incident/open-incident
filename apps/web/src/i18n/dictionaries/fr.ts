@@ -633,29 +633,34 @@ export const fr: Dictionary = {
   "settings.nav.observability": "Télémétrie",
   "settings.telemetry.intro":
     "Combien de temps ce workspace garde ce que ses services envoient, ce qui est caviardé avant que quoi que ce soit ne soit écrit, et si un bug qui apparaît déclenche une alerte de lui-même.",
+  "settings.telemetry.regressionsShort":
+    "Une exception qui apparaît ou revient lève une alerte d'elle-même.",
+  "settings.telemetry.budgetShort": "Le plafond de séries distinctes et le quota quotidien.",
+  "settings.telemetry.scrubShort": "Une expression par ligne, remplacée avant toute écriture.",
+  "settings.telemetry.retentionShort": "En jours ; au-delà, la base supprime elle-même.",
   "settings.telemetry.notInstalled":
     "Cette instance n’a pas de base colonne : rien n’est encore conservé. Ces réglages sont ce qu’elle fera une fois ClickHouse démarré — l’écran Télémétrie donne la commande.",
   "settings.telemetry.saved": "Enregistré.",
   "settings.telemetry.invalid": "Une des valeurs était hors bornes : rien n’a été enregistré.",
   "settings.telemetry.badRegex":
     "« {rule} » n’est pas une expression régulière valide : rien n’a été enregistré. Une règle qui ne compile pas est écartée à l’ingestion, ce qui vous aurait laissé croire que quelque chose était caviardé alors que non.",
-  "settings.telemetry.retention": "COMBIEN DE TEMPS C’EST GARDÉ",
+  "settings.telemetry.retention": "Durée de conservation",
   "settings.telemetry.logs": "Logs",
   "settings.telemetry.traces": "Traces",
   "settings.telemetry.metrics": "Métriques",
   "settings.telemetry.retentionHint":
     "En jours. Tout ce qui est plus ancien est supprimé par la base elle-même, pas archivé — il n’y a pas de stockage froid à réhydrater. Les métriques ont un défaut plus long : elles coûtent moins par ligne et disent davantage dans la durée.",
-  "settings.telemetry.scrub": "CE QUI EST CAVIARDÉ",
+  "settings.telemetry.scrub": "Caviardage",
   "settings.telemetry.scrubHint":
     "Une expression régulière par ligne, remplacée par [redacted] à l’ingestion — avant toute écriture, car une règle appliquée à la lecture aurait déjà stocké le secret. Elles s’ajoutent aux détecteurs de secrets, qui ne sont jamais optionnels.",
-  "settings.telemetry.budget": "BUDGET DE CARDINALITÉ",
+  "settings.telemetry.budget": "Budget de cardinalité",
   "settings.telemetry.series": "Séries distinctes",
   "settings.telemetry.budgetHint":
     "Un compteur mal étiqueté — un identifiant d’utilisateur dans un label — transforme une série en un million et ralentit la base pour tout le monde. Au-delà de ce plafond, les nouvelles séries sont refusées et comptées tandis que les existantes continuent de passer : les dashboards qui marchaient continuent de marcher pendant qu’on cherche l’erreur. Vide : le défaut de l’instance, 50 000.",
   "settings.telemetry.softCap": "Quota quotidien (Go)",
   "settings.telemetry.softCapHint":
     "Un quota souple, et c’est tout le principe : au-delà, les logs et les traces sont éclaircis plutôt que coupés, donc les écrans continuent de répondre pendant qu’on décide quoi faire. Les erreurs ne sont jamais éclaircies, et une trace est gardée entière ou pas du tout — une cascade trouée se lit comme une preuve et n’en est pas une. La part conservée baisse à mesure que la journée avance : un espace qui envoie dix fois ce quota en stocke environ trois fois, pas dix. Vide : pas de quota.",
-  "settings.telemetry.regressionsTitle": "QUAND UN BUG EST UNE NOUVELLE",
+  "settings.telemetry.regressionsTitle": "Quand un bug est une nouvelle",
   "settings.telemetry.seeExceptions": "Voir les groupes d’exceptions →",
   "services.calls": "Appelle",
   "services.calledBy": "Appelé par",
@@ -1760,6 +1765,11 @@ export const fr: Dictionary = {
   "settings.soonResponse": "jalon réponse",
   "settings.soonInsights": "jalon rapports",
   "settings.general.title": "Général & marque",
+  "settings.general.brandHint":
+    "Le logo et la couleur d'accent, sur la page de statut, les emails et les avatars.",
+  "settings.general.identityHint":
+    "Le nom, la langue et le fuseau par défaut de l'espace — repris sur la page de statut et dans les emails.",
+  "settings.general.identityTitle": "Identité",
   "settings.general.subtitle": "identité de l'espace — reprise sur la status page et les emails",
   "settings.general.name": "Nom de l'espace",
   "settings.general.slug": "Slug · immuable",
@@ -2022,6 +2032,12 @@ export const fr: Dictionary = {
   "settings.fields.errorInvalid":
     "Vérifiez le formulaire : le nom API est en minuscules, chiffres et tirets bas.",
   "settings.postIncident.title": "Flux post-incident",
+  "settings.postIncident.tasksHint":
+    "Ce qu'un incident résolu doit produire avant d'être clos. Une tâche se crée ou se retire ; rien à enregistrer.",
+  "settings.postIncident.tasksTitle": "Les tâches des deux phases",
+  "settings.postIncident.termSectionHint":
+    "Comment votre espace appelle le document — repris partout.",
+  "settings.postIncident.termTitle": "Le mot",
   "settings.postIncident.subtitle":
     "deux phases, leurs tâches, et le mot que l'espace emploie pour son post-mortem",
   "settings.postIncident.phaseTitle": "Phase {n} · {name}",
@@ -3392,6 +3408,11 @@ export const fr: Dictionary = {
   "settings.ai.sourceAlways": "toujours",
   "settings.ai.sources": "Sources lues par l'assistant",
   "settings.ai.title": "Assistant IA",
+  "settings.ai.providerHint": "Le point d'accès configuré par l'exploitant de l'instance.",
+  "settings.ai.sourcesHint": "Ce que l'assistant lit pour répondre.",
+  "settings.ai.boundariesHint": "Ce qui sort de l'espace, et ce qui n'en sort jamais.",
+  "settings.ai.capsHint":
+    "Chaque capacité se coupe séparément ; l'interrupteur général arrête tout.",
   "settings.ai.unconfiguredNote":
     "Aucun fournisseur d'inférence n'est configuré sur cette instance (AI_API_BASE, AI_MODEL). Toutes les fonctions de l'assistant sont affichées indisponibles jusque-là ; rien n'est simulé.",
   "insights.days": { one: "{count} jour", other: "{count} jours" },

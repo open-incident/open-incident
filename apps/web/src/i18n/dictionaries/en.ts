@@ -630,29 +630,34 @@ export const en = {
   "settings.nav.observability": "Telemetry",
   "settings.telemetry.intro":
     "How long this workspace keeps what its services send, what is redacted before any of it is written, and whether a bug appearing raises an alert on its own.",
+  "settings.telemetry.regressionsShort":
+    "An exception that appears or comes back raises an alert on its own.",
+  "settings.telemetry.budgetShort": "The ceiling on distinct series, and the daily quota.",
+  "settings.telemetry.scrubShort": "One expression per line, replaced before anything is written.",
+  "settings.telemetry.retentionShort": "In days; past it, the database deletes on its own.",
   "settings.telemetry.notInstalled":
     "This instance has no column store, so nothing is being kept yet. These settings are what it will do once ClickHouse is started — the Telemetry screen has the command.",
   "settings.telemetry.saved": "Saved.",
   "settings.telemetry.invalid": "One of the values was out of range and nothing was saved.",
   "settings.telemetry.badRegex":
     "“{rule}” is not a valid regular expression, so nothing was saved. A rule that does not compile is dropped at ingestion, which would have left you believing something was redacted when it was not.",
-  "settings.telemetry.retention": "HOW LONG IT IS KEPT",
+  "settings.telemetry.retention": "Retention",
   "settings.telemetry.logs": "Logs",
   "settings.telemetry.traces": "Traces",
   "settings.telemetry.metrics": "Metrics",
   "settings.telemetry.retentionHint":
     "In days. Everything older is deleted by the column store itself, not archived — there is no cold storage to rehydrate from. Metrics default to longer because they cost less per row and say more over time.",
-  "settings.telemetry.scrub": "WHAT IS REDACTED",
+  "settings.telemetry.scrub": "Redaction",
   "settings.telemetry.scrubHint":
     "One regular expression per line, replaced by [redacted] at ingestion — before anything is written, because a rule applied at read time would already have stored the secret. These are on top of the secret detectors, which are never optional.",
-  "settings.telemetry.budget": "CARDINALITY BUDGET",
+  "settings.telemetry.budget": "Cardinality budget",
   "settings.telemetry.series": "Distinct series",
   "settings.telemetry.budgetHint":
     "One mislabelled counter — a user id in a label — turns a single series into a million and slows the store for everyone. Past this ceiling new series are refused and counted while existing ones keep flowing, so the dashboards that were working keep working while the mistake is found. Empty means the instance default of 50 000.",
   "settings.telemetry.softCap": "Daily cap (GB)",
   "settings.telemetry.softCapHint":
     "A soft cap, and soft is the whole design: past it logs and traces are thinned rather than cut off, so the screens keep answering while somebody decides what to do. Errors are never thinned, and a trace is kept whole or not at all — a waterfall with holes in it reads as evidence and is not. The share kept falls as the day goes on, so a workspace sending ten times this stores about three times it rather than ten. Empty means no cap.",
-  "settings.telemetry.regressionsTitle": "WHEN A BUG IS NEWS",
+  "settings.telemetry.regressionsTitle": "When a bug is news",
   "settings.telemetry.seeExceptions": "See the exception groups →",
   "services.calls": "Calls",
   "services.calledBy": "Called by",
@@ -1741,6 +1746,11 @@ export const en = {
   "settings.soonResponse": "response milestone",
   "settings.soonInsights": "reports milestone",
   "settings.general.title": "General & brand",
+  "settings.general.brandHint":
+    "The logo and the accent colour, on the status page, in emails and on avatars.",
+  "settings.general.identityHint":
+    "The workspace's name, language and default timezone — reused on the status page and in emails.",
+  "settings.general.identityTitle": "Identity",
   "settings.general.subtitle": "the workspace's identity — reused on the status page and in emails",
   "settings.general.name": "Workspace name",
   "settings.general.slug": "Slug · immutable",
@@ -2002,6 +2012,12 @@ export const en = {
   "settings.fields.errorInvalid":
     "Check the form: the API name is lowercase letters, digits and underscores.",
   "settings.postIncident.title": "Post-incident flow",
+  "settings.postIncident.tasksHint":
+    "What a resolved incident must produce before it is closed. A task is created or removed; nothing to save.",
+  "settings.postIncident.tasksTitle": "The tasks of the two phases",
+  "settings.postIncident.termSectionHint":
+    "What your workspace calls the document — used everywhere.",
+  "settings.postIncident.termTitle": "The word",
   "settings.postIncident.subtitle":
     "two phases, their tasks, and the word the workspace uses for its post-mortem",
   "settings.postIncident.phaseTitle": "Phase {n} · {name}",
@@ -3346,6 +3362,11 @@ export const en = {
   "settings.ai.sourceAlways": "always",
   "settings.ai.sources": "Sources the assistant reads",
   "settings.ai.title": "AI assistant",
+  "settings.ai.providerHint": "The endpoint configured by the operator of this instance.",
+  "settings.ai.sourcesHint": "What the assistant reads to answer.",
+  "settings.ai.boundariesHint": "What leaves the workspace, and what never does.",
+  "settings.ai.capsHint":
+    "Each capability switches off on its own; the master switch stops everything.",
   "settings.ai.unconfiguredNote":
     "No inference provider is configured on this instance (AI_API_BASE, AI_MODEL). Every assistant function is shown as unavailable until then; nothing is simulated.",
   "insights.days": { one: "{count} day", other: "{count} days" },

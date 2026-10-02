@@ -4,7 +4,8 @@ import { incidentTypes, postIncidentTaskDefs, severities, withTenant } from "@op
 import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
 import { NewTaskDialog } from "./new-task";
-import { deleteTask, savePostMortemTerm } from "./actions";
+import { deleteTask, savePostMortemSettings } from "./actions";
+import { SaveBar, Section } from "@/components/settings/form";
 import { TemplateEditor } from "./template-editor";
 import { templateFor } from "@/lib/post-mortem";
 import { isManager } from "@/lib/session";
@@ -128,83 +129,15 @@ export default async function PostIncidentSettingsPage({
         </h1>
         <span className="oi-subtitle">{t("settings.postIncident.subtitle")}</span>
         <span style={{ flex: 1 }} />
-        {saved === "1" && (
-          <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
-            {t("common.saved")}
-          </span>
-        )}
-        {error && (
-          <span role="alert" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--dang)" }}>
-            {t("settings.fields.errorInvalid")}
-          </span>
-        )}
       </div>
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}
-      >
-        {phaseCard("documenting", 1)}
-        {phaseCard("reviewing", 2)}
-      </div>
-      <div
-        className="oi-panel"
-        style={{ padding: "15px 18px", display: "flex", flexDirection: "column", gap: 11 }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            fontSize: 12.5,
-            color: "var(--ink-2)",
-            flexWrap: "wrap",
-          }}
+      <form action={savePostMortemSettings} style={{ display: "flex", flexDirection: "column" }}>
+        {/* Enter in a field saves: the first submit button is the default one. */}
+        <button type="submit" tabIndex={-1} aria-hidden style={{ display: "none" }} />
+        <Section
+          n={1}
+          title={t("settings.postIncident.termTitle")}
+          hint={t("settings.postIncident.termSectionHint")}
         >
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: rule === null || rule === undefined ? "var(--ink-3)" : "var(--ok)",
-              flex: "none",
-            }}
-          />
-          <span>
-            {t("settings.postIncident.autoEntry")}{" "}
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11.5,
-                background: "var(--sunk)",
-                borderRadius: 6,
-                padding: "1px 7px",
-              }}
-            >
-              {ruleLabel}
-            </span>{" "}
-            — {t("settings.postIncident.autoEntryNote")}
-          </span>
-          <Link
-            href="/app/settings/types"
-            className="oi-link"
-            style={{ fontSize: 12, fontWeight: 600 }}
-          >
-            {t("settings.postIncident.editInTypes")}
-          </Link>
-        </div>
-        <form
-          action={savePostMortemTerm}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            fontSize: 12.5,
-            color: "var(--ink-2)",
-            flexWrap: "wrap",
-          }}
-        >
-          <span className="oi-label" style={{ width: 150, flex: "none" }}>
-            {t("settings.postIncident.term")}
-          </span>
           <input
             name="term"
             defaultValue={workspace.postMortemTerm ?? ""}
@@ -218,38 +151,88 @@ export default async function PostIncidentSettingsPage({
               borderRadius: 9,
               outline: "none",
               fontSize: 13,
-              width: 200,
+              width: 260,
               background: "var(--panel)",
             }}
           />
-          <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-            {t("settings.postIncident.termHint")}
-          </span>
-          <button
-            type="submit"
-            className="oi-hover"
+          <div
             style={{
-              height: 32,
-              padding: "0 13px",
-              border: "1px solid var(--line)",
-              borderRadius: 9,
-              background: "var(--panel)",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
               fontSize: 12.5,
-              fontWeight: 600,
-              cursor: "pointer",
+              color: "var(--ink-2)",
+              lineHeight: 1.5,
             }}
           >
-            {t("common.save")}
-          </button>
-        </form>
-      </div>
-      <div className="oi-panel" style={{ padding: "15px 18px" }}>
-        <TemplateEditor
-          sections={templateFor(workspace, t)}
-          isDefault={!workspace.postMortemTemplate || workspace.postMortemTemplate.length === 0}
-          canManage={isManager(member)}
-        />
-      </div>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: rule === null || rule === undefined ? "var(--ink-3)" : "var(--ok)",
+                flex: "none",
+                marginTop: 5,
+              }}
+            />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              {t("settings.postIncident.autoEntry")}{" "}
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11.5,
+                  background: "var(--sunk)",
+                  borderRadius: 6,
+                  padding: "1px 7px",
+                }}
+              >
+                {ruleLabel}
+              </span>{" "}
+              — {t("settings.postIncident.autoEntryNote")}{" "}
+              <Link
+                href="/app/settings/types"
+                className="oi-link"
+                style={{ fontSize: 12, fontWeight: 600 }}
+              >
+                {t("settings.postIncident.editInTypes")}
+              </Link>
+            </span>
+          </div>
+        </Section>
+
+        <Section
+          n={2}
+          title={t("settings.postIncident.template")}
+          hint={t("settings.postIncident.templateHint")}
+        >
+          <TemplateEditor
+            sections={templateFor(workspace, t)}
+            isDefault={!workspace.postMortemTemplate || workspace.postMortemTemplate.length === 0}
+            canManage={isManager(member)}
+          />
+        </Section>
+
+        {isManager(member) && (
+          <SaveBar
+            label={t("common.save")}
+            status={saved === "1" ? t("common.saved") : undefined}
+            error={error ? t("settings.fields.errorInvalid") : undefined}
+          />
+        )}
+      </form>
+
+      <Section
+        n={3}
+        title={t("settings.postIncident.tasksTitle")}
+        hint={t("settings.postIncident.tasksHint")}
+      >
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}
+        >
+          {phaseCard("documenting", 1)}
+          {phaseCard("reviewing", 2)}
+        </div>
+      </Section>
     </div>
   );
 }

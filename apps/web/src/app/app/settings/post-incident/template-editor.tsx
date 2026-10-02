@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useT } from "@/i18n/client";
-import { savePostMortemTemplate } from "./actions";
 
 type Row = { key: string; title: string; hint: string };
 
@@ -52,14 +51,9 @@ export function TemplateEditor({
     color: "var(--ink-2)",
   };
   return (
-    <form
-      action={savePostMortemTemplate}
-      style={{ display: "flex", flexDirection: "column", gap: 10 }}
-      data-testid="pm-template"
-    >
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }} data-testid="pm-template">
       <input type="hidden" name="template" value={JSON.stringify(rows)} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 14, fontWeight: 600 }}>{t("settings.postIncident.template")}</span>
         <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
           {isDefault
             ? t("settings.postIncident.templateDefault")
@@ -79,22 +73,6 @@ export function TemplateEditor({
                 {t("settings.postIncident.templateReset")}
               </button>
             )}
-            <button
-              type="submit"
-              className="oi-hover"
-              style={{
-                height: 30,
-                padding: "0 12px",
-                border: "1px solid var(--line)",
-                borderRadius: 8,
-                background: "var(--panel)",
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              {t("common.save")}
-            </button>
           </>
         )}
       </div>
@@ -192,6 +170,6 @@ export function TemplateEditor({
           {t("settings.postIncident.templateAdd")}
         </button>
       )}
-    </form>
+    </div>
   );
 }

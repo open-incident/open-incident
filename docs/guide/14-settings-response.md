@@ -13,7 +13,7 @@ One entry, three tabs. Each **incident type** carries its own lifecycle and its 
 
 ### A type's sheet
 
-Pick a type in the list on the left; the sheet on the right has four sections, each with its own **Save**.
+Pick a type in the list on the left; the sheet on the right reads top to bottom in four numbered sections. The first three — the type, its declaration form, its post-incident rule — are one form with one **Save**, which stays in view at the bottom while you edit. The statuses come last and are a list of their own: a status is added, moved or removed on the spot, nothing to save.
 
 | Section              | What you decide                                                                                                                                                                                                                                                                                                                                                          |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -24,7 +24,9 @@ Two tabs: **General & brand**, and **Working hours**.
 
 ### General & brand
 
-![General & brand](img/settings-general.png "Identity, language and timezone, brand, the danger zone.")
+![General & brand](img/settings-general.png "Three numbered sections — identity, brand, the danger zone — and one Save that stays in view.")
+
+A settings form reads like a document: numbered sections, each explaining itself on the left and holding its fields on the right, and one **Save** at the bottom that stays in view while you edit. Where a section is a list of things that are created and removed — statuses, tasks, applications — it sits apart from the form, with its own gestures and nothing to save.
 
 | Setting            | Notes                                                                                                                                                                                                                                                                                            |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

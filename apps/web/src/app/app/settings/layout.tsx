@@ -229,7 +229,17 @@ export default async function SettingsLayout({ children }: { children: React.Rea
       <Suspense fallback={<div style={{ width: 210 }} />}>
         <SettingsNav groups={groups} label={t("nav.settings")} />
       </Suspense>
-      <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+      <div
+        style={{
+          minWidth: 0,
+          width: "100%",
+          maxWidth: 880,
+          margin: "0 auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+        }}
+      >
         {current?.tabs && (
           <Suspense fallback={<div style={{ height: 34 }} />}>
             <SegmentTabs tabs={current.tabs} label={current.label} />

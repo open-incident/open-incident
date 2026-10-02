@@ -171,138 +171,6 @@ export async function createType(formData: FormData) {
   redirect(`/app/settings/types?type=${created}&saved=1`);
 }
 
-/* ---------- The type itself ---------- */
-
-const typeSheetSchema = z.object({
-  typeId: z.string().uuid(),
-  name: z.string().trim().min(2).max(60),
-  description: z.string().trim().max(200).optional(),
-  teamId: z.string().uuid().or(z.literal("")).optional(),
-});
-
-/** Name, description, who may declare it, whether its incidents start private. */
-export async function saveType(formData: FormData) {
-  const current = await requireManager();
-  const parsed = typeSheetSchema.safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) redirect("/app/settings/types?error=invalid");
-  const input = parsed.data;
-  const privateByDefault = formData.get("privateByDefault") === "on";
-  await withTenant(current.tenant.id, async (tx) => {
-    const types = await tx
-      .select()
-      .from(incidentTypes)
-      .where(eq(incidentTypes.tenantId, current.tenant.id));
-    const row = types.find((x) => x.id === input.typeId);
-    if (!row) return;
-    if (types.some((x) => x.id !== row.id && x.name.toLowerCase() === input.name.toLowerCase()))
-      redirect(`/app/settings/types?type=${row.id}&error=duplicate`);
-    await tx
-      .update(incidentTypes)
-      .set({
-        name: input.name,
-        description: input.description || null,
-        // The default type is everyone's: it cannot be narrowed to a team.
-        restrictedToTeamIds: row.isDefault || !input.teamId ? null : [input.teamId],
-        privateByDefault,
-      })
-      .where(eq(incidentTypes.id, row.id));
-    await recordAudit(tx, current, "config", "incident_type.updated", {
-      from: row.name,
-      to: input.name,
-      team: row.isDefault ? null : input.teamId || null,
-      privateByDefault,
-    });
-  });
-  revalidatePath("/app/settings/types");
-  revalidatePath("/app/incidents/new");
-  redirect(`/app/settings/types?type=${input.typeId}&saved=1`);
-}
-
-/** When a resolved incident of this type enters the post-incident flow. */
-export async function savePostIncident(formData: FormData) {
-  const current = await requireManager();
-  const parsed = z
-    .object({ typeId: z.string().uuid(), rule: z.string() })
-    .safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) redirect("/app/settings/types?error=invalid");
-  const { typeId, rule } = parsed.data;
-  // "never" | "always" | "<severity rank>"
-  const fromRank = rule === "never" ? null : rule === "always" ? -1 : Number(rule);
-  if (fromRank !== null && !Number.isInteger(fromRank))
-    redirect(`/app/settings/types?type=${typeId}&error=invalid`);
-  await withTenant(current.tenant.id, async (tx) => {
-    const [row] = await tx
-      .select()
-      .from(incidentTypes)
-      .where(and(eq(incidentTypes.tenantId, current.tenant.id), eq(incidentTypes.id, typeId)));
-    if (!row) return;
-    await tx
-      .update(incidentTypes)
-      .set({ postIncidentFromRank: fromRank })
-      .where(eq(incidentTypes.id, row.id));
-    await recordAudit(tx, current, "config", "incident_type.post_incident_rule", {
-      type: row.name,
-      rule,
-    });
-  });
-  revalidatePath("/app/settings/types");
-  revalidatePath("/app/settings/post-incident");
-  redirect(`/app/settings/types?type=${typeId}&saved=1`);
-}
-
-/**
- * What the declaration form asks for this type. One choice per field —
- * required, optional, not asked — posted as `ask.<key>`. The title is always
- * asked and always required; the form itself enforces that.
- */
-export async function saveDeclareForm(formData: FormData) {
-  const current = await requireManager();
-  const typeId = z.string().uuid().parse(formData.get("typeId"));
-  const asks = new Map<string, "required" | "optional" | "off">();
-  for (const [k, v] of formData.entries()) {
-    if (!k.startsWith("ask.")) continue;
-    const choice = String(v);
-    if (choice === "required" || choice === "optional" || choice === "off")
-      asks.set(k.slice(4), choice);
-  }
-  await withTenant(current.tenant.id, async (tx) => {
-    const [row] = await tx
-      .select()
-      .from(incidentTypes)
-      .where(and(eq(incidentTypes.tenantId, current.tenant.id), eq(incidentTypes.id, typeId)));
-    if (!row) return;
-    // Only keys the form may carry: the four system fields, and the custom
-    // fields that belong to this type or to every type.
-    const fields = await tx
-      .select({ key: incidentFields.key, typeId: incidentFields.incidentTypeId })
-      .from(incidentFields)
-      .where(eq(incidentFields.tenantId, current.tenant.id));
-    const allowed = new Set([
-      "title",
-      "severity",
-      "service",
-      "summary",
-      ...fields.filter((f) => f.typeId === null || f.typeId === typeId).map((f) => f.key),
-    ]);
-    const next = [{ key: "title", required: true }];
-    for (const key of allowed) {
-      if (key === "title") continue;
-      const ask = asks.get(key);
-      if (ask === "required") next.push({ key, required: true });
-      if (ask === "optional") next.push({ key, required: false });
-    }
-    await tx.update(incidentTypes).set({ declareForm: next }).where(eq(incidentTypes.id, row.id));
-    await recordAudit(tx, current, "config", "incident_type.form_updated", {
-      type: row.name,
-      fields: next.map((f) => `${f.key}${f.required ? "*" : ""}`),
-    });
-  });
-  revalidatePath("/app/settings/types");
-  revalidatePath("/app/settings/fields");
-  revalidatePath("/app/incidents/new");
-  redirect(`/app/settings/types?type=${typeId}&saved=1`);
-}
-
 /** Removes a type nobody has used. A type with incidents stays: they point at it. */
 export async function deleteType(formData: FormData) {
   const current = await requireManager();
@@ -445,4 +313,94 @@ export async function deleteStatus(formData: FormData) {
   revalidatePath("/app/incidents");
   if (outcome === "deleted") redirect(`/app/settings/types?type=${typeId}&saved=1`);
   redirect(`/app/settings/types?type=${typeId}&error=${outcome}`);
+}
+
+/* ---------- The type's sheet: one Save ---------- */
+
+const sheetSchema = z.object({
+  typeId: z.string().uuid(),
+  name: z.string().trim().min(2).max(60),
+  description: z.string().trim().max(200).optional(),
+  teamId: z.string().uuid().or(z.literal("")).optional(),
+  // "never" | "always" | "<severity rank>"
+  rule: z.string(),
+});
+
+/**
+ * Name, description, who may declare it, visibility, what its form asks and
+ * when its incidents enter the post-incident flow — the sheet, saved as one.
+ * The statuses are a list with their own gestures and stay outside.
+ */
+export async function saveTypeSheet(formData: FormData) {
+  const current = await requireManager();
+  const parsed = sheetSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect("/app/settings/types?error=invalid");
+  const input = parsed.data;
+  const privateByDefault = formData.get("privateByDefault") === "on";
+  const fromRank =
+    input.rule === "never" ? null : input.rule === "always" ? -1 : Number(input.rule);
+  if (fromRank !== null && !Number.isInteger(fromRank))
+    redirect(`/app/settings/types?type=${input.typeId}&error=invalid`);
+  const asks = new Map<string, "required" | "optional" | "off">();
+  for (const [k, v] of formData.entries()) {
+    if (!k.startsWith("ask.")) continue;
+    const choice = String(v);
+    if (choice === "required" || choice === "optional" || choice === "off")
+      asks.set(k.slice(4), choice);
+  }
+  await withTenant(current.tenant.id, async (tx) => {
+    const types = await tx
+      .select()
+      .from(incidentTypes)
+      .where(eq(incidentTypes.tenantId, current.tenant.id));
+    const row = types.find((x) => x.id === input.typeId);
+    if (!row) return;
+    if (types.some((x) => x.id !== row.id && x.name.toLowerCase() === input.name.toLowerCase()))
+      redirect(`/app/settings/types?type=${row.id}&error=duplicate`);
+    // Only keys the form may carry: the four system fields, and the custom
+    // fields that belong to this type or to every type.
+    const fields = await tx
+      .select({ key: incidentFields.key, typeId: incidentFields.incidentTypeId })
+      .from(incidentFields)
+      .where(eq(incidentFields.tenantId, current.tenant.id));
+    const allowed = new Set([
+      "title",
+      "severity",
+      "service",
+      "summary",
+      ...fields.filter((f) => f.typeId === null || f.typeId === row.id).map((f) => f.key),
+    ]);
+    const declareForm = [{ key: "title", required: true }];
+    for (const key of allowed) {
+      if (key === "title") continue;
+      const ask = asks.get(key);
+      if (ask === "required") declareForm.push({ key, required: true });
+      if (ask === "optional") declareForm.push({ key, required: false });
+    }
+    await tx
+      .update(incidentTypes)
+      .set({
+        name: input.name,
+        description: input.description || null,
+        // The default type is everyone's: it cannot be narrowed to a team.
+        restrictedToTeamIds: row.isDefault || !input.teamId ? null : [input.teamId],
+        privateByDefault,
+        postIncidentFromRank: fromRank,
+        declareForm,
+      })
+      .where(eq(incidentTypes.id, row.id));
+    await recordAudit(tx, current, "config", "incident_type.updated", {
+      from: row.name,
+      to: input.name,
+      team: row.isDefault ? null : input.teamId || null,
+      privateByDefault,
+      rule: input.rule,
+      fields: declareForm.map((f) => `${f.key}${f.required ? "*" : ""}`),
+    });
+  });
+  revalidatePath("/app/settings/types");
+  revalidatePath("/app/settings/fields");
+  revalidatePath("/app/settings/post-incident");
+  revalidatePath("/app/incidents/new");
+  redirect(`/app/settings/types?type=${input.typeId}&saved=1`);
 }

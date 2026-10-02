@@ -11,6 +11,7 @@ import {
 import { isManagerRole } from "@openincident/config";
 import { getT } from "@/i18n/server";
 import { Why } from "@/components/settings/why";
+import { SaveBar, Section } from "@/components/settings/form";
 import { requireMember } from "@/lib/session";
 import { saveAiSettings } from "./actions";
 
@@ -81,15 +82,6 @@ export default async function AiGovernancePage({
       </span>
     </label>
   );
-  const card: React.CSSProperties = {
-    background: "var(--panel)",
-    border: "1px solid var(--line)",
-    borderRadius: "var(--radius-card)",
-    padding: "16px 18px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 11,
-  };
   const dot = (color: string) => (
     <span
       style={{
@@ -108,9 +100,9 @@ export default async function AiGovernancePage({
     <form
       action={saveAiSettings}
       className="oi-rise"
-      style={{ display: "flex", flexDirection: "column", gap: 14 }}
+      style={{ display: "flex", flexDirection: "column" }}
     >
-      <div className="oi-head">
+      <div className="oi-head" style={{ marginBottom: 6 }}>
         <h1 className="oi-title" style={{ margin: 0 }}>
           {t("settings.ai.title")}
         </h1>
@@ -129,309 +121,259 @@ export default async function AiGovernancePage({
             ? t("set2.ai.chipConfigured", { host: aiProviderLabel() })
             : t("set2.ai.chipNone")}
         </span>
-        <span style={{ flex: 1 }} />
-        {q.saved === "1" && (
-          <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
-            {t("common.saved")}
+      </div>
+      {!configured && (
+        <div className="oi-note" style={{ marginBottom: 8 }}>
+          {t("settings.ai.unconfiguredNote")}
+        </div>
+      )}
+
+      <Section n={1} title={t("set2.ai.mayDo")} hint={t("settings.ai.capsHint")}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>
+            {data.settings.enabled ? t("settings.ai.masterOn") : t("settings.ai.masterOff")}
           </span>
-        )}
-        {manages && (
-          <button
-            type="submit"
-            data-testid="ai-save"
+          <Toggle name="enabled" on={data.settings.enabled} disabled={!manages} />
+        </div>
+        {AI_CAPABILITIES.map((c) => (
+          <div
+            key={c}
+            data-testid={`ai-cap-${c}`}
             style={{
-              height: 32,
-              padding: "0 14px",
-              borderRadius: 9,
-              background: "var(--brand)",
-              color: "var(--on-brand)",
-              border: 0,
-              fontSize: 12.5,
-              fontWeight: 600,
-              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              border: "1px solid var(--line)",
+              borderRadius: 11,
+              padding: "10px 13px",
             }}
           >
-            {t("common.save")}
-          </button>
-        )}
-      </div>
-      {!configured && <div className="oi-note">{t("settings.ai.unconfiguredNote")}</div>}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0,1fr) 320px",
-          gap: 14,
-          alignItems: "start",
-        }}
-      >
-        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-          <section style={card}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t("set2.ai.mayDo")}</span>
-              <span style={{ flex: 1 }} />
-              <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                {data.settings.enabled ? t("settings.ai.masterOn") : t("settings.ai.masterOff")}
-              </span>
-              <Toggle name="enabled" on={data.settings.enabled} disabled={!manages} />
-            </div>
-            {AI_CAPABILITIES.map((c) => (
-              <div
-                key={c}
-                data-testid={`ai-cap-${c}`}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  border: "1px solid var(--line)",
-                  borderRadius: 11,
-                  padding: "10px 13px",
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t(`settings.ai.cap.${c}`)}</div>
-                  <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                    {t(`settings.ai.capDesc.${c}`)}
-                  </div>
-                </div>
-                <Toggle name={`cap_${c}`} on={capOn(c)} disabled={!manages} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{t(`settings.ai.cap.${c}`)}</div>
+              <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                {t(`settings.ai.capDesc.${c}`)}
               </div>
-            ))}
-          </section>
-          <section style={card}>
-            <span style={{ fontSize: 14, fontWeight: 600 }}>{t("settings.ai.boundaries")}</span>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}
-            >
-              {dot("var(--ok)")}
-              <span>
-                {t("settings.ai.boundaryInference", {
-                  provider: configured ? aiProviderLabel() : "—",
-                })}
+            </div>
+            <Toggle name={`cap_${c}`} on={capOn(c)} disabled={!manages} />
+          </div>
+        ))}
+      </Section>
+
+      <Section n={2} title={t("settings.ai.boundaries")} hint={t("settings.ai.boundariesHint")}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          {dot("var(--ok)")}
+          <span>
+            {t("settings.ai.boundaryInference", {
+              provider: configured ? aiProviderLabel() : "—",
+            })}
+          </span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          {dot("var(--ok)")}
+          <span>{t("settings.ai.boundaryTraining")}</span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          {dot("var(--ok)")}
+          <span>{t("settings.ai.boundaryRedaction")}</span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          {dot("var(--viol)")}
+          <span style={{ flex: 1 }}>
+            <strong>{t("settings.ai.boundaryPrivate")}</strong>{" "}
+            {t("settings.ai.boundaryPrivateNote")}
+          </span>
+          <Toggle name="privateOptIn" on={data.settings.privateOptIn} disabled={!manages} />
+        </div>
+      </Section>
+
+      <Section n={3} title={t("settings.ai.sources")} hint={t("settings.ai.sourcesHint")}>
+        {(
+          [
+            ["services", true, true],
+            ["incidents", data.settings.sources.incidents, false],
+            ["changeEvents", data.settings.sources.changeEvents, false],
+            // Absent means on: a workspace whose settings predate the
+            // telemetry checks has never chosen to switch them off.
+            ["telemetry", data.settings.sources.telemetry !== false, false],
+          ] as const
+        ).map(([k, on, locked]) => (
+          <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+            <span style={{ flex: 1 }}>{t(`settings.ai.source.${k}`)}</span>
+            {locked ? (
+              <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                {t("settings.ai.sourceAlways")}
               </span>
-            </div>
+            ) : (
+              <Toggle name={`src_${k}`} on={on} disabled={!manages} />
+            )}
+          </div>
+        ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+          <span style={{ flex: 1 }}>{t("settings.ai.source.docs")}</span>
+          <Toggle name="src_docs" on={data.settings.sources.docs} disabled={!manages} />
+        </div>
+      </Section>
+
+      <Section
+        n={4}
+        title={t("settings.ai.provider")}
+        hint={t("settings.ai.providerHint")}
+        more={
+          <Why label={t("common.why")}>
+            <p style={{ margin: 0 }}>{t("settings.ai.providerNote")}</p>
+            <p style={{ margin: "6px 0 0" }}>{t("set2.ai.regionNote")}</p>
+            <p style={{ margin: "6px 0 0" }}>{t("set2.ai.retention")}</p>
+          </Why>
+        }
+      >
+        <select
+          name="provider"
+          defaultValue={data.settings.provider ?? ""}
+          disabled={!manages || !configured}
+          className="oi-field"
+          style={{
+            height: 36,
+            padding: "0 11px",
+            border: "1px solid var(--line)",
+            borderRadius: 9,
+            fontSize: 13,
+            background: "var(--panel)",
+            maxWidth: 420,
+          }}
+        >
+          <option value="">
+            {configured
+              ? t("settings.ai.providerDefault", {
+                  provider: aiProviderLabel(),
+                  model: aiModel(),
+                })
+              : t("settings.ai.providerNone")}
+          </option>
+        </select>
+        <div className="oi-note">{t("settings.ai.draftNote")}</div>
+      </Section>
+
+      {manages && (
+        <SaveBar
+          label={t("common.save")}
+          testId="ai-save"
+          status={q.saved === "1" ? t("common.saved") : undefined}
+        />
+      )}
+
+      <Section n={5} title={t("settings.ai.log")} hint={t("settings.ai.logNote")}>
+        <div style={{ border: "1px solid var(--line-2)", borderRadius: 10, overflow: "hidden" }}>
+          {data.calls.map((c) => (
             <div
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}
-            >
-              {dot("var(--ok)")}
-              <span>{t("settings.ai.boundaryTraining")}</span>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
-                fontSize: 13,
-                lineHeight: 1.5,
-              }}
-            >
-              {dot("var(--ok)")}
-              <span>{t("settings.ai.boundaryRedaction")}</span>
-            </div>
-            <div
+              key={c.id}
+              data-testid="ai-call"
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 10,
-                fontSize: 13,
-                lineHeight: 1.5,
+                padding: "7px 10px",
+                borderBottom: "1px solid var(--line-2)",
+                fontSize: 11.5,
               }}
             >
-              {dot("var(--viol)")}
-              <span style={{ flex: 1 }}>
-                <strong>{t("settings.ai.boundaryPrivate")}</strong>{" "}
-                {t("settings.ai.boundaryPrivateNote")}
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--ink-3)",
+                  width: 92,
+                  flex: "none",
+                }}
+              >
+                {t.fmt.messageTime(c.createdAt)}
               </span>
-              <Toggle name="privateOptIn" on={data.settings.privateOptIn} disabled={!manages} />
-            </div>
-            <div
-              style={{
-                borderTop: "1px solid var(--line-2)",
-                paddingTop: 10,
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-              }}
-            >
-              <span className="oi-eyebrow">{t("settings.ai.sources")}</span>
-              {(
-                [
-                  ["services", true, true],
-                  ["incidents", data.settings.sources.incidents, false],
-                  ["changeEvents", data.settings.sources.changeEvents, false],
-                  // Absent means on: a workspace whose settings predate the
-                  // telemetry checks has never chosen to switch them off.
-                  ["telemetry", data.settings.sources.telemetry !== false, false],
-                ] as const
-              ).map(([k, on, locked]) => (
-                <div
-                  key={k}
-                  style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}
-                >
-                  <span style={{ flex: 1 }}>{t(`settings.ai.source.${k}`)}</span>
-                  {locked ? (
-                    <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                      {t("settings.ai.sourceAlways")}
-                    </span>
-                  ) : (
-                    <Toggle name={`src_${k}`} on={on} disabled={!manages} />
-                  )}
-                </div>
-              ))}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
-                <span style={{ flex: 1 }}>{t("settings.ai.source.docs")}</span>
-                <Toggle name="src_docs" on={data.settings.sources.docs} disabled={!manages} />
-              </div>
-            </div>
-          </section>
-          <section style={card}>
-            <div style={{ display: "flex", alignItems: "center" }}>
-              <span style={{ fontSize: 14, fontWeight: 600 }}>{t("settings.ai.log")}</span>
-              <span style={{ flex: 1 }} />
-              <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                {t("settings.ai.logNote")}
+              <span style={{ fontWeight: 600, width: 130, flex: "none" }}>
+                {c.capability === "embed"
+                  ? t("settings.ai.embed")
+                  : t(`settings.ai.cap.${c.capability}`)}
+              </span>
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  color: "var(--ink-2)",
+                }}
+              >
+                {c.actorName ?? c.actorKind}
+                {c.incidentNumber ? (
+                  <>
+                    {" · "}
+                    <Link
+                      href={`/app/incidents/${c.incidentNumber}`}
+                      className="oi-link"
+                      style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
+                    >
+                      INC-{c.incidentNumber}
+                    </Link>
+                  </>
+                ) : null}
+              </span>
+              <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink-3)" }}>
+                {c.model}
+              </span>
+              <span style={{ color: "var(--ink-3)", width: 90, textAlign: "right" }}>
+                {c.inputTokens + c.outputTokens} tok · {Math.round(c.durationMs / 100) / 10} s
+              </span>
+              <span
+                style={{
+                  padding: "1px 8px",
+                  borderRadius: 999,
+                  background: c.status === "ok" ? "var(--ok-t)" : "var(--dang-t)",
+                  color: c.status === "ok" ? "var(--ok)" : "var(--dang)",
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                }}
+              >
+                {c.status}
               </span>
             </div>
-            <div
-              style={{ border: "1px solid var(--line-2)", borderRadius: 10, overflow: "hidden" }}
-            >
-              {data.calls.map((c) => (
-                <div
-                  key={c.id}
-                  data-testid="ai-call"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "7px 10px",
-                    borderBottom: "1px solid var(--line-2)",
-                    fontSize: 11.5,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      color: "var(--ink-3)",
-                      width: 92,
-                      flex: "none",
-                    }}
-                  >
-                    {t.fmt.messageTime(c.createdAt)}
-                  </span>
-                  <span style={{ fontWeight: 600, width: 130, flex: "none" }}>
-                    {c.capability === "embed"
-                      ? t("settings.ai.embed")
-                      : t(`settings.ai.cap.${c.capability}`)}
-                  </span>
-                  <span
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      color: "var(--ink-2)",
-                    }}
-                  >
-                    {c.actorName ?? c.actorKind}
-                    {c.incidentNumber ? (
-                      <>
-                        {" · "}
-                        <Link
-                          href={`/app/incidents/${c.incidentNumber}`}
-                          className="oi-link"
-                          style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
-                        >
-                          INC-{c.incidentNumber}
-                        </Link>
-                      </>
-                    ) : null}
-                  </span>
-                  <span style={{ fontFamily: "var(--font-mono)", color: "var(--ink-3)" }}>
-                    {c.model}
-                  </span>
-                  <span style={{ color: "var(--ink-3)", width: 90, textAlign: "right" }}>
-                    {c.inputTokens + c.outputTokens} tok · {Math.round(c.durationMs / 100) / 10} s
-                  </span>
-                  <span
-                    style={{
-                      padding: "1px 8px",
-                      borderRadius: 999,
-                      background: c.status === "ok" ? "var(--ok-t)" : "var(--dang-t)",
-                      color: c.status === "ok" ? "var(--ok)" : "var(--dang)",
-                      fontSize: 10.5,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {c.status}
-                  </span>
-                </div>
-              ))}
-              {data.calls.length === 0 && (
-                <div style={{ padding: 12, fontSize: 12.5, color: "var(--ink-3)" }}>
-                  {t("settings.ai.logEmpty")}
-                </div>
-              )}
+          ))}
+          {data.calls.length === 0 && (
+            <div style={{ padding: 12, fontSize: 12.5, color: "var(--ink-3)" }}>
+              {t("settings.ai.logEmpty")}
             </div>
-          </section>
+          )}
         </div>
-        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
-          <section style={{ ...card, padding: "15px 16px" }}>
-            <div className="oi-eyebrow">{t("settings.ai.provider")}</div>
-            <select
-              name="provider"
-              defaultValue={data.settings.provider ?? ""}
-              disabled={!manages || !configured}
-              className="oi-field"
-              style={{
-                height: 38,
-                padding: "0 12px",
-                border: "1px solid var(--line)",
-                borderRadius: 9,
-                fontSize: 13,
-                background: "var(--panel)",
-              }}
-            >
-              <option value="">
-                {configured
-                  ? t("settings.ai.providerDefault", {
-                      provider: aiProviderLabel(),
-                      model: aiModel(),
-                    })
-                  : t("settings.ai.providerNone")}
-              </option>
-            </select>
-            <Why label={t("common.why")}>
-              <p style={{ margin: 0 }}>{t("settings.ai.providerNote")}</p>
-              <p style={{ margin: "6px 0 0" }}>{t("set2.ai.regionNote")}</p>
-              <p style={{ margin: "6px 0 0" }}>{t("set2.ai.retention")}</p>
-            </Why>
-          </section>
-          <div
-            style={{
-              background: "var(--sunk)",
-              borderRadius: "var(--radius-card)",
-              padding: "12px 14px",
-              fontSize: 12.5,
-              color: "var(--ink-2)",
-              lineHeight: 1.55,
-            }}
-          >
-            {t("settings.ai.draftNote")}
-          </div>
-        </div>
-      </div>
+      </Section>
     </form>
   );
 }

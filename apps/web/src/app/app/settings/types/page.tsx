@@ -18,12 +18,11 @@ import {
   deleteStatus,
   deleteType,
   moveStatus,
-  saveDeclareForm,
-  savePostIncident,
   saveSeverity,
   saveStatus,
-  saveType,
+  saveTypeSheet,
 } from "./actions";
+import { SaveBar, Section } from "@/components/settings/form";
 import { NewTypeDialog } from "./new-type";
 
 /**
@@ -276,558 +275,533 @@ export default async function TypesPage({
             })}
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
-            {/* 1. The type: name, description, who declares it, visibility. */}
-            <form action={saveType} className="oi-panel" style={{ padding: "14px 18px" }}>
+          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+            <form action={saveTypeSheet} style={{ display: "flex", flexDirection: "column" }}>
               <input type="hidden" name="typeId" value={type.id} />
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                <span style={{ fontFamily: "var(--font-title)", fontSize: 15, fontWeight: 600 }}>
-                  {t("settings.types.sectionType")}
-                </span>
-                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                  {t("settings.types.incidentCount", { count: data.counts.get(type.id) ?? 0 })}
-                </span>
-                <span style={{ flex: 1 }} />
-                <button type="submit" className="oi-hover-brand-2" style={brandBtn}>
-                  {t("common.save")}
-                </button>
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0,1fr) minmax(0,2fr)",
-                  gap: 12,
-                }}
+              {/* Enter in a field saves: the first submit button is the default one. */}
+              <button type="submit" tabIndex={-1} aria-hidden style={{ display: "none" }} />
+
+              <Section
+                n={1}
+                title={t("settings.types.sectionType")}
+                hint={t("settings.types.incidentCount", { count: data.counts.get(type.id) ?? 0 })}
               >
-                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={label}>{t("settings.types.typeName")}</span>
-                  <input
-                    name="name"
-                    defaultValue={type.name}
-                    required
-                    minLength={2}
-                    maxLength={60}
-                    className="oi-field"
-                    style={control}
-                  />
-                </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={label}>{t("settings.types.typeDescription")}</span>
-                  <input
-                    name="description"
-                    defaultValue={type.description ?? ""}
-                    maxLength={200}
-                    className="oi-field"
-                    style={control}
-                  />
-                </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={label}>{t("settings.types.declarableBy")}</span>
-                  <select
-                    name="teamId"
-                    defaultValue={type.isDefault ? "" : (type.restrictedToTeamIds?.[0] ?? "")}
-                    disabled={type.isDefault}
-                    className="oi-field"
-                    style={control}
-                  >
-                    <option value="">{t("settings.types.everyone")}</option>
-                    {teamRows.map((tm) => (
-                      <option key={tm.id} value={tm.id}>
-                        {tm.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label
+                <div
                   style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 10,
-                    fontSize: 13,
-                    paddingTop: 22,
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0,1fr) minmax(0,2fr)",
+                    gap: 12,
                   }}
                 >
-                  <input
-                    type="checkbox"
-                    name="privateByDefault"
-                    defaultChecked={type.privateByDefault}
-                    style={{ marginTop: 3 }}
-                  />
-                  <span style={{ lineHeight: 1.45 }}>
-                    {t("settings.types.privateByDefault")}
-                    <span style={{ display: "block", fontSize: 11.5, color: "var(--ink-3)" }}>
-                      {t("settings.types.privateHint")}
-                    </span>
-                  </span>
-                </label>
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  marginTop: 12,
-                  fontSize: 11.5,
-                  color: "var(--ink-3)",
-                }}
-              >
-                {type.isDefault ? (
-                  <span>{t("settings.types.defaultTypeNote")}</span>
-                ) : (data.allCounts.get(type.id) ?? 0) > 0 ? (
-                  <span>
-                    {t("settings.types.deleteTypeInUse", {
-                      count: data.allCounts.get(type.id) ?? 0,
-                    })}
-                  </span>
-                ) : (
-                  <button
-                    type="submit"
-                    formAction={deleteType}
-                    className="oi-hover-dang"
-                    data-testid="type-delete"
-                    style={{ ...ghostBtn, color: "var(--dang)" }}
-                  >
-                    {t("settings.types.deleteType")}
-                  </button>
-                )}
-              </div>
-            </form>
-
-            {/* 2. The declaration form: one choice per field. */}
-            <form action={saveDeclareForm} className="oi-panel" style={{ overflow: "hidden" }}>
-              <input type="hidden" name="typeId" value={type.id} />
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "12px 18px",
-                  borderBottom: "1px solid var(--line)",
-                }}
-              >
-                <span style={{ fontFamily: "var(--font-title)", fontSize: 15, fontWeight: 600 }}>
-                  {t("settings.types.formTitle")}
-                </span>
-                <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                  {t("settings.types.formHint")}
-                </span>
-                <span style={{ flex: 1 }} />
-                <Link href="/app/settings/fields" className="oi-link" style={{ fontSize: 12 }}>
-                  {t("settings.types.manageFields")}
-                </Link>
-                <button type="submit" className="oi-hover-brand-2" style={brandBtn}>
-                  {t("common.save")}
-                </button>
-              </div>
-              {(
-                [
-                  ...(["title", "severity", "service", "summary"] as const).map((k) => ({
-                    key: k,
-                    name: t(`settings.types.systemField.${k}`),
-                    mono: false,
-                    fixed: k === "title",
-                  })),
-                  ...data.fields
-                    .filter((f) => f.incidentTypeId === null || f.incidentTypeId === type.id)
-                    .map((f) => ({ key: f.key, name: f.label, mono: true, fixed: false })),
-                ] as const
-              ).map((f, i, all) => {
-                const inForm = type.declareForm.find((x) => x.key === f.key);
-                const ask = f.fixed
-                  ? "required"
-                  : inForm
-                    ? inForm.required
-                      ? "required"
-                      : "optional"
-                    : "off";
-                return (
-                  <div
-                    key={f.key}
-                    data-testid="form-field"
+                  <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <span style={label}>{t("settings.types.typeName")}</span>
+                    <input
+                      name="name"
+                      defaultValue={type.name}
+                      required
+                      minLength={2}
+                      maxLength={60}
+                      className="oi-field"
+                      style={control}
+                    />
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <span style={label}>{t("settings.types.typeDescription")}</span>
+                    <input
+                      name="description"
+                      defaultValue={type.description ?? ""}
+                      maxLength={200}
+                      className="oi-field"
+                      style={control}
+                    />
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <span style={label}>{t("settings.types.declarableBy")}</span>
+                    <select
+                      name="teamId"
+                      defaultValue={type.isDefault ? "" : (type.restrictedToTeamIds?.[0] ?? "")}
+                      disabled={type.isDefault}
+                      className="oi-field"
+                      style={control}
+                    >
+                      <option value="">{t("settings.types.everyone")}</option>
+                      {teamRows.map((tm) => (
+                        <option key={tm.id} value={tm.id}>
+                          {tm.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label
                     style={{
                       display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      padding: "9px 18px",
-                      borderBottom: i < all.length - 1 ? "1px solid var(--line-2)" : undefined,
+                      alignItems: "flex-start",
+                      gap: 10,
+                      fontSize: 13,
+                      paddingTop: 22,
                     }}
                   >
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600 }}>
-                      {f.name}
-                      {f.mono && (
-                        <span
-                          style={{
-                            marginLeft: 8,
-                            fontFamily: "var(--font-mono)",
-                            fontWeight: 400,
-                            fontSize: 11.5,
-                            color: "var(--ink-3)",
-                          }}
-                        >
-                          {f.key}
-                        </span>
-                      )}
+                    <input
+                      type="checkbox"
+                      name="privateByDefault"
+                      defaultChecked={type.privateByDefault}
+                      style={{ marginTop: 3 }}
+                    />
+                    <span style={{ lineHeight: 1.45 }}>
+                      {t("settings.types.privateByDefault")}
+                      <span style={{ display: "block", fontSize: 11.5, color: "var(--ink-3)" }}>
+                        {t("settings.types.privateHint")}
+                      </span>
                     </span>
-                    <div role="radiogroup" style={{ display: "flex", gap: 2 }}>
-                      {(["required", "optional", "off"] as const).map((choice) => (
-                        <label
-                          key={choice}
-                          style={{
-                            fontSize: 11.5,
-                            fontWeight: 600,
-                            padding: "3px 10px",
-                            borderRadius: 999,
-                            border: `1px solid ${ask === choice ? "var(--brand)" : "var(--line)"}`,
-                            background: ask === choice ? "var(--brand-t)" : "var(--panel)",
-                            color:
-                              ask === choice
-                                ? "var(--brand)"
-                                : f.fixed
-                                  ? "var(--line)"
-                                  : "var(--ink-2)",
-                            cursor: f.fixed ? "default" : "pointer",
-                          }}
-                        >
-                          <input
-                            type="radio"
-                            name={`ask.${f.key}`}
-                            value={choice}
-                            defaultChecked={ask === choice}
-                            disabled={f.fixed}
-                            style={{ display: "none" }}
-                          />
-                          {t(`settings.types.ask.${choice}`)}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </form>
-
-            {/* 3. The active statuses, in order. */}
-            <div className="oi-panel" style={{ overflow: "hidden" }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "12px 18px",
-                  borderBottom: "1px solid var(--line)",
-                  flexWrap: "wrap",
-                }}
-              >
-                <span style={{ fontFamily: "var(--font-title)", fontSize: 15, fontWeight: 600 }}>
-                  {t("settings.types.statusesTitle")}
-                </span>
-                <span style={{ flex: 1 }} />
-                {editing !== "new" && (
-                  <Link
-                    href={href({ status: "new" })}
-                    className="oi-hover"
-                    data-testid="status-add"
-                    style={{ ...ghostBtn, textDecoration: "none" }}
-                  >
-                    {t("settings.types.addStatus")}
-                  </Link>
-                )}
-                <span style={{ flexBasis: "100%", fontSize: 11.5, color: "var(--ink-3)" }}>
-                  {t("settings.types.statusesHint")}
-                </span>
-              </div>
-              {statuses.map((st, i) => {
-                const open = editing !== "new" && editing?.id === st.id;
-                const inIt = data.inStatus.get(st.id) ?? 0;
-                return (
-                  <div
-                    key={st.id}
-                    data-testid="status-row"
-                    style={{ borderBottom: "1px solid var(--line-2)" }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        padding: "10px 18px",
-                        background: open ? "var(--brand-t)" : undefined,
-                      }}
+                  </label>
+                </div>
+                <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                  {type.isDefault ? (
+                    <span>{t("settings.types.defaultTypeNote")}</span>
+                  ) : (data.allCounts.get(type.id) ?? 0) > 0 ? (
+                    <span>
+                      {t("settings.types.deleteTypeInUse", {
+                        count: data.allCounts.get(type.id) ?? 0,
+                      })}
+                    </span>
+                  ) : (
+                    <button
+                      type="submit"
+                      formAction={deleteType}
+                      className="oi-btn oi-btn-sm oi-btn-danger"
+                      data-testid="type-delete"
                     >
-                      <div style={{ display: "flex", flexDirection: "column", gap: 1, width: 14 }}>
-                        {(["up", "down"] as const).map((dir) => {
-                          const edge = dir === "up" ? i === 0 : i === statuses.length - 1;
-                          return (
-                            <form key={dir} action={moveStatus} style={{ display: "contents" }}>
-                              <input type="hidden" name="statusId" value={st.id} />
-                              <input type="hidden" name="typeId" value={type.id} />
-                              <input type="hidden" name="dir" value={dir} />
-                              <button
-                                type="submit"
-                                disabled={edge}
-                                aria-label={dir === "up" ? t("common.previous") : t("common.next")}
-                                style={{
-                                  border: 0,
-                                  background: "transparent",
-                                  color: edge ? "var(--line-2)" : "var(--ink-3)",
-                                  cursor: edge ? "default" : "pointer",
-                                  fontSize: 9,
-                                  lineHeight: 1,
-                                  padding: 0,
-                                }}
-                              >
-                                {dir === "up" ? "▲" : "▼"}
-                              </button>
-                            </form>
-                          );
-                        })}
-                      </div>
-                      <span
+                      {t("settings.types.deleteType")}
+                    </button>
+                  )}
+                </div>
+              </Section>
+
+              <Section
+                n={2}
+                title={t("settings.types.formTitle")}
+                hint={t("settings.types.formHint")}
+                more={
+                  <Link href="/app/settings/fields" className="oi-link" style={{ fontSize: 12 }}>
+                    {t("settings.types.manageFields")}
+                  </Link>
+                }
+              >
+                <div className="oi-panel" style={{ overflow: "hidden" }}>
+                  {(
+                    [
+                      ...(["title", "severity", "service", "summary"] as const).map((k) => ({
+                        key: k,
+                        name: t(`settings.types.systemField.${k}`),
+                        mono: false,
+                        fixed: k === "title",
+                      })),
+                      ...data.fields
+                        .filter((f) => f.incidentTypeId === null || f.incidentTypeId === type.id)
+                        .map((f) => ({ key: f.key, name: f.label, mono: true, fixed: false })),
+                    ] as const
+                  ).map((f, i, all) => {
+                    const inForm = type.declareForm.find((x) => x.key === f.key);
+                    const ask = f.fixed
+                      ? "required"
+                      : inForm
+                        ? inForm.required
+                          ? "required"
+                          : "optional"
+                        : "off";
+                    return (
+                      <div
+                        key={f.key}
+                        data-testid="form-field"
                         style={{
-                          width: 18,
-                          fontSize: 11.5,
-                          color: "var(--ink-3)",
-                          fontVariantNumeric: "tabular-nums",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 12,
+                          padding: "9px 18px",
+                          borderBottom: i < all.length - 1 ? "1px solid var(--line-2)" : undefined,
                         }}
                       >
-                        {i + 1}
-                      </span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13.5, fontWeight: 600 }}>
-                          {st.name}
-                          {st.description && (
-                            <span style={{ fontWeight: 400, color: "var(--ink-2)" }}>
-                              {" "}
-                              — {st.description}
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600 }}>
+                          {f.name}
+                          {f.mono && (
+                            <span
+                              style={{
+                                marginLeft: 8,
+                                fontFamily: "var(--font-mono)",
+                                fontWeight: 400,
+                                fontSize: 11.5,
+                                color: "var(--ink-3)",
+                              }}
+                            >
+                              {f.key}
                             </span>
                           )}
-                        </div>
-                        <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 2 }}>
-                          {[
-                            st.updateReminderMinutes
-                              ? t("settings.types.statusMeta.reminder", {
-                                  minutes: st.updateReminderMinutes,
-                                })
-                              : t("settings.types.statusMeta.noReminder"),
-                            st.publicStatus
-                              ? t("settings.types.statusMeta.public", { status: st.publicStatus })
-                              : t("settings.types.statusMeta.notPublic"),
-                            st.countsInMttr
-                              ? t("settings.types.statusMeta.mttr")
-                              : t("settings.types.statusMeta.noMttr"),
-                          ].join(" · ")}
+                        </span>
+                        <div role="radiogroup" style={{ display: "flex", gap: 2 }}>
+                          {(["required", "optional", "off"] as const).map((choice) => (
+                            <label
+                              key={choice}
+                              style={{
+                                fontSize: 11.5,
+                                fontWeight: 600,
+                                padding: "3px 10px",
+                                borderRadius: 999,
+                                border: `1px solid ${ask === choice ? "var(--brand)" : "var(--line)"}`,
+                                background: ask === choice ? "var(--brand-t)" : "var(--panel)",
+                                color:
+                                  ask === choice
+                                    ? "var(--brand)"
+                                    : f.fixed
+                                      ? "var(--line)"
+                                      : "var(--ink-2)",
+                                cursor: f.fixed ? "default" : "pointer",
+                              }}
+                            >
+                              <input
+                                type="radio"
+                                name={`ask.${f.key}`}
+                                value={choice}
+                                defaultChecked={ask === choice}
+                                disabled={f.fixed}
+                                style={{ display: "none" }}
+                              />
+                              {t(`settings.types.ask.${choice}`)}
+                            </label>
+                          ))}
                         </div>
                       </div>
-                      <span style={{ fontSize: 11.5, color: "var(--ink-3)", whiteSpace: "nowrap" }}>
-                        {t("settings.types.statusIncidents", { count: inIt })}
-                      </span>
-                      <Link
-                        href={href({ status: open ? undefined : st.id })}
-                        className="oi-hover"
-                        style={{ ...ghostBtn, textDecoration: "none" }}
-                      >
-                        {open ? t("common.close") : t("common.edit")}
-                      </Link>
-                      <form action={deleteStatus}>
-                        <input type="hidden" name="statusId" value={st.id} />
-                        <input type="hidden" name="typeId" value={type.id} />
-                        <button
-                          type="submit"
-                          disabled={inIt > 0 || statuses.length <= 1}
-                          title={
-                            inIt > 0
-                              ? t("settings.types.errorStatusInUse")
-                              : statuses.length <= 1
-                                ? t("settings.types.errorLastStatus")
-                                : t("common.delete")
-                          }
-                          aria-label={t("common.delete")}
-                          className="oi-hover-dang"
-                          style={{
-                            ...ghostBtn,
-                            width: 28,
-                            padding: 0,
-                            justifyContent: "center",
-                            color: inIt > 0 || statuses.length <= 1 ? "var(--line)" : "var(--dang)",
-                            cursor: inIt > 0 || statuses.length <= 1 ? "default" : "pointer",
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </form>
-                    </div>
-                    {open && (
-                      <form
-                        action={saveStatus}
-                        data-testid="status-form"
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-                          gap: 12,
-                          padding: "12px 18px 14px 62px",
-                          background: "var(--sunk)",
-                          alignItems: "end",
-                        }}
-                      >
-                        <input type="hidden" name="statusId" value={st.id} />
-                        <input type="hidden" name="typeId" value={type.id} />
-                        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          <span style={label}>{t("settings.types.statusName")}</span>
-                          <input
-                            name="name"
-                            defaultValue={st.name}
-                            required
-                            maxLength={60}
-                            className="oi-field"
-                            style={control}
-                          />
-                        </label>
-                        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          <span style={label}>{t("settings.types.statusDescription")}</span>
-                          <input
-                            name="description"
-                            defaultValue={st.description ?? ""}
-                            maxLength={200}
-                            className="oi-field"
-                            style={control}
-                          />
-                        </label>
-                        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          <span style={label}>{t("settings.types.updateReminder")}</span>
-                          <select
-                            name="updateReminderMinutes"
-                            defaultValue={String(st.updateReminderMinutes ?? "")}
-                            className="oi-field"
-                            style={control}
-                          >
-                            <option value="">{t("incident.update.noReminder")}</option>
-                            {[15, 30, 60, 120].map((m) => (
-                              <option key={m} value={m}>
-                                {t("incident.update.inMinutes", { count: m })}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          <span style={label}>{t("settings.types.publicStatus")}</span>
-                          <select
-                            name="publicStatus"
-                            defaultValue={st.publicStatus ?? ""}
-                            className="oi-field"
-                            style={control}
-                          >
-                            <option value="">— ({t("settings.types.publicNone")})</option>
-                            {["investigating", "identified", "monitoring"].map((p) => (
-                              <option key={p} value={p}>
-                                {p}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            fontSize: 12.5,
-                            height: 34,
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            name="countsInMttr"
-                            defaultChecked={st.countsInMttr}
-                          />
-                          {t("settings.types.countsInMttr")}
-                        </label>
-                        <button type="submit" className="oi-hover-brand-2" style={brandBtn}>
-                          {t("common.save")}
-                        </button>
-                      </form>
-                    )}
-                  </div>
-                );
-              })}
-              {editing === "new" && (
-                <form
-                  action={addStatus}
-                  data-testid="status-new-form"
+                    );
+                  })}
+                </div>
+              </Section>
+
+              <Section
+                n={3}
+                title={t("settings.types.postIncidentTitle")}
+                hint={t("settings.types.postIncidentRule")}
+                more={
+                  <Link
+                    href="/app/settings/post-incident"
+                    className="oi-link"
+                    style={{ fontSize: 12 }}
+                  >
+                    {t("settings.types.postIncidentFlowLink")}
+                  </Link>
+                }
+              >
+                <select
+                  name="rule"
+                  defaultValue={
+                    type.postIncidentFromRank === null
+                      ? "never"
+                      : type.postIncidentFromRank === -1
+                        ? "always"
+                        : String(type.postIncidentFromRank)
+                  }
+                  className="oi-field"
+                  style={{ ...control, width: "auto", minWidth: 180 }}
+                >
+                  <option value="never">{t("settings.types.postRule.never")}</option>
+                  <option value="always">{t("settings.types.postRule.always")}</option>
+                  {data.sevs.slice(0, -1).map((sv) => (
+                    <option key={sv.id} value={sv.rank}>
+                      {t("settings.types.postRule.from", { severity: sv.name })}
+                    </option>
+                  ))}
+                </select>
+              </Section>
+
+              <SaveBar
+                label={t("common.save")}
+                status={params.saved === "1" ? t("common.saved") : undefined}
+              />
+            </form>
+
+            <Section
+              n={4}
+              title={t("settings.types.statusesTitle")}
+              hint={t("settings.types.statusesHint")}
+            >
+              <div className="oi-panel" style={{ overflow: "hidden" }}>
+                <div
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: 10,
                     padding: "12px 18px",
-                    background: "var(--sunk)",
+                    borderBottom: "1px solid var(--line)",
+                    flexWrap: "wrap",
                   }}
                 >
-                  <input type="hidden" name="typeId" value={type.id} />
-                  <input
-                    name="name"
-                    required
-                    autoFocus
-                    maxLength={60}
-                    placeholder={t("settings.types.newStatusPlaceholder")}
-                    className="oi-field"
-                    style={{ ...control, maxWidth: 320 }}
-                  />
-                  <button type="submit" className="oi-hover-brand-2" style={brandBtn}>
-                    {t("common.create")}
-                  </button>
-                  <Link
-                    href={href({})}
-                    className="oi-hover"
-                    style={{ ...ghostBtn, textDecoration: "none" }}
+                  <span style={{ fontFamily: "var(--font-title)", fontSize: 15, fontWeight: 600 }}>
+                    {t("settings.types.statusesTitle")}
+                  </span>
+                  {editing !== "new" && (
+                    <Link
+                      href={href({ status: "new" })}
+                      className="oi-hover"
+                      data-testid="status-add"
+                      style={{ ...ghostBtn, textDecoration: "none" }}
+                    >
+                      {t("settings.types.addStatus")}
+                    </Link>
+                  )}
+                </div>
+                {statuses.map((st, i) => {
+                  const open = editing !== "new" && editing?.id === st.id;
+                  const inIt = data.inStatus.get(st.id) ?? 0;
+                  return (
+                    <div
+                      key={st.id}
+                      data-testid="status-row"
+                      style={{ borderBottom: "1px solid var(--line-2)" }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 12,
+                          padding: "10px 18px",
+                          background: open ? "var(--brand-t)" : undefined,
+                        }}
+                      >
+                        <div
+                          style={{ display: "flex", flexDirection: "column", gap: 1, width: 14 }}
+                        >
+                          {(["up", "down"] as const).map((dir) => {
+                            const edge = dir === "up" ? i === 0 : i === statuses.length - 1;
+                            return (
+                              <form key={dir} action={moveStatus} style={{ display: "contents" }}>
+                                <input type="hidden" name="statusId" value={st.id} />
+                                <input type="hidden" name="typeId" value={type.id} />
+                                <input type="hidden" name="dir" value={dir} />
+                                <button
+                                  type="submit"
+                                  disabled={edge}
+                                  aria-label={
+                                    dir === "up" ? t("common.previous") : t("common.next")
+                                  }
+                                  style={{
+                                    border: 0,
+                                    background: "transparent",
+                                    color: edge ? "var(--line-2)" : "var(--ink-3)",
+                                    cursor: edge ? "default" : "pointer",
+                                    fontSize: 9,
+                                    lineHeight: 1,
+                                    padding: 0,
+                                  }}
+                                >
+                                  {dir === "up" ? "▲" : "▼"}
+                                </button>
+                              </form>
+                            );
+                          })}
+                        </div>
+                        <span
+                          style={{
+                            width: 18,
+                            fontSize: 11.5,
+                            color: "var(--ink-3)",
+                            fontVariantNumeric: "tabular-nums",
+                          }}
+                        >
+                          {i + 1}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+                            {st.name}
+                            {st.description && (
+                              <span style={{ fontWeight: 400, color: "var(--ink-2)" }}>
+                                {" "}
+                                — {st.description}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 2 }}>
+                            {[
+                              st.updateReminderMinutes
+                                ? t("settings.types.statusMeta.reminder", {
+                                    minutes: st.updateReminderMinutes,
+                                  })
+                                : t("settings.types.statusMeta.noReminder"),
+                              st.publicStatus
+                                ? t("settings.types.statusMeta.public", { status: st.publicStatus })
+                                : t("settings.types.statusMeta.notPublic"),
+                              st.countsInMttr
+                                ? t("settings.types.statusMeta.mttr")
+                                : t("settings.types.statusMeta.noMttr"),
+                            ].join(" · ")}
+                          </div>
+                        </div>
+                        <span
+                          style={{ fontSize: 11.5, color: "var(--ink-3)", whiteSpace: "nowrap" }}
+                        >
+                          {t("settings.types.statusIncidents", { count: inIt })}
+                        </span>
+                        <Link
+                          href={href({ status: open ? undefined : st.id })}
+                          className="oi-hover"
+                          style={{ ...ghostBtn, textDecoration: "none" }}
+                        >
+                          {open ? t("common.close") : t("common.edit")}
+                        </Link>
+                        <form action={deleteStatus}>
+                          <input type="hidden" name="statusId" value={st.id} />
+                          <input type="hidden" name="typeId" value={type.id} />
+                          <button
+                            type="submit"
+                            disabled={inIt > 0 || statuses.length <= 1}
+                            title={
+                              inIt > 0
+                                ? t("settings.types.errorStatusInUse")
+                                : statuses.length <= 1
+                                  ? t("settings.types.errorLastStatus")
+                                  : t("common.delete")
+                            }
+                            aria-label={t("common.delete")}
+                            className="oi-hover-dang"
+                            style={{
+                              ...ghostBtn,
+                              width: 28,
+                              padding: 0,
+                              justifyContent: "center",
+                              color:
+                                inIt > 0 || statuses.length <= 1 ? "var(--line)" : "var(--dang)",
+                              cursor: inIt > 0 || statuses.length <= 1 ? "default" : "pointer",
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </form>
+                      </div>
+                      {open && (
+                        <form
+                          action={saveStatus}
+                          data-testid="status-form"
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                            gap: 12,
+                            padding: "12px 18px 14px 62px",
+                            background: "var(--sunk)",
+                            alignItems: "end",
+                          }}
+                        >
+                          <input type="hidden" name="statusId" value={st.id} />
+                          <input type="hidden" name="typeId" value={type.id} />
+                          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <span style={label}>{t("settings.types.statusName")}</span>
+                            <input
+                              name="name"
+                              defaultValue={st.name}
+                              required
+                              maxLength={60}
+                              className="oi-field"
+                              style={control}
+                            />
+                          </label>
+                          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <span style={label}>{t("settings.types.statusDescription")}</span>
+                            <input
+                              name="description"
+                              defaultValue={st.description ?? ""}
+                              maxLength={200}
+                              className="oi-field"
+                              style={control}
+                            />
+                          </label>
+                          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <span style={label}>{t("settings.types.updateReminder")}</span>
+                            <select
+                              name="updateReminderMinutes"
+                              defaultValue={String(st.updateReminderMinutes ?? "")}
+                              className="oi-field"
+                              style={control}
+                            >
+                              <option value="">{t("incident.update.noReminder")}</option>
+                              {[15, 30, 60, 120].map((m) => (
+                                <option key={m} value={m}>
+                                  {t("incident.update.inMinutes", { count: m })}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <span style={label}>{t("settings.types.publicStatus")}</span>
+                            <select
+                              name="publicStatus"
+                              defaultValue={st.publicStatus ?? ""}
+                              className="oi-field"
+                              style={control}
+                            >
+                              <option value="">— ({t("settings.types.publicNone")})</option>
+                              {["investigating", "identified", "monitoring"].map((p) => (
+                                <option key={p} value={p}>
+                                  {p}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              fontSize: 12.5,
+                              height: 34,
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              name="countsInMttr"
+                              defaultChecked={st.countsInMttr}
+                            />
+                            {t("settings.types.countsInMttr")}
+                          </label>
+                          <button type="submit" className="oi-hover-brand-2" style={brandBtn}>
+                            {t("common.save")}
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  );
+                })}
+                {editing === "new" && (
+                  <form
+                    action={addStatus}
+                    data-testid="status-new-form"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "12px 18px",
+                      background: "var(--sunk)",
+                    }}
                   >
-                    {t("common.cancel")}
-                  </Link>
-                </form>
-              )}
-            </div>
-
-            {/* 4. The post-incident entry rule. */}
-            <form
-              action={savePostIncident}
-              className="oi-panel"
-              style={{
-                padding: "14px 18px",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              <input type="hidden" name="typeId" value={type.id} />
-              <span style={{ fontFamily: "var(--font-title)", fontSize: 15, fontWeight: 600 }}>
-                {t("settings.types.postIncidentTitle")}
-              </span>
-              <span style={{ fontSize: 13 }}>{t("settings.types.postIncidentRule")}</span>
-              <select
-                name="rule"
-                defaultValue={
-                  type.postIncidentFromRank === null
-                    ? "never"
-                    : type.postIncidentFromRank === -1
-                      ? "always"
-                      : String(type.postIncidentFromRank)
-                }
-                className="oi-field"
-                style={{ ...control, width: "auto", minWidth: 180 }}
-              >
-                <option value="never">{t("settings.types.postRule.never")}</option>
-                <option value="always">{t("settings.types.postRule.always")}</option>
-                {data.sevs.slice(0, -1).map((sv) => (
-                  <option key={sv.id} value={sv.rank}>
-                    {t("settings.types.postRule.from", { severity: sv.name })}
-                  </option>
-                ))}
-              </select>
-              <button type="submit" className="oi-hover-brand-2" style={brandBtn}>
-                {t("common.save")}
-              </button>
-              <span style={{ flex: 1 }} />
-              <Link href="/app/settings/post-incident" className="oi-link" style={{ fontSize: 12 }}>
-                {t("settings.types.postIncidentFlowLink")}
-              </Link>
-            </form>
+                    <input type="hidden" name="typeId" value={type.id} />
+                    <input
+                      name="name"
+                      required
+                      autoFocus
+                      maxLength={60}
+                      placeholder={t("settings.types.newStatusPlaceholder")}
+                      className="oi-field"
+                      style={{ ...control, maxWidth: 320 }}
+                    />
+                    <button type="submit" className="oi-hover-brand-2" style={brandBtn}>
+                      {t("common.create")}
+                    </button>
+                    <Link
+                      href={href({})}
+                      className="oi-hover"
+                      style={{ ...ghostBtn, textDecoration: "none" }}
+                    >
+                      {t("common.cancel")}
+                    </Link>
+                  </form>
+                )}
+              </div>
+            </Section>
           </div>
         </div>
       ) : (
