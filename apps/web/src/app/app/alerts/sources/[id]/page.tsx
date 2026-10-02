@@ -22,7 +22,6 @@ import { PriorityRuleEditor } from "@/components/alerting/priority-rule-editor";
 import { PayloadTester } from "@/components/alerting/payload-tester";
 import { IntegrationIcon } from "../../../settings/integrations/icons";
 import {
-  deleteSource,
   saveSourceFilter,
   testSource,
   toggleSource,
@@ -31,6 +30,7 @@ import { priorityChip } from "../../tone";
 import { Fold } from "../../fold";
 import { sourceChoices, urgentFrom, pageableSchedules, pageableTeams } from "../choices";
 import { ChoiceRows } from "../choice-rows";
+import { DeleteSource } from "../delete-source";
 import { FirstAlert, RotateSecret } from "../waiting";
 
 const DAY = 86_400_000;
@@ -107,6 +107,10 @@ export default async function AlertSourcePage({
       .from(alertSources)
       .where(and(eq(alertSources.tenantId, tenant.id), eq(alertSources.id, id)));
     if (!source) return null;
+    const [everything] = await tx
+      .select({ n: sql<number>`count(*)::int`.mapWith(Number) })
+      .from(alerts)
+      .where(eq(alerts.sourceId, source.id));
     const [totals] = await tx
       .select({
         received: sql<number>`count(*)::int`.mapWith(Number),
@@ -164,6 +168,7 @@ export default async function AlertSourcePage({
       .where(eq(alertPriorities.tenantId, tenant.id))
       .orderBy(alertPriorities.rank);
     return {
+      alertCount: everything?.n ?? 0,
       source,
       totals: totals ?? { received: 0, grouped: 0, incidents: 0 },
       recent,
@@ -311,6 +316,9 @@ export default async function AlertSourcePage({
               </button>
             </form>
             <RotateSecret id={source.id} name={source.name} />
+            {!source.managed && (
+              <DeleteSource id={source.id} name={source.name} alertCount={data.alertCount} />
+            )}
           </>
         )}
       </div>
@@ -452,20 +460,6 @@ export default async function AlertSourcePage({
                   <div data-testid="source-preview">
                     <PayloadTester sourceId={source.id} initialText={tester} />
                   </div>
-                  <form
-                    action={deleteSource}
-                    style={{ display: "flex", justifyContent: "flex-end" }}
-                  >
-                    <input type="hidden" name="id" value={source.id} />
-                    <button
-                      type="submit"
-                      data-testid="source-delete"
-                      className="oi-hover-dang"
-                      style={{ ...btn, color: "var(--dang)" }}
-                    >
-                      {t("alt2.source.delete")}
-                    </button>
-                  </form>
                 </div>
               )}
             </div>

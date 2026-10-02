@@ -118,7 +118,13 @@ The fastest way to create one is not this form at all: narrow the [explorer](tel
 
 A cron that stops running emits nothing, and nothing is exactly what no check can see. **Monitors → Heartbeats** is the feature for it: each heartbeat has a URL, your job calls it when it finishes (any method, no body), and silence for longer than the interval plus the grace raises an alert through the workspace's **Heartbeats** source — same routes, same priorities, same escalation. The next ping resolves it, and nothing is alerted before the first ping ever arrives.
 
-The URL carries the token, so each row shows it on request — **URL to call** — and opens it on its own right after the heartbeat is created or its token rotated. Rotating the token issues a new URL and stops the old one working at once.
+Making one work takes three steps, and the row walks you through them:
+
+1. **+ New heartbeat**: a name, how often the job must check in (**Expected every**), how late it may be before alerting (**Grace**), and the service it belongs to.
+2. **Call the URL once.** The row says _Waiting for the first ping_ and shows **URL to call**, with a ready-to-paste `curl -fsS "…"` beneath it. Add it at the end of your job — in a cron, after your command with `&&`, so it only fires when the job succeeded. **Send a test ping** does the same thing from the product, for real: the heartbeat turns _ok_, and nothing more is needed to see the mechanism work.
+3. **Let it run.** Silence for longer than the interval plus the grace turns the row _down_ and raises the alert, routed like any other; the next ping resolves it and the row is _ok_ again.
+
+Nothing alerts before the first ping — a heartbeat created on Monday for a job that first runs on Friday pages nobody in between. The URL carries the token, so each row shows it on request and opens it on its own while the heartbeat is still waiting and right after its token is rotated. Rotating the token issues a new URL and stops the old one working at once.
 
 > The **Incoming request** monitor type describes the same idea and is not finished: it has no URL to call. Use a heartbeat.
 

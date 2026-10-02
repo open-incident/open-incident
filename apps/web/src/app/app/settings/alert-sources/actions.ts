@@ -468,6 +468,10 @@ export async function deleteSource(formData: FormData) {
       .from(alertSources)
       .where(and(eq(alertSources.tenantId, current.tenant.id), eq(alertSources.id, id)));
     if (!s) return;
+    // The Monitors and Heartbeats sources are the product's own doors; the
+    // product recreates one it cannot find, so deleting it would only lose
+    // the history behind it.
+    if (s.managed) return;
     await tx.delete(alertSources).where(eq(alertSources.id, id));
     await recordAudit(tx, current, "config", "alert_source.deleted", { name: s.name });
   });

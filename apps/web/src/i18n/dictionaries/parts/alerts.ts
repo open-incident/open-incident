@@ -160,6 +160,11 @@ const en = {
   "alt2.source.resume": "Resume",
   "alt2.source.rotate": "Rotate secret",
   "alt2.source.delete": "Delete this source",
+  "alt2.source.deleteConfirm": {
+    one: "Delete the source “{name}”? Its history goes with it ({count} alert), and the tool that posts to it gets a 404 from now on.",
+    other:
+      "Delete the source “{name}”? Its history goes with it ({count} alerts), and the tool that posts to it gets a 404 from now on.",
+  },
   "alt2.source.whatHappens": "What happens when {name} sends an alert",
   "alt2.source.ownerNote":
     "If the service named in the alert has an owner, the owner is paged instead. Rules can override both — the first matching rule wins.",
@@ -353,6 +358,11 @@ const fr = {
   "alt2.source.resume": "Réactiver",
   "alt2.source.rotate": "Renouveler le secret",
   "alt2.source.delete": "Supprimer cette source",
+  "alt2.source.deleteConfirm": {
+    one: "Supprimer la source « {name} » ? Son historique part avec elle ({count} alerte), et l'outil qui lui poste recevra désormais un 404.",
+    other:
+      "Supprimer la source « {name} » ? Son historique part avec elle ({count} alertes), et l'outil qui lui poste recevra désormais un 404.",
+  },
   "alt2.source.whatHappens": "Ce qui se passe quand {name} envoie une alerte",
   "alt2.source.ownerNote":
     "Si le service nommé dans l'alerte a un propriétaire, c'est lui qui est appelé. Les règles peuvent tout remplacer — la première qui correspond l'emporte.",
@@ -546,6 +556,11 @@ const de = {
   "alt2.source.resume": "Fortsetzen",
   "alt2.source.rotate": "Secret erneuern",
   "alt2.source.delete": "Diese Quelle löschen",
+  "alt2.source.deleteConfirm": {
+    one: "Quelle „{name}“ löschen? Ihre Historie geht mit ({count} Alarm), und das Tool, das an sie sendet, erhält ab jetzt 404.",
+    other:
+      "Quelle „{name}“ löschen? Ihre Historie geht mit ({count} Alarme), und das Tool, das an sie sendet, erhält ab jetzt 404.",
+  },
   "alt2.source.whatHappens": "Was passiert, wenn {name} einen Alarm sendet",
   "alt2.source.ownerNote":
     "Hat der im Alarm genannte Dienst einen Eigentümer, wird stattdessen dieser gerufen. Regeln können beides überschreiben — die erste passende Regel gewinnt.",

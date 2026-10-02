@@ -10,7 +10,13 @@ import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
 import { currentOrigin } from "@/lib/tenant";
 import { CopyField } from "@/components/copy-field";
-import { createHeartbeat, deleteHeartbeat, rotateHeartbeatToken, toggleHeartbeat } from "./actions";
+import {
+  createHeartbeat,
+  deleteHeartbeat,
+  pingHeartbeatNow,
+  rotateHeartbeatToken,
+  toggleHeartbeat,
+} from "./actions";
 
 /**
  * Settings → Heartbeats: one row per cron or job that must keep pinging, its
@@ -20,7 +26,13 @@ import { createHeartbeat, deleteHeartbeat, rotateHeartbeatToken, toggleHeartbeat
 export default async function HeartbeatsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ new?: string; created?: string; rotated?: string; error?: string }>;
+  searchParams: Promise<{
+    new?: string;
+    created?: string;
+    rotated?: string;
+    pinged?: string;
+    error?: string;
+  }>;
 }) {
   const { tenant, member } = await requireMember();
   const t = await getT();
@@ -151,7 +163,10 @@ export default async function HeartbeatsPage({
         {data.rows.map(({ hb, serviceName }) => {
           const tn = tone(hb.status);
           const token = manages ? decryptSecret(hb.encryptedToken) : null;
-          const highlight = q.created === hb.id || q.rotated === hb.id;
+          const highlight = q.created === hb.id || q.rotated === hb.id || q.pinged === hb.id;
+          // Never pinged: nothing watches it yet. The URL stays open and the
+          // row says what to do, because "waiting" alone reads as broken.
+          const arming = hb.status === "waiting" && !hb.lastPingAt;
           return (
             <div
               key={hb.id}
@@ -227,8 +242,18 @@ export default async function HeartbeatsPage({
               </div>
               {/* The URL carries the token: shown on request, open right after
                   it was created or rotated — the one moment it is needed. */}
+              {arming && (
+                <div style={{ fontSize: 12, color: "var(--wait)", fontWeight: 600 }}>
+                  {t("heartbeats.waitingHint")}
+                </div>
+              )}
+              {q.pinged === hb.id && (
+                <div role="status" style={{ fontSize: 12, color: "var(--ok)", fontWeight: 600 }}>
+                  {t("heartbeats.pinged")}
+                </div>
+              )}
               {token && (
-                <details open={highlight}>
+                <details open={highlight || arming}>
                   <summary
                     style={{
                       cursor: "pointer",
@@ -250,6 +275,18 @@ export default async function HeartbeatsPage({
                         testId="heartbeat-url"
                       />
                     </div>
+                    <form action={pingHeartbeatNow}>
+                      <input type="hidden" name="id" value={hb.id} />
+                      <button
+                        type="submit"
+                        className="oi-hover"
+                        style={ghostBtn}
+                        data-testid="heartbeat-ping"
+                        title={t("heartbeats.pingNowHint")}
+                      >
+                        {t("heartbeats.pingNow")}
+                      </button>
+                    </form>
                     <form action={rotateHeartbeatToken}>
                       <input type="hidden" name="id" value={hb.id} />
                       <button
@@ -261,6 +298,24 @@ export default async function HeartbeatsPage({
                         {t("heartbeats.rotate")}
                       </button>
                     </form>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 6,
+                      alignItems: "center",
+                      marginTop: 8,
+                      fontSize: 11.5,
+                      color: "var(--ink-3)",
+                    }}
+                  >
+                    <span style={{ flex: "none" }}>{t("heartbeats.snippetLabel")}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <CopyField value={`curl -fsS "${heartbeatPingUrl(origin, hb.id, token)}"`} />
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: 11.5, color: "var(--ink-3)" }}>
+                    {t("heartbeats.cronHint")}
                   </div>
                 </details>
               )}
@@ -342,6 +397,9 @@ export default async function HeartbeatsPage({
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <span style={label}>{t("heartbeats.interval")}</span>
+                  <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                    {t("heartbeats.intervalHint")}
+                  </span>
                   <select
                     name="intervalSeconds"
                     defaultValue="3600"
@@ -357,6 +415,9 @@ export default async function HeartbeatsPage({
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <span style={label}>{t("heartbeats.grace")}</span>
+                  <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                    {t("heartbeats.graceHint")}
+                  </span>
                   <select
                     name="graceSeconds"
                     defaultValue="300"

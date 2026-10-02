@@ -4,12 +4,13 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { encryptSecret } from "@openincident/crypto";
+import { decryptSecret, encryptSecret } from "@openincident/crypto";
 import { heartbeats, withTenant } from "@openincident/db";
 import {
   MIN_INTERVAL_SECONDS,
   ensureHeartbeatSource,
   newHeartbeatToken,
+  recordHeartbeatPing,
 } from "@openincident/oncall";
 import { recordAudit } from "@/lib/audit";
 import { requireManager } from "@/lib/session";
@@ -121,4 +122,25 @@ export async function rotateHeartbeatToken(formData: FormData) {
   });
   revalidatePath(PAGE);
   redirect(`${PAGE}?rotated=${id}`);
+}
+
+/**
+ * "Send a test ping": the product calls the heartbeat's own URL, exactly as
+ * the job would. Not a simulation — the ping is recorded, "waiting" becomes
+ * "ok", a firing alert resolves — which is how a person sees the mechanism
+ * work before wiring the cron.
+ */
+export async function pingHeartbeatNow(formData: FormData) {
+  const current = await requireManager();
+  const id = z.string().uuid().parse(formData.get("id"));
+  const token = await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .select({ encryptedToken: heartbeats.encryptedToken })
+      .from(heartbeats)
+      .where(and(eq(heartbeats.tenantId, current.tenant.id), eq(heartbeats.id, id)));
+    return row ? decryptSecret(row.encryptedToken) : null;
+  });
+  if (token) await recordHeartbeatPing(current.tenant.id, id, token);
+  revalidatePath(PAGE);
+  redirect(`${PAGE}?pinged=${id}`);
 }

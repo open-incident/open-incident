@@ -3449,6 +3449,18 @@ export const en = {
   "heartbeats.resume": "Resume",
   "heartbeats.rotate": "Rotate token",
   "heartbeats.rotateHint": "A new URL; the old one stops working at once",
+  "heartbeats.waitingHint":
+    "Waiting for the first ping — call the URL below once to arm it. Nothing alerts before.",
+  "heartbeats.pingNow": "Send a test ping",
+  "heartbeats.pingNowHint":
+    "A real ping, sent by the product: it arms the heartbeat or resolves its alert",
+  "heartbeats.pinged":
+    "Ping received — the heartbeat is armed. It alerts if the next one is missed.",
+  "heartbeats.snippetLabel": "At the end of the job:",
+  "heartbeats.cronHint":
+    "In a cron, add it after your command with &&: it only fires when the job succeeded.",
+  "heartbeats.intervalHint": "how often the job must check in",
+  "heartbeats.graceHint": "how late it may be before alerting",
   "heartbeats.showUrl": "URL to call",
   "heartbeats.service": "Service",
   "heartbeats.status.down": "down",

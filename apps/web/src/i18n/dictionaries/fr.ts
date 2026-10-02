@@ -3496,6 +3496,17 @@ export const fr: Dictionary = {
   "heartbeats.resume": "Reprendre",
   "heartbeats.rotate": "Régénérer le jeton",
   "heartbeats.rotateHint": "Une nouvelle URL ; l'ancienne cesse aussitôt de fonctionner",
+  "heartbeats.waitingHint":
+    "En attente du premier ping — appelez l'URL ci-dessous une fois pour armer la surveillance. Rien n'alerte avant.",
+  "heartbeats.pingNow": "Envoyer un ping d'essai",
+  "heartbeats.pingNowHint":
+    "Un vrai ping, envoyé par le produit : il arme le heartbeat ou résout son alerte",
+  "heartbeats.pinged": "Ping reçu — le heartbeat est armé. Il alertera si le suivant manque.",
+  "heartbeats.snippetLabel": "À la fin du job :",
+  "heartbeats.cronHint":
+    "Dans un cron, ajoutez-la après votre commande avec && : elle ne part que si le job a réussi.",
+  "heartbeats.intervalHint": "la fréquence à laquelle le job doit se manifester",
+  "heartbeats.graceHint": "le retard toléré avant d'alerter",
   "heartbeats.showUrl": "URL à appeler",
   "heartbeats.service": "Service",
   "heartbeats.status.down": "en panne",

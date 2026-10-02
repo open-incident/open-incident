@@ -17,7 +17,7 @@ Under **Alerts → Sources**, not in the settings — described here because the
 
 ![Alert sources](img/settings-alert-sources.png "One row per source with its mark, its last day, its last alert, and the way to its page.")
 
-One source = one dedicated endpoint + one secret compared in constant time. **+ New source** picks the **tool** in a grid (Datadog, Prometheus/Alertmanager, Grafana, Sentry, CloudWatch, Uptime Kuma; **HTTP** for anything that can post JSON), a name, and shows the endpoint and the secret once. Only the secret's SHA-256 is stored; **Rotate the secret** on the source page gives a new one, shown once, and the old one stops working at once. The secret travels as the `x-oi-secret` header or the `?secret=` query parameter.
+One source = one dedicated endpoint + one secret compared in constant time. **+ New source** picks the **tool** in a grid (Datadog, Prometheus/Alertmanager, Grafana, Sentry, CloudWatch, Uptime Kuma; **HTTP** for anything that can post JSON), a name, and shows the endpoint and the secret once. Only the secret's SHA-256 is stored. On the source page, **Rotate the secret** gives a new one, shown once, and the old one stops working at once. The secret travels as the `x-oi-secret` header or the `?secret=` query parameter. **Delete this source**, beside it, asks first and says how many alerts leave with it — the tool posting to the endpoint then gets a 404. The two sources the product manages itself, _Monitors_ and _Heartbeats_, cannot be deleted.
 
 ### The source page
 

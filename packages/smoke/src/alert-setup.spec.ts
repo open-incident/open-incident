@@ -152,7 +152,8 @@ test.describe("Alert configuration", () => {
       });
     }
     await page.goto(sourceUrl);
-    await page.getByTestId("source-advanced").click();
+    // Deleting sits in the header now and asks first; the dialog is accepted.
+    page.once("dialog", (d) => d.accept());
     await page.getByTestId("source-delete").click();
     await expect(page).toHaveURL(/\/app\/alerts\/sources/);
     await expect(page.getByText(name)).toHaveCount(0);
