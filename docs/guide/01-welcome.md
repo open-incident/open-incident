@@ -33,7 +33,7 @@ A signed-in member sees a rail on the left. Each section of it is a chapter of t
 
 **Guide** and **Settings** sit at the foot of the rail, away from the daily work: one is read once, the other is opened by one person in ten.
 
-The header carries the things that are true of you rather than of the screen you are on — who is **on call** right now with a **Page me** button beside them, the **bell** with what happened while you were away, and your own avatar, which opens your account.
+The header carries the things that are true of you rather than of the screen you are on — who is **on call** right now with a **Page me** button beside them, the **bell** with what happened while you were away, and your own avatar, which opens a menu with your account and the way to sign out.
 
 ![The incidents list, the first screen after sign-in](img/shell-incidents.png "The shell: the rail on the left, who is on call and your account in the header, the screen in the middle.")
 

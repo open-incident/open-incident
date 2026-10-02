@@ -29,7 +29,7 @@ The sign-in endpoint is rate limited: after a burst of attempts you are told to 
 
 ## My account
 
-Open the menu under your initials in the top bar and choose **My account**.
+Open the menu under your initials in the top bar and choose **My account**. **Sign out** is in the same menu: it ends the session on the server and returns to the sign-in page — the only way out for a member who signs in through single sign-on and has no password.
 
 ![My account](img/account.png "Profile, language, timezone, appearance, email, password, deletion.")
 

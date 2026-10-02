@@ -12,7 +12,10 @@ test.describe("Authentication", () => {
     // The list opens on "Open", which carries the two live incidents of the
     // demo data set; INC-217 is resolved and lives under "All".
     await expect(page.getByText("INC-221")).toBeVisible();
-    await signOut(page);
+    // The way out is under the initials, and it ends the session for real.
+    await page.getByTestId("account-chip").click();
+    await page.getByTestId("sign-out").click();
+    await expect(page).toHaveURL(/\/login/);
     await page.goto("/app/incidents");
     await expect(page).toHaveURL(/\/login/);
   });

@@ -17,6 +17,7 @@ import { Sidebar, type OnCallNow, type SidebarSection } from "./sidebar";
 import { NavIcon } from "./nav-icons";
 import { CommandPalette } from "./command-palette";
 import { NotificationBell, type BellRow } from "./notification-bell";
+import { AccountMenu } from "./account-menu";
 
 export type AppFrameProps = {
   workspaceName: string;
@@ -272,27 +273,8 @@ export function AppFrame({
             unread={bell.unread}
             markReadAction={markBellReadAction}
           />
-          {/* And the reader, where every application puts them. */}
-          <Link
-            href="/app/account"
-            data-testid="account-chip"
-            title={`${member.name} · ${member.roleLabel}`}
-            style={{
-              display: "grid",
-              placeItems: "center",
-              width: 30,
-              height: 30,
-              borderRadius: "50%",
-              background: "var(--brand-t)",
-              color: "var(--brand)",
-              fontSize: 11,
-              fontWeight: 700,
-              textDecoration: "none",
-              flex: "none",
-            }}
-          >
-            {member.initials}
-          </Link>
+          {/* And the reader, where every application puts them — with the way out. */}
+          <AccountMenu name={member.name} roleLabel={member.roleLabel} initials={member.initials} />
         </header>
         <main style={{ flex: 1, minHeight: 0, position: "relative" }}>
           <div style={{ position: "absolute", inset: 0, overflow: "auto" }}>{children}</div>
