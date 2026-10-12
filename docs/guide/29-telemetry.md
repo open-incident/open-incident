@@ -289,50 +289,58 @@ meanwhile. Answering 500 there loses them.
    next; shortening it does not retroactively rewrite what is already stored,
    and lengthening it cannot bring back what is gone. The screen says so.
 
-## Five tabs, and a window
+## One row of views, and a window
 
-Telemetry is one screen with five tabs, and every one of them reads the same
-**time window** — fifteen minutes, an hour, six hours, a day, a week, or an
-explicit range something you clicked put in the address.
+Telemetry is one screen with one row of navigation across the top: **Services**,
+then the seven signals — **Logs**, **Traces**, **Metrics**, **Exceptions**,
+**Profiles**, **Real users**, **SQL** — and, set apart at the end, the three
+things that are configured rather than read: **Dashboards**, **Objectives** and
+**Setup**. Every view is one click away, and none is nested inside another.
 
-**Overview** is what you open first: the services sorted by traffic, with their
+Under it, at the right, sits the **time window** — fifteen minutes, an hour,
+six hours, a day, a week — and it is the same window for every view: moving
+from Logs to Traces keeps the window, the filter and the service you picked.
+A range you zoomed into shows as a chip beside it, with a cross to drop it.
+
+**Services** is what you open first: the services sorted by traffic, with their
 rate, their error share, their p99 and how many incidents they have had, and
 the **service map** under them. A service appears the first time it sends a
 span; nothing is declared in advance.
 
-![Overview](img/telemetry-overview.png "Services by traffic, with their rate, their error share, their p99 and their incidents — and the map under them.")
-
-**Explore** is the seven signals — Logs, Traces, Metrics, Exceptions, Profiles,
-Real users and SQL — sharing one filter box, one window and one facet rail.
-
-**Dashboards**, **Objectives** and **Setup** are the three things that are
-configured rather than read, and they are the last three tabs for that reason.
+![Services](img/telemetry-overview.png "Services by traffic, with their rate, their error share, their p99 and their incidents — and the map under them.")
 
 > The addresses the old layout used still work: a link to
-> `/app/telemetry?tab=logs` lands on the explorer with Logs selected, and a
-> bookmark to the dashboards or the SLOs lands on their tab.
+> `/app/telemetry?tab=logs` lands on Logs, and a bookmark to the dashboards or
+> the SLOs lands on their view.
 
 ## The explorer
 
-Three things sit above every signal, and they are the whole interaction: the
-**window**, the **filter**, and — for logs, traces and exceptions — the **facet
-rail** down the left.
+Logs and traces are laid out the same way, top to bottom: the **search bar**
+across the whole width, the **drawing** of the window, then two columns — the
+**field browser** on the left and the **results** on the right. Exceptions
+share the search bar and the field browser.
 
-### The facet rail
+The search bar holds the filter, and the filter is the one description of what
+is on screen: every click described below writes a term into it rather than
+keeping a selection of its own. Beside it are the **saved searches**, **Save**,
+**Watch this** — which turns the filter into a monitor — and **Syntax**, the
+fields and operators the filter understands.
 
-The rail counts what is actually in the window: every field, its distinct
+### The field browser
+
+The field browser counts what is actually in the window: every field, its distinct
 values, and the share of rows each one holds. `service_name · 6 · storefront
 28 % · orders-db 24 % …`. Clicking a value adds it to the filter; clicking it
 again takes it out. Under the fields it lists the **attributes present** — the
 keys your own services send, which no fixed list could know.
 
-It is a rail and not a sidebar of saved filters because the question it answers
+It is a field browser and not a list of saved filters because the question it answers
 is the one nobody can ask in a query language: _what is in here?_ A filter
-narrows what you already suspect; the rail tells you what you did not.
+narrows what you already suspect; the browser tells you what you did not.
 
-![Logs, with the facet rail](img/telemetry-logs.png "The rail counts the window; the histogram draws it by severity; both are filters.")
+![Logs, with the field browser](img/telemetry-logs.png "The search bar, the histogram by severity, the field browser and the messages.")
 
-Counting is not free, so the rail scans at most **six hours** whatever the
+Counting is not free, so the browser scans at most **six hours** whatever the
 window, and says so — `963 844 rows counted over the last six hours` — rather
 than quietly sampling. A percentage from a stated slice is usable; one from an
 unstated one is not.
@@ -379,6 +387,48 @@ grouping key is a fingerprint computed at ingestion from the type, the message
 with its variable parts removed, and the first three frames of your own code —
 so the same failure at ten thousand occurrences is one line with a count and a
 first-seen, and two callers of the same library failure are two lines.
+
+### Reading a log line
+
+The logs are a table — time, level, service, message — and a line opens in
+place. Opened, it shows its whole body, then every field it carries: the
+service, the environment, the severity, the instrumentation scope, the trace
+and span it belongs to, and the attributes your code attached. Each field has
+two buttons: **+** keeps only the lines with that value, **−** excludes them.
+Both write the term into the filter — `service_name = 'storefront'`, or
+`NOT service_name = 'storefront'` — so what you clicked stays readable.
+
+![A log line, opened](img/telemetry-log-line.png "The body, every field, and two buttons per field to keep or exclude its value.")
+
+Three buttons sit above the fields. **Open the trace** goes to the request the
+line was written in. **Logs of this trace** narrows the list to that request.
+**Context ±1 min** shows the same service a minute either side, which is how
+you read what happened just before an error.
+
+The **Patterns** tab beside **Messages** folds the window's lines into their
+shapes; see _Log patterns_ below.
+
+### The trace list, and a trace
+
+The traces are a table too: start, root service, operation with the services
+the request crossed as a strip of colours, duration with a bar scaled to the
+slowest on the page, span count, errors and the HTTP status. Two **quick
+filters** above the drawing ask the two standing questions of a trace list —
+**Errors** and **Slow (> 1 s)** — and are toggles over the same filter.
+
+Opening a trace gives it the whole page: its operation and status, a strip of
+figures — start, duration, spans, services, errors — the **waterfall**, the
+time spent per service, and the logs written during the request. **All traces**
+goes back to the list, with the window and the filter as they were.
+
+![A trace](img/telemetry-trace.png "The trace on its own page: figures, waterfall, time per service, and its logs.")
+
+### An empty window
+
+When the window holds nothing, the explorer says when the last data arrived
+and offers to go there in one click — the hour that ends with that data. A
+window a week too early is the commonest reason for an empty screen, and a
+blank table does not say so.
 
 ### Traces at millions of rows
 

@@ -51,27 +51,58 @@ export async function FacetRail({
       attributeKeys(kind, tenantId, { from, to, filter, service, limit: 8 }),
     ]);
   } catch {
-    // A rail that cannot count is a rail that says nothing — never a page that
-    // fails. The list beside it reports the filter error on its own.
-    return null;
+    // A rail that cannot count still holds its place: the list beside it
+    // reports the filter error on its own, and the layout must not collapse.
+    data = { total: 0, facets: [], scanned: { from, to, whole: true } };
   }
 
-  if (data.facets.length === 0) return null;
-
-  /** One more term, joined to what is already there. */
-  const withTerm = (field: string, value: string) => {
-    const term = `${field} = '${value.replace(/'/g, "")}'`;
-    const next = filter?.trim() ? `${filter.trim()} AND ${term}` : term;
-    return link({ q: next, before: undefined });
+  const terms = (filter ?? "")
+    .split(/\s+AND\s+/i)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const termOf = (field: string, value: string) => `${field} = '${value.replace(/'/g, "")}'`;
+  /** A value already in the filter is removed by a click; any other is added. */
+  const toggle = (field: string, value: string) => {
+    const term = termOf(field, value);
+    const next = terms.includes(term) ? terms.filter((x) => x !== term) : [...terms, term];
+    return link({ q: next.join(" AND ") || undefined, before: undefined });
   };
 
+  /*
+   * The field browser, after Sumo Logic's: one panel beside the results, a
+   * section per field with how many values it has, the values with their
+   * share, and the ones already in the filter marked — clicking them takes
+   * them out. Sticky, and scrolled on its own, so the fields stay in reach
+   * while the results scroll.
+   */
   return (
     <aside
       data-testid="facet-rail"
-      style={{ display: "flex", flexDirection: "column", gap: 14, alignSelf: "start" }}
+      className="oi-panel"
+      style={{
+        position: "sticky",
+        top: 12,
+        alignSelf: "start",
+        maxHeight: "calc(100vh - 150px)",
+        overflowY: "auto",
+        display: "flex",
+        flexDirection: "column",
+      }}
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        <span className="oi-eyebrow">{t("facets.title")}</span>
+      <div
+        style={{
+          padding: "11px 14px 9px",
+          borderBottom: "1px solid var(--line)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+          position: "sticky",
+          top: 0,
+          background: "var(--panel)",
+          zIndex: 1,
+        }}
+      >
+        <span style={{ fontSize: 12.5, fontWeight: 600 }}>{t("facets.title")}</span>
         <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
           {data.scanned.whole
             ? t("facets.total", { count: data.total })
@@ -90,87 +121,146 @@ export async function FacetRail({
         </span>
       </div>
 
+      {data.facets.length === 0 && (
+        <div style={{ padding: "12px 14px", fontSize: 12, color: "var(--ink-3)" }}>
+          {t("facets.none")}
+        </div>
+      )}
+
       {data.facets.map((facet) => (
-        <div key={facet.field} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+        <details
+          key={facet.field}
+          open
+          style={{ borderBottom: "1px solid var(--line-2)", padding: "8px 14px" }}
+        >
+          <summary
+            style={{
+              cursor: "pointer",
+              listStyle: "none",
+              display: "flex",
+              alignItems: "baseline",
+              gap: 6,
+              marginBottom: 4,
+            }}
+          >
+            <span aria-hidden style={{ fontSize: 9, color: "var(--ink-3)" }}>
+              ▾
+            </span>
             <span
               style={{
                 fontFamily: "var(--mono)",
-                fontSize: 11,
+                fontSize: 11.5,
                 fontWeight: 600,
-                color: "var(--ink-2)",
+                color: "var(--ink)",
                 minWidth: 0,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
+                flex: 1,
               }}
             >
               {facet.field}
             </span>
             <span style={{ fontSize: 10.5, color: "var(--ink-3)" }}>{facet.distinct}</span>
-          </div>
-          {facet.values.map((v) => (
-            <Link
-              key={v.value}
-              href={withTerm(facet.field, v.value)}
-              data-testid="facet-value"
-              title={t("facets.add", { field: facet.field, value: v.value })}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0,1fr) 44px",
-                gap: 6,
-                alignItems: "center",
-                padding: "1px 0",
-                fontSize: 11.5,
-                textDecoration: "none",
-                color: "var(--ink)",
-              }}
-            >
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {v.value}
-              </span>
-              <span
+          </summary>
+          {facet.values.map((v) => {
+            const on = terms.includes(termOf(facet.field, v.value));
+            return (
+              <Link
+                key={v.value}
+                href={toggle(facet.field, v.value)}
+                data-testid="facet-value"
+                aria-pressed={on}
+                title={t(on ? "facets.remove" : "facets.add", {
+                  field: facet.field,
+                  value: v.value,
+                })}
+                className={on ? undefined : "oi-hover"}
                 style={{
-                  fontFamily: "var(--mono)",
-                  fontSize: 10.5,
-                  color: "var(--ink-3)",
-                  textAlign: "right",
-                }}
-              >
-                {share(v.share)}
-              </span>
-              {/* The bar is the share again, for the eye rather than the reader. */}
-              <span
-                aria-hidden
-                style={{
-                  gridColumn: "1 / -1",
-                  height: 2,
-                  borderRadius: 2,
-                  background: "var(--line-2)",
-                  overflow: "hidden",
+                  display: "grid",
+                  gridTemplateColumns: "14px minmax(0,1fr) 44px",
+                  gap: 6,
+                  alignItems: "center",
+                  padding: "3px 4px",
+                  margin: "0 -4px",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  textDecoration: "none",
+                  color: "var(--ink)",
+                  background: on ? "var(--brand-t)" : undefined,
                 }}
               >
                 <span
+                  aria-hidden
                   style={{
-                    display: "block",
-                    height: "100%",
-                    width: `${Math.max(2, v.share * 100)}%`,
-                    background: "var(--brand)",
-                    opacity: 0.6,
+                    width: 11,
+                    height: 11,
+                    borderRadius: 3,
+                    border: `1.5px solid ${on ? "var(--brand)" : "var(--line)"}`,
+                    background: on ? "var(--brand)" : "transparent",
                   }}
                 />
-              </span>
-            </Link>
-          ))}
-        </div>
+                <span
+                  style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                >
+                  {v.value}
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--mono)",
+                    fontSize: 10.5,
+                    color: "var(--ink-3)",
+                    textAlign: "right",
+                  }}
+                >
+                  {share(v.share)}
+                </span>
+                {/* The bar is the share again, for the eye rather than the reader. */}
+                <span
+                  aria-hidden
+                  style={{
+                    gridColumn: "2 / -1",
+                    height: 2,
+                    borderRadius: 2,
+                    background: "var(--line-2)",
+                    overflow: "hidden",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "block",
+                      height: "100%",
+                      width: `${Math.max(2, v.share * 100)}%`,
+                      background: "var(--brand)",
+                      opacity: 0.55,
+                    }}
+                  />
+                </span>
+              </Link>
+            );
+          })}
+        </details>
       ))}
 
       {attrs.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <span className="oi-eyebrow">{t("facets.attributes")}</span>
+        <details open style={{ padding: "8px 14px 12px" }}>
+          <summary
+            style={{
+              cursor: "pointer",
+              listStyle: "none",
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: ".08em",
+              textTransform: "uppercase",
+              color: "var(--ink-3)",
+              marginBottom: 4,
+            }}
+          >
+            {t("facets.attributes")}
+          </summary>
           {/*
             Keys, not values. What the instrumentation put in the map is
-            unbounded — a user id, a cart total — so the rail says which
-            attributes are here and the filter box asks for one of them.
+            unbounded — a user id, a cart total — so the panel says which
+            attributes are here and the filter asks for one of them.
           */}
           {attrs.map((a) => (
             <Link
@@ -180,9 +270,14 @@ export async function FacetRail({
                 before: undefined,
               })}
               data-testid="facet-attribute"
+              className="oi-hover"
               style={{
+                display: "block",
+                padding: "3px 4px",
+                margin: "0 -4px",
+                borderRadius: 6,
                 fontFamily: "var(--mono)",
-                fontSize: 11,
+                fontSize: 11.5,
                 color: "var(--ink-2)",
                 textDecoration: "none",
                 overflow: "hidden",
@@ -193,7 +288,7 @@ export async function FacetRail({
               {a.value}
             </Link>
           ))}
-        </div>
+        </details>
       )}
     </aside>
   );

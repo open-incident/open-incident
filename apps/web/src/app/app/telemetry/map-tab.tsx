@@ -32,9 +32,12 @@ export async function MapTab({
   tenantId,
   sinceMinutes = 60,
   highlight,
+  windowLinks = true,
 }: {
   tenantId: string;
   sinceMinutes?: number;
+  /** Its own window chips — off where the page above already offers the window. */
+  windowLinks?: boolean;
   /** The service the reader arrived from, picked out rather than filtered to. */
   highlight?: string;
 }) {
@@ -44,7 +47,7 @@ export async function MapTab({
     servicesSeen(tenantId, sinceMinutes),
   ]);
 
-  const windows = (
+  const windows = !windowLinks ? null : (
     <div style={{ display: "flex", gap: 6 }}>
       {WINDOWS.map((w) => (
         <Link

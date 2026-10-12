@@ -143,6 +143,11 @@ export type LogRow = {
   body: string;
   trace_id: string;
   span_id: string;
+  scope_name: string;
+  /** The line's own attributes — what the detail panel lists, and filters on. */
+  attributes: Record<string, string>;
+  /** Where it came from: host, container, SDK. */
+  resource_attributes: Record<string, string>;
 };
 
 /**
@@ -227,7 +232,8 @@ export async function recentLogs(
 
   const rows = await read<LogRow>(
     tenantId,
-    `SELECT ts, service_name, environment, severity_number, severity_text, body, trace_id, span_id
+    `SELECT ts, service_name, environment, severity_number, severity_text, body, trace_id, span_id,
+            scope_name, attributes, resource_attributes
        FROM ${LOGS}
       WHERE ${where.join(" AND ")}
       ORDER BY ts DESC, trace_id DESC
@@ -825,4 +831,27 @@ export async function exceptionDetail(
     { params: { fp: fingerprint } },
   );
   return rows[0] ?? null;
+}
+
+/**
+ * When the most recent row of a signal arrived, within the last thirty days.
+ *
+ * An empty window is either "nothing happened" or "you are looking at the
+ * wrong time". The explorer says which, and offers the window where the data
+ * is — the question somebody asks the moment a list comes back empty.
+ * Bounded to thirty days of partitions, so the answer costs the same on a
+ * workspace with a year of history.
+ */
+export async function latestRow(tenantId: string, kind: "logs" | "traces"): Promise<Date | null> {
+  const [table, column] = kind === "logs" ? [LOGS, "ts"] : [SPANS, "start_ts"];
+  const rows = await read<{ at: string | null }>(
+    tenantId,
+    `SELECT toString(max(${column})) AS at
+       FROM ${table}
+      WHERE ${column} >= now() - INTERVAL 30 DAY`,
+  );
+  const at = rows[0]?.at;
+  if (!at || at.startsWith("1970")) return null;
+  const d = new Date(`${at.replace(" ", "T")}Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
 }

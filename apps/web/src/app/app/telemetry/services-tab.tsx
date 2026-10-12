@@ -40,9 +40,12 @@ export function serviceWindowOf(value: string | undefined): ServiceWindowMinutes
 export async function ServicesTab({
   tenantId,
   sinceMinutes,
+  windowLinks = true,
 }: {
   tenantId: string;
   sinceMinutes: ServiceWindowMinutes;
+  /** Its own window chips — off where the page above already offers the window. */
+  windowLinks?: boolean;
 }) {
   const t = await getT();
   const rows = await servicesOverview(tenantId, sinceMinutes).catch(() => [] as ServiceRow[]);
@@ -89,24 +92,25 @@ export async function ServicesTab({
         <span style={{ fontSize: 12.5, color: "var(--ink-3)", flex: 1 }}>
           {t("telemetry.servicesHint")}
         </span>
-        {SERVICE_WINDOWS.map((m) => (
-          <Link
-            key={m}
-            href={`/app/telemetry?tab=services&since=${m}`}
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              padding: "3px 9px",
-              borderRadius: 7,
-              textDecoration: "none",
-              color: m === sinceMinutes ? "var(--ink)" : "var(--ink-3)",
-              background: m === sinceMinutes ? "var(--panel)" : "transparent",
-              border: `1px solid ${m === sinceMinutes ? "var(--line)" : "transparent"}`,
-            }}
-          >
-            {m < 1440 ? `${m / 60} h` : "24 h"}
-          </Link>
-        ))}
+        {windowLinks &&
+          SERVICE_WINDOWS.map((m) => (
+            <Link
+              key={m}
+              href={`/app/telemetry?tab=services&since=${m}`}
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                padding: "3px 9px",
+                borderRadius: 7,
+                textDecoration: "none",
+                color: m === sinceMinutes ? "var(--ink)" : "var(--ink-3)",
+                background: m === sinceMinutes ? "var(--panel)" : "transparent",
+                border: `1px solid ${m === sinceMinutes ? "var(--line)" : "transparent"}`,
+              }}
+            >
+              {m < 1440 ? `${m / 60} h` : "24 h"}
+            </Link>
+          ))}
       </div>
 
       {insight && (

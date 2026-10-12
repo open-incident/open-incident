@@ -10,6 +10,7 @@ export {
   read,
   logPatterns,
   recentLogs,
+  latestRow,
   recentTraces,
   chTime,
   type LogPage,

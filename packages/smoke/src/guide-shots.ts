@@ -184,9 +184,32 @@ async function main() {
       ready: "[data-testid=log-histogram]",
     },
     {
+      file: "telemetry-log-line.png",
+      path: "/app/telemetry?tab=explore&signal=logs&range=1h",
+      ready: "[data-testid=log-row]",
+      act: async (p) => {
+        // A line opened in place: its body, its fields and their two gestures.
+        await p.getByTestId("log-row").first().locator("summary").click();
+      },
+    },
+    {
       file: "telemetry-traces.png",
       path: "/app/telemetry?tab=explore&signal=traces&range=1h",
       ready: "[data-testid=latency-scatter]",
+    },
+    {
+      file: "telemetry-trace.png",
+      path: "/app/telemetry?tab=explore&signal=traces&range=1h",
+      ready: "[data-testid=trace-row]",
+      act: async (p) => {
+        // The slowest-looking request is the one worth a page of its own: the
+        // first row with more than three spans, or the first row.
+        const rows = p.getByTestId("trace-row");
+        const busy = rows.filter({ hasText: /POST/ }).first();
+        await ((await busy.count()) ? busy : rows.first()).click();
+        await p.getByTestId("trace-view").waitFor();
+        await p.waitForLoadState("networkidle");
+      },
     },
     {
       file: "telemetry-metrics.png",

@@ -18,6 +18,7 @@ import {
   traceShape,
   traceBands,
   SCATTER_MAX_MINUTES,
+  latestSignal,
 } from "@/lib/telemetry";
 import { packsReporting, type PackId } from "@openincident/telemetry";
 import { packDashboardSlugs } from "@openincident/oncall";
@@ -33,6 +34,7 @@ import { RumTab } from "./rum-tab";
 import { SlosTab } from "./slos-tab";
 import { DashboardsTab } from "./dashboards-tab";
 import { FacetRail } from "./facet-rail";
+import { EmptyWindow, FieldRow, ResultsPanel, termFor, withTerm } from "./explorer-parts";
 import { LogHistogram } from "./log-histogram";
 import { LatencyScatter } from "./latency-scatter";
 import { LatencyBands } from "./latency-bands";
@@ -280,142 +282,152 @@ export default async function TelemetryPage({
     return `/app/telemetry?${q.toString()}`;
   };
 
+  /*
+   * One row of navigation, one window.
+   *
+   * The screen used to nest two rows of tabs — a group, then a signal inside
+   * it — and to give the services and the map their own window chips on top of
+   * the explorer's. It reads like Datadog's top bar now: every view one click
+   * away on one row, the window once at the right, and it holds for every view
+   * that has a time axis.
+   */
+  const NAV: Array<{ key: string; label: string; tab: Tab; signal?: Signal; gap?: boolean }> = [
+    { key: "services", label: t("telemetry.nav.services"), tab: "overview" },
+    ...(["logs", "traces", "metrics", "exceptions", "profiles", "rum", "sql"] as const).map(
+      (x) => ({
+        key: x,
+        label: t(`telemetry.tab.${x}`),
+        tab: "explore" as Tab,
+        signal: x as Signal,
+      }),
+    ),
+    { key: "dashboards", label: t("telemetry.tab.dashboards"), tab: "dashboards", gap: true },
+    { key: "slos", label: t("telemetry.tab.slos"), tab: "slos" },
+    { key: "setup", label: t("telemetry.tab.setup"), tab: "setup" },
+  ];
+  const isActive = (n: (typeof NAV)[number]) =>
+    n.tab === tab && (n.tab !== "explore" || n.signal === signal);
+  const hasWindow = tab === "overview" || (tab === "explore" && signal !== "sql");
+  const serviceChip = Boolean(sp.service) && tab !== "setup";
+  // Explorers want every pixel of width, as in Datadog and Sumo Logic; the
+  // other views read better at a measure.
+  const wide = tab === "explore" && signal !== "sql";
+
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "22px 28px 60px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+    <div
+      style={{
+        maxWidth: wide ? "none" : 1240,
+        margin: "0 auto",
+        padding: "16px 24px 60px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 18,
+          flexWrap: "wrap",
+          borderBottom: "1px solid var(--line)",
+          paddingBottom: 0,
+        }}
+      >
         <h1
           style={{
-            margin: 0,
+            margin: "0 0 10px",
             fontFamily: "var(--title)",
-            fontSize: 22,
+            fontSize: 20,
             fontWeight: 600,
             letterSpacing: "-.015em",
           }}
         >
           {t("nav.telemetry")}
         </h1>
-        <div
-          style={{
-            display: "flex",
-            gap: 2,
-            background: "var(--sunk)",
-            borderRadius: 10,
-            padding: 3,
-          }}
+        <nav
+          aria-label={t("nav.telemetry")}
+          style={{ display: "flex", alignItems: "flex-end", gap: 2, flexWrap: "wrap", flex: 1 }}
         >
-          {TABS.map((x) => (
-            <Link
-              key={x}
-              data-testid={`telemetry-tab-${x}`}
-              href={link({ tab: x, signal: x === "explore" ? signal : undefined })}
-              style={{
-                height: 28,
-                padding: "0 12px",
-                borderRadius: 8,
-                background: tab === x ? "var(--panel)" : "transparent",
-                color: tab === x ? "var(--ink)" : "var(--ink-3)",
-                boxShadow: tab === x ? "var(--shadow-card)" : "none",
-                display: "flex",
-                alignItems: "center",
-                fontSize: 12.5,
-                fontWeight: 600,
-                textDecoration: "none",
-              }}
-            >
-              {t(`telemetry.tab.${x}`)}
-            </Link>
-          ))}
-        </div>
-        {/*
-          A filtered list that does not say it is filtered is a list somebody
-          will read as "there is nothing else". The chip says which service,
-          and removing it is one click.
-        */}
-        {sp.service && tab !== "setup" && (
-          <Link
-            href={link({ service: undefined })}
-            data-testid="telemetry-service-filter"
-            title={t("telemetry.clearService")}
-            aria-label={t("telemetry.clearService")}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              height: 26,
-              padding: "0 10px",
-              borderRadius: 8,
-              border: "1px solid var(--line)",
-              background: "var(--sunk)",
-              fontSize: 12,
-              color: "var(--ink)",
-              textDecoration: "none",
-            }}
-          >
-            <span style={{ fontFamily: "var(--mono)" }}>{sp.service}</span>
-            <span style={{ color: "var(--ink-3)" }} aria-hidden>
-              ✕
-            </span>
-          </Link>
-        )}
-        <span style={{ flex: 1 }} />
-        <Usage tenantId={tenant.id} label={t("telemetry.todayRows")} />
+          {NAV.map((n) => {
+            const on = isActive(n);
+            return (
+              <Link
+                key={n.key}
+                data-testid={n.signal ? `telemetry-signal-${n.signal}` : `telemetry-tab-${n.tab}`}
+                aria-current={on ? "page" : undefined}
+                href={link({
+                  tab: n.tab,
+                  signal: n.signal,
+                  before: undefined,
+                  trace: undefined,
+                  patterns: undefined,
+                })}
+                className={on ? undefined : "oi-hover"}
+                style={{
+                  marginLeft: n.gap ? 14 : 0,
+                  padding: "8px 11px 9px",
+                  borderRadius: "8px 8px 0 0",
+                  fontSize: 13,
+                  fontWeight: on ? 600 : 500,
+                  color: on ? "var(--brand)" : "var(--ink-2)",
+                  borderBottom: `2px solid ${on ? "var(--brand)" : "transparent"}`,
+                  marginBottom: -1,
+                  textDecoration: "none",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {n.label}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
 
-      {/*
-        The Explorer's two controls, above everything it can look at: the
-        signal, and the window. They are one row because they are one thought
-        — "traces, last hour" — and because the window is the thing that keeps
-        a list of traces from reading a month of them.
-      */}
-      {tab === "explore" && (
+      {(hasWindow || serviceChip) && (
         <div
           style={{
             display: "flex",
             alignItems: "center",
             gap: 10,
             flexWrap: "wrap",
-            marginTop: 16,
+            marginTop: 12,
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              gap: 2,
-              background: "var(--sunk)",
-              borderRadius: 9,
-              padding: 3,
-            }}
-          >
-            {SIGNALS.map((x) => (
-              <Link
-                key={x}
-                data-testid={`telemetry-signal-${x}`}
-                href={link({ signal: x, before: undefined })}
-                style={{
-                  height: 26,
-                  padding: "0 10px",
-                  borderRadius: 7,
-                  background: signal === x ? "var(--panel)" : "transparent",
-                  color: signal === x ? "var(--ink)" : "var(--ink-3)",
-                  boxShadow: signal === x ? "var(--shadow-card)" : "none",
-                  display: "flex",
-                  alignItems: "center",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  textDecoration: "none",
-                }}
-              >
-                {t(`telemetry.tab.${x}`)}
-              </Link>
-            ))}
-          </div>
+          {/*
+            A filtered view that does not say it is filtered is a view somebody
+            will read as "there is nothing else". The chip says which service,
+            and removing it is one click.
+          */}
+          {serviceChip && (
+            <Link
+              href={link({ service: undefined, before: undefined })}
+              data-testid="telemetry-service-filter"
+              title={t("telemetry.clearService")}
+              aria-label={t("telemetry.clearService")}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                height: 28,
+                padding: "0 10px",
+                borderRadius: 8,
+                border: "1px solid var(--brand-b)",
+                background: "var(--brand-t)",
+                fontSize: 12,
+                color: "var(--brand)",
+                textDecoration: "none",
+              }}
+            >
+              <span style={{ color: "var(--ink-3)" }}>service</span>
+              <span style={{ fontFamily: "var(--mono)", fontWeight: 600 }}>{sp.service}</span>
+              <span aria-hidden>✕</span>
+            </Link>
+          )}
           <span style={{ flex: 1 }} />
           {/*
             A zoom is shown as a chip of its own, with the way out: a reader
             who clicked a bar must be able to see that the window is no longer
-            the one the chips describe.
+            the one the presets describe.
           */}
-          {zoomed && (
+          {hasWindow && zoomed && (
             <Link
               href={link({ from: undefined, to: undefined, before: undefined })}
               data-testid="telemetry-zoom"
@@ -423,60 +435,85 @@ export default async function TelemetryPage({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 6,
-                height: 24,
-                padding: "0 9px",
-                borderRadius: 7,
-                border: "1px solid var(--line)",
-                background: "var(--sunk)",
+                height: 28,
+                padding: "0 10px",
+                borderRadius: 8,
+                border: "1px solid var(--brand-b)",
+                background: "var(--brand-t)",
                 fontFamily: "var(--mono)",
-                fontSize: 11,
-                color: "var(--ink)",
+                fontSize: 11.5,
+                color: "var(--brand)",
                 textDecoration: "none",
               }}
             >
-              {zoomed.from.toISOString().slice(11, 16)}–{zoomed.to.toISOString().slice(11, 16)}
-              <span style={{ color: "var(--ink-3)" }} aria-hidden>
-                ✕
-              </span>
+              {t.fmt.dateTime(zoomed.from)} → {zoomed.to.toISOString().slice(11, 16)}
+              <span aria-hidden>✕</span>
             </Link>
           )}
-          {/* The window, for every signal but SQL — which writes its own time
-              bounds in the query the reader typed. */}
-          {signal !== "sql" && (
-            <div style={{ display: "flex", gap: 2 }}>
-              {(Object.keys(RANGES) as RangeKey[]).map((k) => (
-                <Link
-                  key={k}
-                  data-testid={`telemetry-range-${k}`}
-                  href={link({ range: k, from: undefined, to: undefined, before: undefined })}
-                  style={{
-                    fontFamily: "var(--mono)",
-                    fontSize: 11.5,
-                    fontWeight: 600,
-                    padding: "3px 8px",
-                    borderRadius: 7,
-                    textDecoration: "none",
-                    color: range === k ? "var(--ink)" : "var(--ink-3)",
-                    background: range === k ? "var(--panel)" : "transparent",
-                    border: `1px solid ${range === k ? "var(--line)" : "transparent"}`,
-                  }}
-                >
-                  {k}
-                </Link>
-              ))}
+          {hasWindow && (
+            <div
+              role="group"
+              aria-label={t("telemetry.window")}
+              style={{
+                display: "inline-flex",
+                border: "1px solid var(--line)",
+                borderRadius: 9,
+                background: "var(--panel)",
+                overflow: "hidden",
+              }}
+            >
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "0 10px",
+                  fontSize: 11.5,
+                  color: "var(--ink-3)",
+                  borderRight: "1px solid var(--line)",
+                }}
+              >
+                {t("telemetry.window")}
+              </span>
+              {(Object.keys(RANGES) as RangeKey[]).map((k, i) => {
+                const on = !zoomed && range === k;
+                return (
+                  <Link
+                    key={k}
+                    data-testid={`telemetry-range-${k}`}
+                    href={link({ range: k, from: undefined, to: undefined, before: undefined })}
+                    style={{
+                      fontFamily: "var(--mono)",
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      padding: "6px 10px",
+                      textDecoration: "none",
+                      color: on ? "var(--on-brand)" : "var(--ink-2)",
+                      background: on ? "var(--brand)" : "transparent",
+                      borderLeft: i ? "1px solid var(--line-2)" : "none",
+                    }}
+                  >
+                    {k}
+                  </Link>
+                );
+              })}
             </div>
           )}
         </div>
       )}
 
-      <div style={{ marginTop: 18 }}>
+      <div style={{ marginTop: 14 }}>
         {tab === "overview" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-            <ServicesTab tenantId={tenant.id} sinceMinutes={serviceWindowOf(String(win.minutes))} />
+            <ServicesTab
+              tenantId={tenant.id}
+              sinceMinutes={serviceWindowOf(String(win.minutes))}
+              windowLinks={false}
+            />
             <MapTab
               tenantId={tenant.id}
               sinceMinutes={windowOf(String(win.minutes))}
               highlight={sp.service}
+              windowLinks={false}
             />
           </div>
         )}
@@ -488,8 +525,9 @@ export default async function TelemetryPage({
           arrives at without knowing the field names.
         */}
         {tab === "explore" &&
-          (signal === "logs" || signal === "traces" || signal === "exceptions") && (
-            <div style={{ display: "grid", gridTemplateColumns: "196px minmax(0,1fr)", gap: 18 }}>
+          (signal === "logs" || signal === "traces" || signal === "exceptions") &&
+          (() => {
+            const rail = (
               <FacetRail
                 kind={signal}
                 tenantId={tenant.id}
@@ -499,37 +537,44 @@ export default async function TelemetryPage({
                 service={sp.service}
                 link={link}
               />
-              <div style={{ minWidth: 0 }}>
-                {signal === "logs" && (
-                  <LogsTab
-                    tenantId={tenant.id}
-                    service={sp.service}
-                    filter={sp.q}
-                    mayEdit={canRespond(member)}
-                    patterns={sp.patterns === "1"}
-                    from={win.from}
-                    to={win.to}
-                    before={sp.before}
-                    link={link}
-                    zoom={zoom}
-                  />
-                )}
-                {signal === "traces" && (
-                  <TracesTab
-                    tenantId={tenant.id}
-                    open={sp.trace}
-                    service={sp.service}
-                    filter={sp.q}
-                    mayEdit={canRespond(member)}
-                    attached={sp.attached}
-                    from={win.from}
-                    to={win.to}
-                    before={sp.before}
-                    link={link}
-                    zoom={zoom}
-                  />
-                )}
-                {signal === "exceptions" && (
+            );
+            if (signal === "logs")
+              return (
+                <LogsTab
+                  tenantId={tenant.id}
+                  service={sp.service}
+                  filter={sp.q}
+                  mayEdit={canRespond(member)}
+                  patterns={sp.patterns === "1"}
+                  from={win.from}
+                  to={win.to}
+                  before={sp.before}
+                  link={link}
+                  zoom={zoom}
+                  rail={rail}
+                />
+              );
+            if (signal === "traces")
+              return (
+                <TracesTab
+                  tenantId={tenant.id}
+                  open={sp.trace}
+                  service={sp.service}
+                  filter={sp.q}
+                  mayEdit={canRespond(member)}
+                  attached={sp.attached}
+                  from={win.from}
+                  to={win.to}
+                  before={sp.before}
+                  link={link}
+                  zoom={zoom}
+                  rail={rail}
+                />
+              );
+            return (
+              <div style={{ display: "grid", gridTemplateColumns: "250px minmax(0,1fr)", gap: 14 }}>
+                {rail}
+                <div style={{ minWidth: 0 }}>
                   <ExceptionsTab
                     tenantId={tenant.id}
                     open={sp.fp}
@@ -537,10 +582,10 @@ export default async function TelemetryPage({
                     service={sp.service}
                     filter={sp.q}
                   />
-                )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         {tab === "explore" && signal === "metrics" && (
           <MetricsTab
             tenantId={tenant.id}
@@ -584,7 +629,17 @@ export default async function TelemetryPage({
           />
         )}
         {tab === "setup" && (
-          <ConnectTab tenantId={tenant.id} admin={admin} issued={sp.issued} http={endpoints.http} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex" }}>
+              <Usage tenantId={tenant.id} label={t("telemetry.todayRows")} />
+            </div>
+            <ConnectTab
+              tenantId={tenant.id}
+              admin={admin}
+              issued={sp.issued}
+              http={endpoints.http}
+            />
+          </div>
         )}
       </div>
     </div>
@@ -672,22 +727,6 @@ function TraceServices({ services }: { services: string[] }) {
   );
 }
 
-async function Empty({ message }: { message: string }) {
-  return (
-    <div
-      style={{
-        ...CARD,
-        padding: "28px 20px",
-        textAlign: "center",
-        color: "var(--ink-3)",
-        fontSize: 13,
-      }}
-    >
-      {message}
-    </div>
-  );
-}
-
 async function LogsTab({
   tenantId,
   service,
@@ -699,6 +738,7 @@ async function LogsTab({
   before,
   link,
   zoom,
+  rail,
 }: {
   tenantId: string;
   service?: string;
@@ -711,6 +751,8 @@ async function LogsTab({
   before?: string;
   link: (over: Record<string, string | undefined>) => string;
   zoom: (from: Date, to: Date) => string;
+  /** The field browser, beside the results. */
+  rail: React.ReactNode;
 }) {
   const t = await getT();
   // The filter is compiled here rather than validated first: the compiler is
@@ -743,7 +785,7 @@ async function LogsTab({
     error = err instanceof Error ? err.message : String(err);
   }
   const rows = page.rows;
-
+  const total = shape ? shape.totals.error + shape.totals.warn + shape.totals.info : 0;
   const modeHref = (on: boolean) => link({ patterns: on ? "1" : undefined, before: undefined });
   /*
    * One severity term at a time.
@@ -766,50 +808,44 @@ async function LogsTab({
     const next = [rest, term].filter(Boolean).join(" AND ");
     return link({ q: next || undefined, before: undefined });
   };
+  /** A field's two gestures: keep only this value, or exclude it. */
+  const gestures = (field: string, value: string) => {
+    const term = termFor(field, value);
+    return term
+      ? {
+          keep: link({ q: withTerm(filter, term), before: undefined, patterns: undefined }),
+          exclude: link({
+            q: withTerm(filter, term, true),
+            before: undefined,
+            patterns: undefined,
+          }),
+          keepLabel: t("explorer.keep", { term }),
+          excludeLabel: t("explorer.exclude", { term }),
+        }
+      : { keep: null, exclude: null };
+  };
 
-  const bar = (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <QueryBar
-        tenantId={tenantId}
-        signal="logs"
-        query={filter}
-        service={service}
-        mayEdit={mayEdit}
-      />
-      {shape && !patterns && (
-        <LogHistogram shape={shape} from={from} to={to} zoom={zoom} onSeverity={withSeverity} />
+  // Where the data is, when the window holds none of it.
+  const latest =
+    !error && !filter?.trim() && (patterns ? shapes.length === 0 : rows.length === 0)
+      ? await latestSignal(tenantId, "logs")
+      : null;
+  const empty = (
+    <EmptyWindow
+      message={t(
+        filter ? "explorer.noMatch" : latest ? "explorer.emptyWindow" : "telemetry.noLogs",
       )}
-      <div style={{ display: "flex", gap: 6 }}>
-        {[false, true].map((on) => (
-          <Link
-            key={String(on)}
-            href={modeHref(on)}
-            data-testid={on ? "logs-patterns" : "logs-stream"}
-            style={{
-              fontSize: 12,
-              padding: "4px 10px",
-              borderRadius: 7,
-              border: "1px solid var(--line)",
-              background: on === !!patterns ? "var(--panel)" : "transparent",
-              color: on === !!patterns ? "var(--ink)" : "var(--ink-3)",
-              fontWeight: on === !!patterns ? 600 : 400,
-              textDecoration: "none",
-            }}
-          >
-            {t(on ? "logs.patterns" : "logs.stream")}
-          </Link>
-        ))}
-      </div>
-    </div>
+      latest={latest ? t.fmt.dateTime(latest) : null}
+      latestLabel={t("explorer.latestData")}
+      showLatest={
+        latest && (latest < from || latest > to)
+          ? zoom(new Date(latest.getTime() - 3_600_000), new Date(latest.getTime() + 60_000))
+          : null
+      }
+      showLatestLabel={t("explorer.showLatest")}
+    />
   );
-  if (error) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {bar}
-        <FilterError message={error} />
-      </div>
-    );
-  }
+
   /*
    * A pattern's longest literal run, for the click-through.
    *
@@ -827,14 +863,69 @@ async function LogsTab({
     return longest.length >= 4 && !longest.includes("'") ? longest : null;
   };
 
-  if (patterns) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {bar}
-        {shapes.length === 0 ? (
-          <Empty message={t(filter ? "explorer.noMatch" : "telemetry.noLogs")} />
+  const head = { padding: "7px 14px", fontSize: 10.5, fontWeight: 700, letterSpacing: ".06em" };
+  const results = (
+    <ResultsPanel
+      testId="log-results"
+      tabs={[
+        {
+          label: t("logs.messages"),
+          count: shape ? t.fmt.number(Number(total)) : undefined,
+          href: modeHref(false),
+          on: !patterns,
+          testId: "logs-stream",
+        },
+        {
+          label: t("logs.patterns"),
+          href: modeHref(true),
+          on: !!patterns,
+          testId: "logs-patterns",
+        },
+      ]}
+      right={
+        !patterns && rows.length > 0 ? (
+          <>
+            <span>{t("telemetry.logsFoot", { count: rows.length })}</span>
+            {/* A cursor, not an offset: see recentLogs. */}
+            {page.older && (
+              <Link
+                href={link({ before: page.older })}
+                data-testid="logs-older"
+                className="oi-link"
+                style={{ fontWeight: 600 }}
+              >
+                {t("telemetry.older")}
+              </Link>
+            )}
+          </>
+        ) : null
+      }
+    >
+      {error ? (
+        <div style={{ padding: 14 }}>
+          <FilterError message={error} />
+        </div>
+      ) : patterns ? (
+        shapes.length === 0 ? (
+          empty
         ) : (
-          <div style={{ ...CARD, overflow: "hidden" }} data-testid="log-patterns">
+          <div data-testid="log-patterns">
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "64px 76px minmax(0,1fr) 160px",
+                gap: 12,
+                ...head,
+                color: "var(--ink-3)",
+                background: "var(--sunk)",
+                textTransform: "uppercase",
+              }}
+            >
+              <span>{t("logs.col.level")}</span>
+              <span style={{ textAlign: "right" }}>{t("logs.col.count")}</span>
+              <span>{t("logs.col.pattern")}</span>
+              <span style={{ textAlign: "right" }}>{t("logs.col.service")}</span>
+            </div>
             {shapes.map((p, i) => {
               const tone = severityTone(p.severity);
               const literal = literalOf(p.pattern);
@@ -850,12 +941,13 @@ async function LogsTab({
                         })
                       : modeHref(false)
                   }
+                  className="oi-hover"
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "58px 70px minmax(0,1fr) 110px",
-                    gap: 10,
+                    gridTemplateColumns: "64px 76px minmax(0,1fr) 160px",
+                    gap: 12,
                     padding: "8px 14px",
-                    borderTop: i ? "1px solid var(--line-2)" : "none",
+                    borderTop: "1px solid var(--line-2)",
                     alignItems: "baseline",
                     textDecoration: "none",
                     color: "inherit",
@@ -875,7 +967,7 @@ async function LogsTab({
                     {tone.label}
                   </span>
                   <span style={{ ...MONO, textAlign: "right", fontWeight: 600 }}>
-                    {p.occurrences}×
+                    {t.fmt.number(Number(p.occurrences))}
                   </span>
                   <span
                     style={{
@@ -889,125 +981,250 @@ async function LogsTab({
                     {p.pattern}
                   </span>
                   <span
-                    style={{ ...MONO, fontSize: 10.5, color: "var(--ink-3)", textAlign: "right" }}
+                    style={{ ...MONO, fontSize: 11, color: "var(--ink-3)", textAlign: "right" }}
                   >
                     {p.services.slice(0, 2).join(", ")}
                   </span>
                 </Link>
               );
             })}
+            <div style={{ padding: "8px 14px", fontSize: 11.5, color: "var(--ink-3)" }}>
+              {t("logs.patternsNote")}
+            </div>
           </div>
-        )}
-        <span style={{ fontSize: 11, color: "var(--ink-3)", lineHeight: 1.5 }}>
-          {t("logs.patternsNote")}
-        </span>
-      </div>
-    );
-  }
-  if (rows.length === 0) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {bar}
-        <Empty message={t(filter ? "explorer.noMatch" : "telemetry.noLogs")} />
-      </div>
-    );
-  }
+        )
+      ) : rows.length === 0 ? (
+        empty
+      ) : (
+        <div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "14px 104px 62px 150px minmax(0,1fr)",
+              gap: 10,
+              ...head,
+              color: "var(--ink-3)",
+              background: "var(--sunk)",
+              textTransform: "uppercase",
+            }}
+          >
+            <span />
+            <span>{t("logs.col.time")}</span>
+            <span>{t("logs.col.level")}</span>
+            <span>{t("logs.col.service")}</span>
+            <span>{t("logs.col.message")}</span>
+          </div>
+          {/*
+           * A table you open, after Sumo Logic's messages tab: one line per
+           * message, scanned; a click opens it in place with every field, each
+           * of which can be kept or excluded from the search — and the trace,
+           * and the minute around it, one click away.
+           */}
+          {rows.map((l, i) => {
+            const tone = severityTone(l.severity_number);
+            const ctxFrom = new Date(new Date(`${l.ts.replace(" ", "T")}Z`).getTime() - 60_000);
+            const ctxTo = new Date(ctxFrom.getTime() + 120_000);
+            const ctxTerm = termFor("service_name", l.service_name);
+            return (
+              <details
+                key={`${l.ts}-${i}`}
+                data-testid="log-row"
+                style={{ borderTop: "1px solid var(--line-2)" }}
+              >
+                <summary
+                  className="oi-hover"
+                  style={{
+                    listStyle: "none",
+                    cursor: "pointer",
+                    display: "grid",
+                    gridTemplateColumns: "14px 104px 62px 150px minmax(0,1fr)",
+                    gap: 10,
+                    alignItems: "center",
+                    padding: "6px 14px",
+                    fontSize: 12.5,
+                  }}
+                >
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 3,
+                      height: 16,
+                      borderRadius: 2,
+                      background: l.severity_number >= 13 ? tone.color : "var(--line)",
+                    }}
+                  />
+                  <span style={{ ...MONO, fontSize: 11.5, color: "var(--ink-3)" }}>
+                    {l.ts.slice(11, 23)}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: tone.color,
+                      background: tone.bg,
+                      borderRadius: 5,
+                      padding: "1px 5px",
+                      textAlign: "center",
+                    }}
+                  >
+                    {(l.severity_text || tone.label).slice(0, 5).toUpperCase()}
+                  </span>
+                  <span
+                    style={{
+                      ...MONO,
+                      fontSize: 11.5,
+                      color: "var(--brand)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {l.service_name}
+                  </span>
+                  <span
+                    style={{
+                      ...MONO,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {l.body}
+                  </span>
+                </summary>
+                <div
+                  style={{
+                    padding: "10px 14px 14px 38px",
+                    background: "var(--sunk)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                  }}
+                >
+                  <pre
+                    style={{
+                      margin: 0,
+                      ...MONO,
+                      whiteSpace: "pre-wrap",
+                      overflowWrap: "anywhere",
+                      background: "var(--panel)",
+                      border: "1px solid var(--line)",
+                      borderRadius: 8,
+                      padding: "9px 11px",
+                    }}
+                  >
+                    {l.body}
+                  </pre>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {l.trace_id && (
+                      <Link
+                        href={link({ signal: "traces", trace: l.trace_id, before: undefined })}
+                        className="oi-btn oi-btn-sm"
+                        data-testid="log-open-trace"
+                      >
+                        {t("logs.openTrace")}
+                      </Link>
+                    )}
+                    {l.trace_id && (
+                      <Link
+                        href={link({
+                          q: termFor("trace_id", l.trace_id) ?? undefined,
+                          before: undefined,
+                        })}
+                        className="oi-btn oi-btn-sm"
+                      >
+                        {t("logs.ofThisTrace")}
+                      </Link>
+                    )}
+                    <Link
+                      href={link({
+                        from: String(ctxFrom.getTime()),
+                        to: String(ctxTo.getTime()),
+                        q: ctxTerm ?? undefined,
+                        before: undefined,
+                      })}
+                      className="oi-btn oi-btn-sm"
+                      data-testid="log-context"
+                    >
+                      {t("logs.context")}
+                    </Link>
+                  </div>
+                  <div>
+                    <FieldRow
+                      name="service_name"
+                      value={l.service_name}
+                      {...gestures("service_name", l.service_name)}
+                    />
+                    <FieldRow
+                      name="environment"
+                      value={l.environment}
+                      {...gestures("environment", l.environment)}
+                    />
+                    <FieldRow
+                      name="severity_text"
+                      value={l.severity_text}
+                      {...gestures("severity_text", l.severity_text)}
+                    />
+                    <FieldRow
+                      name="scope_name"
+                      value={l.scope_name}
+                      {...gestures("scope_name", l.scope_name)}
+                    />
+                    {l.trace_id && (
+                      <FieldRow
+                        name="trace_id"
+                        value={l.trace_id}
+                        {...gestures("trace_id", l.trace_id)}
+                      />
+                    )}
+                    {l.span_id && (
+                      <FieldRow
+                        name="span_id"
+                        value={l.span_id}
+                        {...gestures("span_id", l.span_id)}
+                      />
+                    )}
+                    {Object.entries(l.attributes ?? {}).map(([k, v]) => (
+                      <FieldRow key={`a-${k}`} name={k} value={v} {...gestures(`attr:${k}`, v)} />
+                    ))}
+                    {Object.entries(l.resource_attributes ?? {}).map(([k, v]) => (
+                      <FieldRow key={`r-${k}`} name={k} value={v} />
+                    ))}
+                  </div>
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      )}
+    </ResultsPanel>
+  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {bar}
+      <QueryBar
+        tenantId={tenantId}
+        signal="logs"
+        query={filter}
+        service={service}
+        mayEdit={mayEdit}
+      />
+      {shape && !patterns && shape.buckets.length > 0 && (
+        <div className="oi-panel" style={{ padding: "10px 14px 8px" }}>
+          <LogHistogram shape={shape} from={from} to={to} zoom={zoom} onSeverity={withSeverity} />
+        </div>
+      )}
       <div
         style={{
-          ...CARD,
-          overflow: "hidden",
-          background: "var(--topbar-dark)",
-          fontFamily: "var(--mono)",
-          fontSize: 11.5,
-          lineHeight: 1.6,
+          display: "grid",
+          gridTemplateColumns: "250px minmax(0,1fr)",
+          gap: 14,
+          alignItems: "start",
         }}
       >
-        {/*
-         * A terminal, not a table.
-         *
-         * Logs are read the way logs have always been read — fixed width, one
-         * line each, scanned rather than parsed — and the dark ground is what
-         * makes a level jump out of a thousand lines. It is the same treatment
-         * the product already gives an alert payload, and it is deliberately
-         * dark in both themes: a log stream is a code block, not a surface.
-         */}
-        {rows.map((l, i) => {
-          const tone = severityTone(l.severity_number);
-          const line = (
-            <>
-              <span style={{ color: "#6F7E89" }}>{l.ts.slice(11, 23)}</span>
-              <span style={{ fontWeight: 700, color: tone.color }}>
-                {(l.severity_text || tone.label).slice(0, 5)}
-              </span>
-              <span
-                style={{
-                  color: "var(--code-blue)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {l.service_name}
-              </span>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {l.body}
-              </span>
-            </>
-          );
-          const shared: React.CSSProperties = {
-            display: "grid",
-            gridTemplateColumns: "92px 52px 150px minmax(0,1fr)",
-            gap: 12,
-            padding: "5px 16px",
-            borderTop: i ? "1px solid #1C2329" : "none",
-            color: "#C9D3DA",
-            textDecoration: "none",
-          };
-          // The whole line opens the trace when there is one. A link in its own
-          // column made the reader aim at six characters; the line is the
-          // target, and a line without a trace simply is not one.
-          return l.trace_id ? (
-            <Link
-              key={`${l.ts}-${i}`}
-              href={link({ signal: "traces", trace: l.trace_id, before: undefined })}
-              style={{ ...shared, cursor: "pointer" }}
-              title={t("telemetry.openTrace")}
-            >
-              {line}
-            </Link>
-          ) : (
-            <div key={`${l.ts}-${i}`} style={shared}>
-              {line}
-            </div>
-          );
-        })}
-        <div
-          style={{
-            padding: "8px 16px",
-            color: "#6F7E89",
-            fontSize: 11,
-            display: "flex",
-            gap: 12,
-          }}
-        >
-          <span>{t("telemetry.logsFoot", { count: rows.length })}</span>
-          <span style={{ flex: 1 }} />
-          {/* A cursor, not an offset: see recentLogs. */}
-          {page.older && (
-            <Link
-              href={link({ before: page.older })}
-              data-testid="logs-older"
-              style={{ color: "var(--code-blue)", fontWeight: 600, textDecoration: "none" }}
-            >
-              {t("telemetry.older")}
-            </Link>
-          )}
-        </div>
+        {rail}
+        {results}
       </div>
-      <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{t("telemetry.logsNote")}</div>
     </div>
   );
 }
@@ -1024,6 +1241,7 @@ async function TracesTab({
   before,
   link,
   zoom,
+  rail,
 }: {
   tenantId: string;
   open?: string;
@@ -1037,6 +1255,8 @@ async function TracesTab({
   before?: string;
   link: (over: Record<string, string | undefined>) => string;
   zoom: (from: Date, to: Date) => string;
+  /** The field browser, beside the results. */
+  rail: React.ReactNode;
 }) {
   const t = await getT();
   /*
@@ -1050,6 +1270,188 @@ async function TracesTab({
    */
   const minutes = Math.round((to.getTime() - from.getTime()) / 60_000);
   const dots = minutes <= SCATTER_MAX_MINUTES;
+
+  /*
+   * A trace that is open is read on its own page, as in Sumo Logic's trace
+   * view: the waterfall wants the whole width, and the list is one click back.
+   */
+  if (open) {
+    const [spans, correlated, attachable] = await Promise.all([
+      trace(tenantId, open),
+      logs(tenantId, { traceId: open, limit: 100 }).then((p) => p.rows),
+      // The incidents a trace can be hung on: the open ones, newest first.
+      withTenant(tenantId, (tx) =>
+        tx
+          .select({ id: incidents.id, number: incidents.number, title: incidents.name })
+          .from(incidents)
+          .where(and(eq(incidents.tenantId, tenantId), ne(incidents.phase, "closed")))
+          .orderBy(desc(incidents.declaredAt))
+          .limit(25),
+      ),
+    ]);
+    const root = spans.find((sp) => !sp.parent_span_id) ?? spans[0];
+    const status = root?.http_status_code ?? 0;
+    const services = [...new Set(spans.map((sp) => sp.service_name))];
+    const errors = spans.filter((sp) => sp.status_code === "error").length;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="trace-view">
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <Link
+            href={link({ trace: undefined })}
+            className="oi-btn oi-btn-sm"
+            data-testid="trace-back"
+          >
+            ← {t("trace.back")}
+          </Link>
+          {root && (
+            <>
+              <span style={{ fontSize: 16, fontWeight: 600 }}>{root.name}</span>
+              {status > 0 && (
+                <span
+                  style={{
+                    ...MONO,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    padding: "1px 7px",
+                    borderRadius: 6,
+                    background: status >= 400 ? "var(--dang-t)" : "var(--ok-t)",
+                    color: status >= 400 ? "var(--dang)" : "var(--ok)",
+                  }}
+                >
+                  {status}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+        {root && (
+          <div
+            className="oi-panel"
+            style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0,1fr))" }}
+          >
+            {[
+              [t("trace.start"), root.start_ts.slice(0, 23).replace("T", " ")],
+              [t("trace.duration"), ms(root.duration_ns)],
+              [t("trace.spans"), String(spans.length)],
+              [t("trace.services"), String(services.length)],
+              [t("trace.errors"), String(errors)],
+            ].map(([k, v], i) => (
+              <div
+                key={k}
+                style={{
+                  padding: "10px 14px",
+                  borderLeft: i ? "1px solid var(--line-2)" : "none",
+                }}
+              >
+                <div className="oi-label">{k}</div>
+                <div
+                  style={{
+                    ...MONO,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    marginTop: 3,
+                    color: k === t("trace.errors") && errors > 0 ? "var(--dang)" : "var(--ink)",
+                  }}
+                >
+                  {v}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {attached && (
+          <Link
+            href={`/app/incidents/${attached}`}
+            data-testid="trace-attached"
+            style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)", textDecoration: "none" }}
+          >
+            {t("trace.attached", { number: attached })}
+          </Link>
+        )}
+        <div className="oi-panel" style={{ padding: "12px 14px" }}>
+          <Waterfall
+            spans={spans}
+            traceId={open}
+            incidents={attachable}
+            labels={{
+              span: t("trace.span"),
+              depth: t("trace.depth"),
+              criticalPath: t("trace.criticalPath"),
+              start: t("trace.start"),
+              duration: t("trace.duration"),
+              ofTrace: t("trace.ofTrace"),
+              events: t("trace.events"),
+              attributes: t("trace.attributes"),
+              timeByService: t("trace.timeByService"),
+              selfTime: t("trace.selfTime"),
+              selectHint: t("trace.selectHint"),
+              close: t("common.close"),
+              story: t("trace.story"),
+              storyHint: t("trace.storyHint"),
+              spanLogs: t("trace.spanLogs"),
+              attach: t("trace.attach"),
+              attachDo: t("trace.attachDo"),
+            }}
+          />
+        </div>
+        <ResultsPanel
+          tabs={[
+            {
+              label: t("telemetry.logsOfTrace"),
+              count: String(correlated.length),
+              href: link({}),
+              on: true,
+            },
+          ]}
+        >
+          {correlated.length === 0 ? (
+            <div style={{ padding: "16px 14px", fontSize: 12.5, color: "var(--ink-3)" }}>
+              {t("telemetry.noLogsHere")}
+            </div>
+          ) : (
+            correlated.map((l, i) => {
+              const tone = severityTone(l.severity_number);
+              return (
+                <div
+                  key={i}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "104px 62px 150px minmax(0,1fr)",
+                    gap: 10,
+                    alignItems: "center",
+                    padding: "6px 14px",
+                    borderTop: i ? "1px solid var(--line-2)" : "none",
+                    fontSize: 12.5,
+                  }}
+                >
+                  <span style={{ ...MONO, fontSize: 11.5, color: "var(--ink-3)" }}>
+                    {l.ts.slice(11, 23)}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: tone.color,
+                      background: tone.bg,
+                      borderRadius: 5,
+                      padding: "1px 5px",
+                      textAlign: "center",
+                    }}
+                  >
+                    {(l.severity_text || tone.label).slice(0, 5).toUpperCase()}
+                  </span>
+                  <span style={{ ...MONO, fontSize: 11.5, color: "var(--brand)" }}>
+                    {l.service_name}
+                  </span>
+                  <span style={{ ...MONO, overflowWrap: "anywhere" }}>{l.body}</span>
+                </div>
+              );
+            })
+          )}
+        </ResultsPanel>
+      </div>
+    );
+  }
 
   let page: Awaited<ReturnType<typeof traces>> = { rows: [], older: null };
   let shape: Awaited<ReturnType<typeof traceShape>> | null = null;
@@ -1069,7 +1471,32 @@ async function TracesTab({
   }
   const rows = page.rows;
 
-  const bar = (
+  /*
+   * The quick filters of Sumo Logic's trace search: the two questions asked
+   * of a trace list more than any other — which failed, which were slow —
+   * as toggles that write their term into the filter, so the filter stays the
+   * one description of what is on screen.
+   */
+  const terms = (filter ?? "")
+    .split(/\s+AND\s+/i)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const quick = [
+    { key: "errors", label: t("traces.quick.errors"), term: "status_code = 'error'" },
+    { key: "slow", label: t("traces.quick.slow"), term: "duration_ms > 1000" },
+  ].map((q) => {
+    const on = terms.includes(q.term);
+    const next = on ? terms.filter((x) => x !== q.term) : [...terms, q.term];
+    return { ...q, on, href: link({ q: next.join(" AND ") || undefined, before: undefined }) };
+  });
+
+  const latest =
+    !error && !filter?.trim() && rows.length === 0 ? await latestSignal(tenantId, "traces") : null;
+  const maxNs = Math.max(1, ...rows.map((r) => Number(r.duration_ns)));
+  const cols = "84px 150px minmax(0,1fr) 190px 64px 64px 56px";
+  const head = { padding: "7px 14px", fontSize: 10.5, fontWeight: 700, letterSpacing: ".06em" };
+
+  return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <QueryBar
         tenantId={tenantId}
@@ -1078,8 +1505,39 @@ async function TracesTab({
         service={service}
         mayEdit={mayEdit}
       />
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <span className="oi-label" style={{ marginRight: 4 }}>
+          {t("traces.quick.title")}
+        </span>
+        {quick.map((q) => (
+          <Link
+            key={q.key}
+            href={q.href}
+            data-testid={`traces-quick-${q.key}`}
+            aria-pressed={q.on}
+            className={q.on ? undefined : "oi-hover"}
+            style={{
+              height: 28,
+              padding: "0 11px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              borderRadius: 999,
+              border: `1px solid ${q.on ? "var(--brand)" : "var(--line)"}`,
+              background: q.on ? "var(--brand-t)" : "var(--panel)",
+              color: q.on ? "var(--brand)" : "var(--ink-2)",
+              fontSize: 12,
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
+          >
+            {q.on ? "✓ " : ""}
+            {q.label}
+          </Link>
+        ))}
+      </div>
       {shape && shape.points.length > 0 && (
-        <div style={{ ...CARD, padding: "12px 14px 8px" }}>
+        <div className="oi-panel" style={{ padding: "10px 14px 6px" }}>
           <LatencyScatter
             shape={shape}
             from={from}
@@ -1091,7 +1549,7 @@ async function TracesTab({
         </div>
       )}
       {bands && bands.bands.length > 0 && (
-        <div style={{ ...CARD, padding: "12px 14px 8px" }}>
+        <div className="oi-panel" style={{ padding: "10px 14px 6px" }}>
           <LatencyBands
             shape={bands}
             from={from}
@@ -1101,264 +1559,203 @@ async function TracesTab({
           />
         </div>
       )}
-    </div>
-  );
-  if (error) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {bar}
-        <FilterError message={error} />
-      </div>
-    );
-  }
-  if (rows.length === 0) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {bar}
-        <Empty message={t(filter ? "explorer.noMatch" : "telemetry.noTraces")} />
-      </div>
-    );
-  }
-  const spans = open ? await trace(tenantId, open) : [];
-  const correlated = open ? (await logs(tenantId, { traceId: open, limit: 50 })).rows : [];
-  // The incidents a trace can be hung on: the open ones, newest first. Read
-  // only when a trace is open — the list itself has nothing to attach.
-  const attachable = open
-    ? await withTenant(tenantId, (tx) =>
-        tx
-          .select({ id: incidents.id, number: incidents.number, title: incidents.name })
-          .from(incidents)
-          .where(and(eq(incidents.tenantId, tenantId), ne(incidents.phase, "closed")))
-          .orderBy(desc(incidents.declaredAt))
-          .limit(25),
-      )
-    : [];
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {bar}
-      {/*
-       * Stacked, not side by side.
-       *
-       * The list is what you scan and the trace is what you read, and they
-       * want different widths: a waterfall squeezed into half the page loses
-       * the only axis that matters. Putting the list across the top also keeps
-       * the trace you came from visible while you read the one you opened.
-       */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {/*
-         * Capped once a trace is open, so opening one does not push it below a
-         * hundred rows of list. Left full height when nothing is open, because
-         * then the list *is* the screen.
-         */}
-        <div
-          style={{
-            ...CARD,
-            overflow: "hidden",
-            ...(open ? { maxHeight: 220, overflowY: "auto" as const } : {}),
-          }}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "250px minmax(0,1fr)",
+          gap: 14,
+          alignItems: "start",
+        }}
+      >
+        {rail}
+        <ResultsPanel
+          testId="trace-results"
+          tabs={[
+            {
+              label: t("traces.list"),
+              // The shape counts the whole window, filter or not: under a filter
+              // the tab says nothing rather than a number that is not the list's.
+              count: shape && !filter?.trim() ? t.fmt.number(Number(shape.traces)) : undefined,
+              href: link({}),
+              on: true,
+            },
+          ]}
+          right={
+            page.older ? (
+              <Link
+                href={link({ before: page.older })}
+                data-testid="traces-older"
+                className="oi-link"
+                style={{ fontWeight: 600 }}
+              >
+                {t("telemetry.older")}
+              </Link>
+            ) : null
+          }
         >
-          {rows.map((r, i) => (
-            <Link
-              key={r.trace_id}
-              data-testid="trace-row"
-              href={link({ trace: r.trace_id })}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "76px 52px minmax(0,1fr) auto 76px 66px",
-                gap: 12,
-                alignItems: "center",
-                padding: "8px 14px",
-                borderTop: i ? "1px solid var(--line-2)" : "none",
-                background: r.trace_id === open ? "var(--sunk)" : "transparent",
-                textDecoration: "none",
-                color: "inherit",
-              }}
-            >
-              <span style={{ ...MONO, fontSize: 11.5, color: "var(--ink-3)" }}>
-                {r.start_ts.slice(11, 19)}
-              </span>
-              {/*
-               * The status the caller got, which is the thing somebody scans a
-               * trace list for. Blank rather than zero when the trace is not an
-               * HTTP request, or predates the column: an invented 0 would read
-               * as a status.
-               */}
-              <span
+          {error ? (
+            <div style={{ padding: 14 }}>
+              <FilterError message={error} />
+            </div>
+          ) : rows.length === 0 ? (
+            <EmptyWindow
+              message={t(
+                filter
+                  ? "explorer.noMatch"
+                  : latest
+                    ? "explorer.emptyWindow"
+                    : "telemetry.noTraces",
+              )}
+              latest={latest ? t.fmt.dateTime(latest) : null}
+              latestLabel={t("explorer.latestData")}
+              showLatest={
+                latest && (latest < from || latest > to)
+                  ? zoom(
+                      new Date(latest.getTime() - 3_600_000),
+                      new Date(latest.getTime() + 60_000),
+                    )
+                  : null
+              }
+              showLatestLabel={t("explorer.showLatest")}
+            />
+          ) : (
+            <div>
+              <div
                 style={{
-                  ...MONO,
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  textAlign: "center",
-                  padding: "1px 0",
-                  borderRadius: 6,
-                  background:
-                    r.root_status === 0
-                      ? "transparent"
-                      : r.root_status >= 400
-                        ? "var(--dang-t)"
-                        : "var(--ok-t)",
-                  color:
-                    r.root_status === 0
-                      ? "var(--ink-3)"
-                      : r.root_status >= 400
-                        ? "var(--dang)"
-                        : "var(--ok)",
+                  display: "grid",
+                  gridTemplateColumns: cols,
+                  gap: 10,
+                  ...head,
+                  color: "var(--ink-3)",
+                  background: "var(--sunk)",
+                  textTransform: "uppercase",
                 }}
               >
-                {r.root_status === 0 ? "—" : r.root_status}
-              </span>
-              <span
-                style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {r.root_name}
-              </span>
-              {/* Which services the request went through, before opening it. */}
-              <TraceServices services={r.services} />
-              <span style={{ ...MONO, color: "var(--ink-2)", textAlign: "right" }}>
-                {ms(r.duration_ns)}
-              </span>
-              <span
-                style={{
-                  ...MONO,
-                  fontSize: 10.5,
-                  textAlign: "right",
-                  color: Number(r.error_count) > 0 ? "var(--dang)" : "var(--ink-3)",
-                }}
-              >
-                {t("telemetry.nSpans", { count: Number(r.span_count) })}
-              </span>
-            </Link>
-          ))}
-        </div>
-        {page.older && (
-          <div style={{ display: "flex" }}>
-            <Link
-              href={link({ before: page.older })}
-              data-testid="traces-older"
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: "var(--brand)",
-                textDecoration: "none",
-              }}
-            >
-              {t("telemetry.older")}
-            </Link>
-          </div>
-        )}
-
-        {open && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ ...CARD, padding: "14px 16px" }}>
-              {/*
-               * The header names the request rather than its id. A trace id is
-               * what you paste into a search box; "POST /checkout/confirm ·
-               * 500" is what tells you, in one line, whether this is the one
-               * you are looking for.
-               */}
-              {(() => {
-                const root = spans.find((sp) => !sp.parent_span_id) ?? spans[0];
-                if (!root) return null;
-                const status = root.http_status_code;
+                <span>{t("traces.col.start")}</span>
+                <span>{t("traces.col.rootService")}</span>
+                <span>{t("traces.col.operation")}</span>
+                <span>{t("traces.col.duration")}</span>
+                <span style={{ textAlign: "right" }}>{t("traces.col.spans")}</span>
+                <span style={{ textAlign: "right" }}>{t("traces.col.errors")}</span>
+                <span style={{ textAlign: "right" }}>{t("traces.col.status")}</span>
+              </div>
+              {rows.map((r) => {
+                const errs = Number(r.error_count);
+                const width = Math.max(2, (Number(r.duration_ns) / maxNs) * 100);
                 return (
-                  <div
+                  <Link
+                    key={r.trace_id}
+                    data-testid="trace-row"
+                    href={link({ trace: r.trace_id })}
+                    className="oi-hover"
                     style={{
-                      display: "flex",
-                      alignItems: "baseline",
+                      display: "grid",
+                      gridTemplateColumns: cols,
                       gap: 10,
-                      flexWrap: "wrap",
-                      marginBottom: 12,
+                      alignItems: "center",
+                      padding: "7px 14px",
+                      borderTop: "1px solid var(--line-2)",
+                      textDecoration: "none",
+                      color: "inherit",
+                      fontSize: 12.5,
                     }}
                   >
-                    <span style={{ fontSize: 15, fontWeight: 600 }}>{root.name}</span>
-                    {status > 0 && (
+                    <span style={{ ...MONO, fontSize: 11.5, color: "var(--ink-3)" }}>
+                      {r.start_ts.slice(11, 19)}
+                    </span>
+                    <span
+                      style={{
+                        ...MONO,
+                        fontSize: 11.5,
+                        color: "var(--brand)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {r.root_service}
+                    </span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                      <TraceServices services={r.services} />
                       <span
                         style={{
-                          ...MONO,
-                          fontSize: 11.5,
                           fontWeight: 600,
-                          padding: "1px 7px",
-                          borderRadius: 6,
-                          background: status >= 400 ? "var(--dang-t)" : "var(--ok-t)",
-                          color: status >= 400 ? "var(--dang)" : "var(--ok)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={r.services.join(" → ")}
+                      >
+                        {r.root_name}
+                      </span>
+                    </span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span
+                        aria-hidden
+                        style={{
+                          flex: 1,
+                          height: 6,
+                          borderRadius: 3,
+                          background: "var(--line-2)",
+                          overflow: "hidden",
                         }}
                       >
-                        {status}
+                        <span
+                          style={{
+                            display: "block",
+                            height: "100%",
+                            width: `${width}%`,
+                            background: errs > 0 ? "var(--dang)" : "var(--brand)",
+                            opacity: 0.7,
+                          }}
+                        />
                       </span>
-                    )}
-                    <span style={{ ...MONO, fontSize: 11, color: "var(--ink-3)" }}>
-                      {open.slice(0, 8)} · {root.start_ts.slice(11, 23)}
+                      <span style={{ ...MONO, fontSize: 11.5, minWidth: 64, textAlign: "right" }}>
+                        {ms(r.duration_ns)}
+                      </span>
                     </span>
-                  </div>
+                    <span
+                      style={{ ...MONO, fontSize: 11.5, textAlign: "right", color: "var(--ink-2)" }}
+                    >
+                      {Number(r.span_count)}
+                    </span>
+                    <span
+                      style={{
+                        ...MONO,
+                        fontSize: 11.5,
+                        textAlign: "right",
+                        fontWeight: errs > 0 ? 700 : 400,
+                        color: errs > 0 ? "var(--dang)" : "var(--ink-3)",
+                      }}
+                    >
+                      {errs}
+                    </span>
+                    {/*
+                     * The status the caller got. Blank rather than zero when the
+                     * trace is not an HTTP request: an invented 0 reads as a status.
+                     */}
+                    <span
+                      style={{
+                        ...MONO,
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        textAlign: "right",
+                        color:
+                          r.root_status === 0
+                            ? "var(--ink-3)"
+                            : r.root_status >= 400
+                              ? "var(--dang)"
+                              : "var(--ok)",
+                      }}
+                    >
+                      {r.root_status === 0 ? "—" : r.root_status}
+                    </span>
+                  </Link>
                 );
-              })()}
-              {attached && (
-                <Link
-                  href={`/app/incidents/${attached}`}
-                  data-testid="trace-attached"
-                  style={{
-                    display: "block",
-                    marginBottom: 10,
-                    fontSize: 12.5,
-                    fontWeight: 600,
-                    color: "var(--ok)",
-                    textDecoration: "none",
-                  }}
-                >
-                  {t("trace.attached", { number: attached })}
-                </Link>
-              )}
-              <Waterfall
-                spans={spans}
-                traceId={open}
-                incidents={attachable}
-                labels={{
-                  span: t("trace.span"),
-                  depth: t("trace.depth"),
-                  criticalPath: t("trace.criticalPath"),
-                  start: t("trace.start"),
-                  duration: t("trace.duration"),
-                  ofTrace: t("trace.ofTrace"),
-                  events: t("trace.events"),
-                  attributes: t("trace.attributes"),
-                  timeByService: t("trace.timeByService"),
-                  selfTime: t("trace.selfTime"),
-                  selectHint: t("trace.selectHint"),
-                  close: t("common.close"),
-                  story: t("trace.story"),
-                  storyHint: t("trace.storyHint"),
-                  spanLogs: t("trace.spanLogs"),
-                  attach: t("trace.attach"),
-                  attachDo: t("trace.attachDo"),
-                }}
-              />
+              })}
             </div>
-            <div style={{ ...CARD, padding: "12px 16px" }}>
-              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>
-                {t("telemetry.logsOfTrace")}
-              </div>
-              {correlated.length === 0 ? (
-                <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
-                  {t("telemetry.noLogsHere")}
-                </div>
-              ) : (
-                correlated.map((l, i) => (
-                  <div key={i} style={{ ...MONO, padding: "3px 0", color: "var(--ink)" }}>
-                    <span style={{ color: "var(--ink-3)" }}>{l.ts.slice(11, 23)} </span>
-                    {l.body}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
+          )}
+        </ResultsPanel>
       </div>
     </div>
   );

@@ -46,6 +46,7 @@ import {
   type LogRow,
   type SpanRow,
   type TraceRow,
+  latestRow,
 } from "@openincident/telemetry";
 
 export { telemetryInstalled };
@@ -395,3 +396,12 @@ export {
   type EdgeRow,
   type Neighbour,
 } from "@openincident/telemetry";
+
+/** When the last row of a signal arrived (thirty days back at most) — for an empty window. */
+export async function latestSignal(
+  tenantId: string,
+  kind: "logs" | "traces",
+): Promise<Date | null> {
+  if (!telemetryInstalled()) return null;
+  return latestRow(tenantId, kind).catch(() => null);
+}
