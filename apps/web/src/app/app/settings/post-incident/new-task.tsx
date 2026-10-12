@@ -23,7 +23,14 @@ const control: React.CSSProperties = {
 };
 
 /** "+ Add a task" — title, phase as a segmented control, default assignee, due delay. */
-export function NewTaskDialog({ phase: initial }: { phase: "documenting" | "reviewing" }) {
+export function NewTaskDialog({
+  phase: initial,
+  back,
+}: {
+  phase: "documenting" | "reviewing";
+  /** The screen to return to after creating the task. */
+  back?: string;
+}) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState(initial);
@@ -164,6 +171,7 @@ export function NewTaskDialog({ phase: initial }: { phase: "documenting" | "revi
                     ))}
                   </div>
                   <input type="hidden" name="phase" value={phase} />
+                  {back && <input type="hidden" name="back" value={back} />}
                 </div>
                 <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <span style={label}>{t("settings.postIncident.assignedTo")}</span>

@@ -1813,8 +1813,7 @@ export const fr: Dictionary = {
   "settings.members.rolesNote":
     "Quatre rôles : Propriétaire, Admin, Répondeur, Observateur. RBAC fin, SCIM et SAML arrivent en V2 (édition ee/).",
   "settings.types.title": "Types & cycle de vie",
-  "settings.types.subtitle":
-    "ce qu'un incident de ce type demande à la déclaration, et les statuts qu'il traverse",
+  "settings.types.subtitle": "ce qu'un incident déclare, et les phases qu'il traverse",
   "settings.types.segTypes": "Types",
   "settings.types.segSeverities": "Sévérités",
   "settings.types.badgeSeeded": "seedé",
@@ -2410,6 +2409,19 @@ export const fr: Dictionary = {
   "settings.types.newTypeNote":
     "Le nouveau type hérite du cycle de vie et du formulaire du type de base — ajustez-les ensuite.",
   "settings.types.errorDuplicate": "Un type porte déjà ce nom.",
+  "settings.types.statusesCount": { one: "{count} statut", other: "{count} statuts" },
+  "settings.types.postFlowHint":
+    "Après la résolution : deux phases de tâches, puis le post-mortem. Le flux avance tout seul quand ses tâches se terminent.",
+  "settings.types.closedTitle": "Après la clôture",
+  "settings.types.triageTitle": "Avant d'accepter",
+  "settings.types.sharedTitle": "Ce que le flux demande",
+  "settings.types.sharedChip": "commun à tous les types",
+  "settings.types.lifecycleHint":
+    "Un incident traverse quatre phases, dans l'ordre. Seuls les statuts de la phase active et l'entrée en post-incident dépendent du type ; le reste est commun à tous.",
+  "settings.types.lifecycleTitle": "Cycle de vie",
+  "settings.types.sectionTypeHint":
+    "Le nom, qui peut le déclarer, et si ses incidents démarrent privés.",
+  "settings.types.typeLabel": "Type",
   "settings.types.sectionType": "Le type",
   "settings.types.typeDescription": "Description",
   "settings.types.privateByDefault": "Les incidents de ce type démarrent privés",
@@ -2431,7 +2443,7 @@ export const fr: Dictionary = {
   "settings.types.manageFields": "Gérer les champs →",
   "settings.types.statusesTitle": "Statuts pendant l'incident",
   "settings.types.statusesHint":
-    "Dans l'ordre : un incident accepté démarre au premier et n'avance que par une mise à jour explicite. Avant, le triage ; après, le post-incident puis la clôture — ces trois phases sont les mêmes pour tous les types.",
+    "Dans l'ordre : un incident accepté démarre au premier, et n'avance que par une mise à jour explicite.",
   "settings.types.addStatus": "+ Ajouter un statut",
   "settings.types.newStatusPlaceholder": "Correctif en cours",
   "settings.types.statusMeta.reminder": "rappel {minutes} min",

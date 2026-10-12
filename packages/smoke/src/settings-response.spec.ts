@@ -95,7 +95,13 @@ test.describe("Settings — Response", () => {
     await page.locator('form[data-testid="type-form"] input[name="name"]').fill(name);
     await page.locator('form[data-testid="type-form"] button[type=submit]').click();
     await page.waitForURL(/settings\/types\?type=/);
-    await expect(page.getByText(name).first()).toBeVisible();
+    // The sheet opens on the new type: the selector and the name field carry it.
+    await expect(
+      page
+        .locator('form#lifecycle ~ * input[name="name"], input[form="lifecycle"][name="name"]')
+        .first(),
+    ).toHaveValue(name);
+    await expect(page.getByTestId("type-switcher").locator("option:checked")).toContainText(name);
     // Its statuses are the base's: the status list carries the same active statuses.
     await expect(
       page.getByTestId("status-row").filter({ hasText: /Surveillance|Monitoring|Beobachtung/ }),

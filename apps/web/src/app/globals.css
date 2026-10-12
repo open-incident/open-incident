@@ -325,6 +325,36 @@ button {
   color: var(--ink-3);
 }
 
+.oi-section-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.oi-section-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* "Shared by every type" — on the parts of a type's sheet that are not the type's own. */
+.oi-shared {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px dashed var(--line);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
 .oi-section-title {
   margin: 0;
   font-family: var(--font-title);

@@ -14,10 +14,13 @@ export function TemplateEditor({
   sections,
   isDefault,
   canManage,
+  form,
 }: {
   sections: Row[];
   isDefault: boolean;
   canManage: boolean;
+  /** The id of the form this editor's value is posted with, when it sits outside it. */
+  form?: string;
 }) {
   const t = useT();
   const [rows, setRows] = useState<Row[]>(sections);
@@ -52,7 +55,7 @@ export function TemplateEditor({
   };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }} data-testid="pm-template">
-      <input type="hidden" name="template" value={JSON.stringify(rows)} />
+      <input type="hidden" name="template" form={form} value={JSON.stringify(rows)} />
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
           {isDefault
@@ -65,6 +68,7 @@ export function TemplateEditor({
             {!isDefault && (
               <button
                 type="submit"
+                form={form}
                 name="reset"
                 value="1"
                 className="oi-hover"
@@ -85,9 +89,9 @@ export function TemplateEditor({
             key={`${row.key}-${i}`}
             style={{
               display: "grid",
-              gridTemplateColumns: "26px minmax(0, 1fr) minmax(0, 2fr) auto",
+              gridTemplateColumns: "26px minmax(0, 1fr) auto",
+              alignItems: "start",
               gap: 8,
-              alignItems: "center",
             }}
           >
             <span
@@ -100,24 +104,26 @@ export function TemplateEditor({
             >
               {i + 1}
             </span>
-            <input
-              value={row.title}
-              onChange={(e) => update(i, { title: e.target.value })}
-              placeholder={t("settings.postIncident.templateTitle")}
-              maxLength={120}
-              disabled={!canManage}
-              className="oi-field"
-              style={{ ...field, fontWeight: 600 }}
-            />
-            <input
-              value={row.hint}
-              onChange={(e) => update(i, { hint: e.target.value })}
-              placeholder={t("settings.postIncident.templateHintLabel")}
-              maxLength={400}
-              disabled={!canManage}
-              className="oi-field"
-              style={field}
-            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+              <input
+                value={row.title}
+                onChange={(e) => update(i, { title: e.target.value })}
+                placeholder={t("settings.postIncident.templateTitle")}
+                maxLength={120}
+                disabled={!canManage}
+                className="oi-field"
+                style={{ ...field, fontWeight: 600 }}
+              />
+              <input
+                value={row.hint}
+                onChange={(e) => update(i, { hint: e.target.value })}
+                placeholder={t("settings.postIncident.templateHintLabel")}
+                maxLength={400}
+                disabled={!canManage}
+                className="oi-field"
+                style={field}
+              />
+            </div>
             <span style={{ display: "inline-flex", gap: 4 }}>
               <button
                 type="button"

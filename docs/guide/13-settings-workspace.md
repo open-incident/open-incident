@@ -7,14 +7,14 @@ summary: How the settings are organised; General (identity, brand, working hours
 
 The **Settings** section is reserved to members who hold at least one settings permission — owners and admins with the built-in roles. The left navigation shows the entries the member holds; a viewer or responder who lands here by URL reads why, and no form is rendered.
 
-Four groups, twelve entries, one per thing an administrator decides:
+Four groups, eleven entries, one per thing an administrator decides:
 
-| Group         | Entries                                                                       |
-| ------------- | ----------------------------------------------------------------------------- |
-| **Workspace** | General · Members & access · Subscription & invoices (cloud deployments only) |
-| **Incidents** | Types, severities & fields · Announcements · Post-incident & post-mortem      |
-| **Alerts**    | Rules · Severities & attributes                                               |
-| **Platform**  | Integrations & API · AI assistant · Telemetry · Audit log · QA                |
+| Group         | Entries                                                                                         |
+| ------------- | ----------------------------------------------------------------------------------------------- |
+| **Workspace** | General · Members & access · Subscription & invoices (cloud deployments only)                   |
+| **Incidents** | Types, severities & fields (the lifecycle and the post-incident flow are in it) · Announcements |
+| **Alerts**    | Rules · Severities & attributes                                                                 |
+| **Platform**  | Integrations & API · AI assistant · Telemetry · Audit log · QA                                  |
 
 An entry that stands for several screens separates them with **tabs** drawn above the screen — _General & brand_ and _Working hours_ under **General**, _Members_ and the enterprise access screens under **Members & access**, and so on. Two things an administrator reads often are not settings and live where they are used: **alert sources** under [Alerts → Sources](alerts#from-a-webhook-to-an-alert), and **heartbeats** under [Monitors → Heartbeats](monitors#dead-mans-switches-use-heartbeats).
 

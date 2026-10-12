@@ -11,7 +11,9 @@ import {
   incidents,
   severities,
   withTenant,
+  workspaces,
 } from "@openincident/db";
+import { parseTemplateField } from "@/lib/post-mortem-template";
 import { recordAudit } from "@/lib/audit";
 import { requireManager } from "@/lib/session";
 
@@ -315,7 +317,7 @@ export async function deleteStatus(formData: FormData) {
   redirect(`/app/settings/types?type=${typeId}&error=${outcome}`);
 }
 
-/* ---------- The type's sheet: one Save ---------- */
+/* ---------- The lifecycle sheet: one Save ---------- */
 
 const sheetSchema = z.object({
   typeId: z.string().uuid(),
@@ -324,23 +326,31 @@ const sheetSchema = z.object({
   teamId: z.string().uuid().or(z.literal("")).optional(),
   // "never" | "always" | "<severity rank>"
   rule: z.string(),
+  term: z.string().trim().max(40).optional(),
 });
 
 /**
- * Name, description, who may declare it, visibility, what its form asks and
- * when its incidents enter the post-incident flow — the sheet, saved as one.
- * The statuses are a list with their own gestures and stay outside.
+ * Everything the sheet saves, as one: the type (name, description, who may
+ * declare it, visibility, what its form asks, when its incidents enter the
+ * post-incident flow) and the post-incident flow's shared parts (the word the
+ * workspace uses, the post-mortem template). The statuses and the tasks are
+ * lists with their own gestures and are not part of it.
  */
-export async function saveTypeSheet(formData: FormData) {
+export async function saveLifecycle(formData: FormData) {
   const current = await requireManager();
   const parsed = sheetSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect("/app/settings/types?error=invalid");
   const input = parsed.data;
+  const back = `/app/settings/types?type=${input.typeId}`;
   const privateByDefault = formData.get("privateByDefault") === "on";
   const fromRank =
     input.rule === "never" ? null : input.rule === "always" ? -1 : Number(input.rule);
-  if (fromRank !== null && !Number.isInteger(fromRank))
-    redirect(`/app/settings/types?type=${input.typeId}&error=invalid`);
+  if (fromRank !== null && !Number.isInteger(fromRank)) redirect(`${back}&error=invalid`);
+  // The template: reset to the product's sections, unchanged, or the edited list.
+  const reset = formData.get("reset") === "1";
+  const rawTemplate = formData.get("template");
+  const template = reset || rawTemplate === null ? null : parseTemplateField(String(rawTemplate));
+  if (template === "invalid") redirect(`${back}&error=invalid`);
   const asks = new Map<string, "required" | "optional" | "off">();
   for (const [k, v] of formData.entries()) {
     if (!k.startsWith("ask.")) continue;
@@ -356,7 +366,7 @@ export async function saveTypeSheet(formData: FormData) {
     const row = types.find((x) => x.id === input.typeId);
     if (!row) return;
     if (types.some((x) => x.id !== row.id && x.name.toLowerCase() === input.name.toLowerCase()))
-      redirect(`/app/settings/types?type=${row.id}&error=duplicate`);
+      redirect(`${back}&error=duplicate`);
     // Only keys the form may carry: the four system fields, and the custom
     // fields that belong to this type or to every type.
     const fields = await tx
@@ -397,10 +407,22 @@ export async function saveTypeSheet(formData: FormData) {
       rule: input.rule,
       fields: declareForm.map((f) => `${f.key}${f.required ? "*" : ""}`),
     });
+    // The shared post-incident parts — only when the sheet carried them.
+    if (input.term !== undefined || reset || template !== null) {
+      await tx
+        .update(workspaces)
+        .set({
+          ...(input.term !== undefined ? { postMortemTerm: input.term || null } : {}),
+          ...(reset || template !== null ? { postMortemTemplate: reset ? null : template } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(workspaces.tenantId, current.tenant.id));
+      await recordAudit(tx, current, "config", "workspace.post_mortem_settings", {
+        term: input.term ?? null,
+        sections: reset ? null : (template?.map((x) => x.key) ?? undefined),
+      });
+    }
   });
-  revalidatePath("/app/settings/types");
-  revalidatePath("/app/settings/fields");
-  revalidatePath("/app/settings/post-incident");
-  revalidatePath("/app/incidents/new");
-  redirect(`/app/settings/types?type=${input.typeId}&saved=1`);
+  revalidatePath("/", "layout");
+  redirect(`${back}&saved=1`);
 }

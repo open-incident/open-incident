@@ -1794,8 +1794,7 @@ export const en = {
   "settings.members.rolesNote":
     "Four roles: Owner, Admin, Responder, Viewer. Fine-grained roles, SCIM and SAML arrive in V2 (ee/ edition).",
   "settings.types.title": "Types & lifecycle",
-  "settings.types.subtitle":
-    "what an incident of this type asks at declaration, and the statuses it goes through",
+  "settings.types.subtitle": "what an incident declares, and the phases it goes through",
   "settings.types.segTypes": "Types",
   "settings.types.segSeverities": "Severities",
   "settings.types.badgeSeeded": "seeded",
@@ -2379,6 +2378,19 @@ export const en = {
   "settings.types.newTypeNote":
     "The new type inherits the lifecycle and form of the type it is based on — adjust them afterwards.",
   "settings.types.errorDuplicate": "A type with this name already exists.",
+  "settings.types.statusesCount": { one: "{count} status", other: "{count} statuses" },
+  "settings.types.postFlowHint":
+    "After resolution: two phases of tasks, then the post-mortem. The flow advances on its own as its tasks are done.",
+  "settings.types.closedTitle": "After it is closed",
+  "settings.types.triageTitle": "Before it is accepted",
+  "settings.types.sharedTitle": "What the flow asks for",
+  "settings.types.sharedChip": "shared by every type",
+  "settings.types.lifecycleHint":
+    "An incident goes through four phases, in order. Only the active statuses and the entry into post-incident depend on the type; the rest is shared by every type.",
+  "settings.types.lifecycleTitle": "Lifecycle",
+  "settings.types.sectionTypeHint":
+    "Its name, who may declare it, and whether its incidents start private.",
+  "settings.types.typeLabel": "Type",
   "settings.types.sectionType": "The type",
   "settings.types.typeDescription": "Description",
   "settings.types.privateByDefault": "Incidents of this type start private",
@@ -2399,7 +2411,7 @@ export const en = {
   "settings.types.manageFields": "Manage fields →",
   "settings.types.statusesTitle": "Statuses during the incident",
   "settings.types.statusesHint":
-    "In order: an accepted incident starts at the first and only advances by an explicit update. Before: triage; after: post-incident, then closed — those three phases are the same for every type.",
+    "In order: an accepted incident starts at the first, and only advances by an explicit update.",
   "settings.types.addStatus": "+ Add a status",
   "settings.types.newStatusPlaceholder": "Fix in progress",
   "settings.types.statusMeta.reminder": "reminder {minutes} min",

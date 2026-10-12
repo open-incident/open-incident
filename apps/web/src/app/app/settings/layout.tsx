@@ -107,7 +107,12 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           label: t("settings.nav.types"),
           permission: "settings.response",
           tabs: [
-            { href: "/app/settings/types", label: t("settings.types.segTypes"), bare: true },
+            {
+              href: "/app/settings/types",
+              label: t("settings.types.title"),
+              bare: true,
+              also: ["/app/settings/post-incident"],
+            },
             {
               href: "/app/settings/types?seg=severities",
               label: t("settings.types.segSeverities"),
@@ -119,11 +124,6 @@ export default async function SettingsLayout({ children }: { children: React.Rea
         {
           href: "/app/settings/announcements",
           label: t("settings.nav.announcements"),
-          permission: "settings.response",
-        },
-        {
-          href: "/app/settings/post-incident",
-          label: t("set2.nav.postIncident"),
           permission: "settings.response",
         },
       ],

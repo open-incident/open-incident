@@ -13,7 +13,7 @@ The **Post-incident** tab of an incident becomes active when the incident is res
 
 ## Two phases, their tasks
 
-The flow is two phases — **Document**, then **Review** — each with the tasks configured in **Settings → Post-incident flow**: write the timeline of events, identify contributing factors, schedule the debrief, review the follow-ups, publish the post-mortem…
+The flow is two phases — **Document**, then **Review** — each with the tasks configured in **Settings → Types & lifecycle → Post-incident**: write the timeline of events, identify contributing factors, schedule the debrief, review the follow-ups, publish the post-mortem…
 
 Each task has a default assignee (the incident lead, the communication lead, or nobody) and a deadline counted in days after entering the phase. A task is **done** with a click, or **skipped with a reason** — the skip is traced in the timeline. The incident leaves the post-incident phase and **closes** when every task is done or skipped.
 
@@ -25,13 +25,13 @@ Scheduling a debrief from the tab sets a date and a slot and sends an invitation
 
 ## The post-mortem
 
-The workspace calls it what it likes — the term is configured in **Settings → Post-incident flow** and used everywhere. It is a document, edited where the incident lives, with everything a reader needs woven in.
+The workspace calls it what it likes — the term is configured in **Settings → Types & lifecycle → Post-incident** and used everywhere. It is a document, edited where the incident lives, with everything a reader needs woven in.
 
 ### The document
 
 The tab shows three columns. On the left, the **contents** (one dot per section: grey while empty, green once written, amber or red when the assistant's check found a gap or a contradiction), the two phases' **checklists** and the **debrief**. In the centre, the document: its **title** (click to rename), the incident's metadata — severity, date, service, lead, owner, the people who contributed and who edited last — four **metrics** (detection, time to acknowledge, time to resolve, follow-ups), then the **sections**, and the **follow-ups** as a table. On the right, the **activity** — every change, by whom, when — and the **open comments**.
 
-A new document starts from the workspace's **template** (**Settings → Post-incident flow → Post-mortem template**): by default six sections — **Summary**, **Impact**, **Timeline**, **Root cause analysis (RCA)**, **What went well**, **What to improve** — each with a hint of what it should hold. A manager renames, reorders, removes or adds sections and edits the hints; the assistant reads them when it drafts. Documents already written keep their sections.
+A new document starts from the workspace's **template** (**Settings → Types & lifecycle → Post-incident → Post-mortem template**): by default six sections — **Summary**, **Impact**, **Timeline**, **Root cause analysis (RCA)**, **What went well**, **What to improve** — each with a hint of what it should hold. A manager renames, reorders, removes or adds sections and edits the hints; the assistant reads them when it drafts. Documents already written keep their sections.
 
 ### Writing
 

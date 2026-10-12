@@ -222,7 +222,6 @@ async function main() {
     { file: "settings-types.png", path: "/app/settings/types" },
     { file: "settings-fields.png", path: "/app/settings/fields" },
     { file: "settings-announcements.png", path: "/app/settings/announcements" },
-    { file: "settings-post-incident.png", path: "/app/settings/post-incident" },
     { file: "settings-alert-sources.png", path: "/app/settings/alert-sources" },
     { file: "settings-rules.png", path: "/app/settings/alert-routes" },
     { file: "settings-priorities.png", path: "/app/settings/alert-priorities" },

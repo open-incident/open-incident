@@ -1820,8 +1820,7 @@ export const de: Dictionary = {
   "settings.members.rolesNote":
     "Vier Rollen: Eigentümer, Admin, Responder, Beobachter. Feingranulare Rollen, SCIM und SAML kommen in V2 (Edition ee/).",
   "settings.types.title": "Typen & Lebenszyklus",
-  "settings.types.subtitle":
-    "was ein Vorfall dieses Typs bei der Meldung abfragt, und die Status, die er durchläuft",
+  "settings.types.subtitle": "was ein Vorfall meldet, und die Phasen, die er durchläuft",
   "settings.types.segTypes": "Typen",
   "settings.types.segSeverities": "Schweregrade",
   "settings.types.badgeSeeded": "vorgegeben",
@@ -2415,6 +2414,19 @@ export const de: Dictionary = {
   "settings.types.newTypeNote":
     "Der neue Typ erbt Lebenszyklus und Formular des Basistyps — passen Sie sie danach an.",
   "settings.types.errorDuplicate": "Ein Typ mit diesem Namen existiert bereits.",
+  "settings.types.statusesCount": { one: "{count} Status", other: "{count} Status" },
+  "settings.types.postFlowHint":
+    "Nach der Lösung: zwei Aufgabenphasen, dann das Post-Mortem. Der Flow rückt von selbst vor, wenn seine Aufgaben erledigt sind.",
+  "settings.types.closedTitle": "Nach dem Abschluss",
+  "settings.types.triageTitle": "Vor der Annahme",
+  "settings.types.sharedTitle": "Was der Flow verlangt",
+  "settings.types.sharedChip": "allen Typen gemeinsam",
+  "settings.types.lifecycleHint":
+    "Ein Vorfall durchläuft vier Phasen, in dieser Reihenfolge. Nur die aktiven Status und der Eintritt in die Nachbereitung hängen vom Typ ab; der Rest ist allen gemeinsam.",
+  "settings.types.lifecycleTitle": "Lebenszyklus",
+  "settings.types.sectionTypeHint":
+    "Name, wer ihn melden darf, und ob seine Vorfälle privat starten.",
+  "settings.types.typeLabel": "Typ",
   "settings.types.sectionType": "Der Typ",
   "settings.types.typeDescription": "Beschreibung",
   "settings.types.privateByDefault": "Vorfälle dieses Typs starten privat",
@@ -2435,7 +2447,7 @@ export const de: Dictionary = {
   "settings.types.manageFields": "Felder verwalten →",
   "settings.types.statusesTitle": "Status während des Vorfalls",
   "settings.types.statusesHint":
-    "In dieser Reihenfolge: ein angenommener Vorfall beginnt beim ersten und rückt nur durch ein explizites Update vor. Davor die Sichtung, danach die Nachbereitung und der Abschluss — diese drei Phasen sind für alle Typen gleich.",
+    "In dieser Reihenfolge: ein angenommener Vorfall beginnt beim ersten und rückt nur durch ein explizites Update vor.",
   "settings.types.addStatus": "+ Status hinzufügen",
   "settings.types.newStatusPlaceholder": "Behebung läuft",
   "settings.types.statusMeta.reminder": "Erinnerung {minutes} Min.",
