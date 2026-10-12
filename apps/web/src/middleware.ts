@@ -16,6 +16,15 @@ const BASE_DOMAIN = (process.env.BASE_DOMAIN ?? "localhost:3100").toLowerCase();
 
 type Resolution = { slug: string } | { customHost: string } | null;
 
+const BARE_DOMAIN_PATHS = new Set([
+  "/install/slack",
+  "/api/slack/oauth/callback",
+  "/api/slack/commands",
+  "/api/slack/interactions",
+  "/api/slack/events",
+  "/api/teams/messages",
+]);
+
 /**
  * Shape only — never existence.
  *
@@ -69,6 +78,19 @@ export function middleware(request: NextRequest) {
   // i.e. DEFAULT_TENANT_SLUG: another workspace's page after every redirect.
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "";
   const res = resolve(host);
+  // What a published chat app calls on one fixed address, the bare domain:
+  // the Marketplace's direct install page, which asks for the workspace, and
+  // the endpoints that find their workspace from the payload (the Slack team,
+  // the signed OAuth state, the Teams conversation), never from the host.
+  if (
+    !res &&
+    BARE_DOMAIN_PATHS.has(request.nextUrl.pathname) &&
+    host.toLowerCase() === BASE_DOMAIN
+  ) {
+    const headers = new Headers(request.headers);
+    headers.set("x-pathname", request.nextUrl.pathname);
+    return NextResponse.next({ request: { headers } });
+  }
   if (!res) return notFound();
 
   const headers = new Headers(request.headers);

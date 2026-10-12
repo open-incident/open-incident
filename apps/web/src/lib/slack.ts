@@ -8,10 +8,13 @@ import { canRespond } from "@openincident/config";
 import { after } from "next/server";
 import { and, asc, eq } from "drizzle-orm";
 import {
+  auditEvents,
   escalationPaths,
   followUps,
+  forgetApiKeyLookup,
   getTenantById,
   getTenantIdForApiKeyHash,
+  integrationInstalls,
   incidentEvents,
   incidentRoles,
   incidentStatuses,
@@ -592,4 +595,45 @@ function safeJson(s: string | undefined): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+/**
+ * Slack says the app was removed from a workspace (`app_uninstalled`) or its
+ * token was revoked (`tokens_revoked`). The token is dead either way: forget
+ * it, unlink the Slack team from the workspace, and say so in the audit log —
+ * the integration card then reads "not connected" rather than failing on the
+ * next message. Incidents keep their history.
+ */
+export async function forgetSlackWorkspace(
+  teamId: string,
+  reason: "app_uninstalled" | "tokens_revoked",
+): Promise<boolean> {
+  const tenantId = await getTenantIdForApiKeyHash(`slack:${teamId}`);
+  if (!tenantId) return false;
+  const done = await withTenant(tenantId, async (tx) => {
+    const rows = await tx
+      .update(integrationInstalls)
+      .set({ status: "revoked", encryptedSecrets: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(integrationInstalls.tenantId, tenantId),
+          eq(integrationInstalls.kind, "slack"),
+          eq(integrationInstalls.externalId, teamId),
+          eq(integrationInstalls.status, "active"),
+        ),
+      )
+      .returning({ id: integrationInstalls.id, name: integrationInstalls.externalName });
+    if (rows.length === 0) return false;
+    await tx.insert(auditEvents).values({
+      tenantId,
+      actorMemberId: null,
+      actorName: "Slack",
+      category: "config",
+      action: "slack.disconnected",
+      target: { team: rows[0]!.name ?? teamId, reason },
+    });
+    return true;
+  });
+  await forgetApiKeyLookup(`slack:${teamId}`);
+  return done;
 }

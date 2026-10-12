@@ -1158,6 +1158,13 @@ export const de: Dictionary = {
   "qa.error.unavailable": "QA ist auf dieser Instanz nicht verfügbar.",
   "nav.account": "Mein Konto",
   "nav.signOut": "Abmelden",
+  "slackInstall.title": "Open Incident zu Slack hinzufügen",
+  "slackInstall.lead":
+    "Mit welchem Open-Incident-Arbeitsbereich soll Slack verbunden werden? Sie melden sich dort an, dann fragt Slack nach Ihrer Zustimmung.",
+  "slackInstall.workspace": "Ihr Arbeitsbereich",
+  "slackInstall.continue": "Weiter",
+  "slackInstall.unknown": "Kein Arbeitsbereich unter dieser Adresse.",
+  "slackInstall.badSlug": "Eine Arbeitsbereichsadresse: Buchstaben, Ziffern und Bindestriche.",
   "nav.soonOnCall": "Meilenstein Bereitschaft",
   "nav.soonStatusPages": "Meilenstein Statusseiten",
   "nav.soonInsights": "Meilenstein Berichte",

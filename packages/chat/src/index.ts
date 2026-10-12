@@ -11,3 +11,6 @@ export * from "./teams/verify";
 export * from "./teams/cards";
 export * from "./teams/adapter";
 export * from "./all";
+export * from "./slack/manifest";
+export * from "./teams/manifest";
+export * from "./package-files";

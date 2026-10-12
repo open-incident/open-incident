@@ -1156,6 +1156,13 @@ export const fr: Dictionary = {
   "qa.error.unavailable": "La QA est indisponible sur cette instance.",
   "nav.account": "Mon compte",
   "nav.signOut": "Se déconnecter",
+  "slackInstall.title": "Ajouter Open Incident à Slack",
+  "slackInstall.lead":
+    "Dans quel espace Open Incident voulez-vous connecter Slack ? Vous vous y connecterez, puis Slack vous demandera votre accord.",
+  "slackInstall.workspace": "Votre espace",
+  "slackInstall.continue": "Continuer",
+  "slackInstall.unknown": "Aucun espace à cette adresse.",
+  "slackInstall.badSlug": "Une adresse d'espace : des lettres, des chiffres et des tirets.",
   "nav.soonOnCall": "jalon astreinte",
   "nav.soonStatusPages": "jalon pages de statut",
   "nav.soonInsights": "jalon rapports",

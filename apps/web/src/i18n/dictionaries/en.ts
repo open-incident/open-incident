@@ -1143,6 +1143,13 @@ export const en = {
   "qa.error.unavailable": "QA is unavailable on this instance.",
   "nav.account": "My account",
   "nav.signOut": "Sign out",
+  "slackInstall.title": "Add Open Incident to Slack",
+  "slackInstall.lead":
+    "Which Open Incident workspace should Slack connect to? You will sign in to it, then Slack will ask for your consent.",
+  "slackInstall.workspace": "Your workspace",
+  "slackInstall.continue": "Continue",
+  "slackInstall.unknown": "No workspace at this address.",
+  "slackInstall.badSlug": "A workspace address: letters, digits and hyphens.",
   "nav.soonOnCall": "on-call milestone",
   "nav.soonStatusPages": "status pages milestone",
   "nav.soonInsights": "reports milestone",

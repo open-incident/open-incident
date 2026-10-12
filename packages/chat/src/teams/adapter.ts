@@ -500,7 +500,24 @@ export async function markTeamsDmAcknowledged(
   });
 }
 
-/** Links a member to their Azure AD user by email through Graph; remembers it. */
+/**
+ * The people of the paired team, from the Bot Framework roster.
+ *
+ * Read through the bot rather than Graph `/users`: the roster comes with the
+ * app being installed in the team, while Graph `User.Read.All` is a
+ * tenant-wide application permission only a global administrator can grant —
+ * the one consent screen that kept the app out of most organisations.
+ */
+async function teamRoster(install: TeamsInstall) {
+  const r = await teamsConnector.members(install.config.serviceUrl, install.teamId);
+  if (!r.ok) return [];
+  return r.value.map((m) => ({
+    aadObjectId: m.aadObjectId ?? null,
+    email: (m.email ?? m.userPrincipalName ?? "").toLowerCase() || null,
+  }));
+}
+
+/** Links a member to their Teams user by email, through the team's roster; remembers it. */
 export async function linkTeamsIdentity(
   tx: Tx,
   tenantId: string,
@@ -512,16 +529,17 @@ export async function linkTeamsIdentity(
     .from(chatIdentities)
     .where(and(eq(chatIdentities.memberId, member.id), eq(chatIdentities.kind, "teams")));
   if (existing) return existing.externalUserId;
-  const user = await teamsGraph.user(install.config.aadTenantId, member.email);
-  if (!user.ok) return null;
+  const email = member.email.toLowerCase();
+  const found = (await teamRoster(install)).find((u) => u.email === email && u.aadObjectId);
+  if (!found?.aadObjectId) return null;
   await tx
     .insert(chatIdentities)
-    .values({ tenantId, memberId: member.id, kind: "teams", externalUserId: user.value.id })
+    .values({ tenantId, memberId: member.id, kind: "teams", externalUserId: found.aadObjectId })
     .onConflictDoNothing();
-  return user.value.id;
+  return found.aadObjectId;
 }
 
-/** The member behind a Teams user — remembered identity first, else Graph gives the email. */
+/** The member behind a Teams user — remembered identity first, else the team's roster gives the email. */
 export async function memberForTeamsUser(
   tx: Tx,
   tenantId: string,
@@ -550,10 +568,8 @@ export async function memberForTeamsUser(
   }
   let email = from.email?.toLowerCase() ?? null;
   if (!email && from.aadObjectId) {
-    const user = await teamsGraph.user(install.config.aadTenantId, from.aadObjectId);
-    email = user.ok
-      ? ((user.value.mail ?? user.value.userPrincipalName ?? null)?.toLowerCase() ?? null)
-      : null;
+    const found = (await teamRoster(install)).find((u) => u.aadObjectId === from.aadObjectId);
+    email = found?.email ?? null;
   }
   if (!email) return null;
   const [m] = await tx

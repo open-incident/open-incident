@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { safeNext } from "@/lib/next-path";
 import { AuthCard } from "@/components/auth-card";
 import { I18nProvider } from "@/i18n/client";
 import { getT } from "@/i18n/server";
@@ -22,14 +23,21 @@ import { LoginForm } from "./login-form";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; accepted?: string; verified?: string; deleted?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    accepted?: string;
+    verified?: string;
+    deleted?: string;
+    next?: string;
+  }>;
 }) {
   const t = await getT();
   const { tenant } = await requireWorkspace();
   // Membership is what decides, not the session alone: an identity that belongs
   // to another workspace still has to sign in to this one.
-  if (await currentMember()) redirect("/app/incidents");
-  const { error, accepted, verified, deleted } = await searchParams;
+  const { error, accepted, verified, deleted, next: rawNext } = await searchParams;
+  const next = safeNext(rawNext);
+  if (await currentMember()) redirect(next);
   const sso = await ssoSignInOptions(tenant.id);
 
   const notice =
@@ -65,7 +73,7 @@ export default async function LoginPage({
       }
     >
       <I18nProvider locale={t.locale} dict={t.dict} timeZone={t.timeZone}>
-        <LoginForm initialError={error} providers={SOCIAL_PROVIDERS} sso={sso} />
+        <LoginForm initialError={error} providers={SOCIAL_PROVIDERS} sso={sso} next={next} />
       </I18nProvider>
     </AuthCard>
   );

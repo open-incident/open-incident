@@ -1,7 +1,11 @@
 /**
- * Microsoft Graph — channels of the paired team, users by email. Application
- * permissions Channel.Create, Channel.ReadBasic.All and User.Read.All, granted
- * once by the customer's admin.
+ * Microsoft Graph — the channels of the paired team, and nothing else.
+ *
+ * Granted as resource-specific consent (RSC) by the team's owner when the app
+ * is added to the team: `Channel.Create.Group` and `ChannelSettings.Read.Group`,
+ * scoped to that one team. No tenant-wide permission, so no global
+ * administrator: people are found through the bot's roster (adapter.ts), not
+ * Graph `/users`.
  */
 import { graphToken } from "./auth";
 import { teamsGraphBase } from "./config";
@@ -59,19 +63,6 @@ export const teamsGraph = {
         description: description.slice(0, 1024),
         membershipType: "standard",
       },
-    );
-  },
-  /** A user by email (or object id): the Azure AD object id is what the bot addresses. */
-  user(aadTenantId: string, emailOrId: string) {
-    return call<{
-      id: string;
-      displayName?: string;
-      mail?: string | null;
-      userPrincipalName?: string;
-    }>(
-      aadTenantId,
-      "GET",
-      `/users/${encodeURIComponent(emailOrId)}?$select=id,displayName,mail,userPrincipalName`,
     );
   },
 };

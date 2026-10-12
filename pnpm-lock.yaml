@@ -415,6 +415,9 @@ importers:
 
   packages/chat:
     dependencies:
+      '@openincident/config':
+        specifier: workspace:*
+        version: link:../config
       '@openincident/crypto':
         specifier: workspace:*
         version: link:../crypto
@@ -428,6 +431,9 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.1
+      tsx:
+        specifier: ^4.23.13
+        version: 4.23.13
       typescript:
         specifier: ^5.8.0
         version: 5.9.3

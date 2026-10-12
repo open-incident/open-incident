@@ -1,6 +1,9 @@
-/** POST /api/slack/events — Events API: the URL challenge, then reactions and pins in incident channels. */
+/**
+ * POST /api/slack/events — Events API: the URL challenge, the app's removal
+ * (`app_uninstalled`, `tokens_revoked`), then reactions and pins in incident channels.
+ */
 import { verifySlackRequest } from "@openincident/chat";
-import { handleEvent, slackContextForTeam } from "@/lib/slack";
+import { forgetSlackWorkspace, handleEvent, slackContextForTeam } from "@/lib/slack";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +27,13 @@ export async function POST(request: Request) {
     return new Response("bad signature", { status: 401 });
   if (body.type !== "event_callback" || !body.team_id || !body.event)
     return new Response("", { status: 200 });
+  // Removal from the workspace, or a revoked token: the install is dead.
+  // Handled before the context lookup, which needs a live token.
+  const kind = body.event.type;
+  if (kind === "app_uninstalled" || kind === "tokens_revoked") {
+    await forgetSlackWorkspace(body.team_id, kind);
+    return new Response("", { status: 200 });
+  }
   const ctx = await slackContextForTeam(body.team_id);
   if (!ctx) return new Response("", { status: 200 });
   // Slack retries anything slower than three seconds: acknowledge now, work after.

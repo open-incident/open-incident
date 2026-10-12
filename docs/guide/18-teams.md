@@ -2,14 +2,20 @@
 title: Microsoft Teams
 section: integrations
 order: 18
-summary: One Azure bot per instance; each workspace pairs its own team with a code; then the same product gestures as Slack, as Adaptive Cards.
+summary: One Azure bot per instance, team-scoped consent and no global administrator; each workspace pairs its own team with a code; then the same product gestures as Slack, as Adaptive Cards.
 ---
 
 ## For the operator: the bot
 
-Register one bot for the instance in Azure (an app registration with a bot resource) and grant the Microsoft Graph **application** permissions `Channel.Create`, `Channel.ReadBasic.All`, `User.Read.All` (admin consent). Set `TEAMS_APP_ID` and `TEAMS_APP_SECRET` on the instance. The bot's **messaging endpoint** is `https://<any workspace host>/api/teams/messages` — any workspace host works, because the team pairs itself with a code afterwards.
+Register one bot for the instance in Azure: an **app registration** (multi-tenant if teams from other organisations will add it) with an **Azure Bot** resource, whose **messaging endpoint** is `<PUBLIC_ORIGIN>/api/teams/messages` — on a multi-workspace deployment the bare domain, which serves it because the workspace is found from the conversation, not from the host. Set `TEAMS_APP_ID` and `TEAMS_APP_SECRET` on the instance. Without them the Teams card says _This instance has no Azure bot registered_.
 
-Without the two variables the Teams card says _This instance has no Azure bot registered_.
+No Microsoft Graph application permission is needed, and so no global administrator. The app asks for **resource-specific consent**: `Channel.Create.Group` and `ChannelSettings.Read.Group`, granted by the owner of the team the app is added to, for that team only — enough to create the incident channels. People are found through the bot's own roster of the team, not through Graph.
+
+Build the Teams app package — manifest, colour and outline icons — for upload to Teams (**Apps → Manage your apps → Upload an app**) or to Partner Center for the Teams Store:
+
+```bash
+TEAMS_APP_ID=<the app registration's id> PUBLIC_ORIGIN=https://oi.example pnpm teams:package
+```
 
 ## For the administrator: pairing a team
 

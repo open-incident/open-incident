@@ -23,7 +23,9 @@
     "workspace:create": "pnpm --filter @openincident/db workspace:create",
     "workspace:purge": "pnpm --filter @openincident/db workspace:purge",
     "ch:migrate": "pnpm --filter @openincident/telemetry ch:migrate",
-    "telemetry:load": "pnpm --filter @openincident/db telemetry:load"
+    "telemetry:load": "pnpm --filter @openincident/db telemetry:load",
+    "slack:manifest": "pnpm --filter @openincident/chat slack:manifest",
+    "teams:package": "pnpm --filter @openincident/chat teams:package"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.0",

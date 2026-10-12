@@ -49,8 +49,8 @@ NODE_TLS_REJECT_UNAUTHORIZED=0 \
 A development stack usually keeps the standalone mock identity provider running
 (`pnpm --filter @openincident/smoke run mock:idp`, port 3195, signs in
 `sam@smoke.example`). The suite and the guide shots then start their own mock
-on the next free port, 3196, so the instance must trust both:
-`SSO_TRUSTED_IDP_ORIGINS=http://127.0.0.1:3195,http://127.0.0.1:3196`. The SSO
+on port 3194, so the instance must trust both:
+`SSO_TRUSTED_IDP_ORIGINS=http://127.0.0.1:3195,http://127.0.0.1:3194`. The SSO
 spec names its connection **Smoke IdP** on `smoke-sso.example`, apart from the
 standalone **Mock IdP** on `smoke.example`: two connections on one domain are
 refused, correctly.

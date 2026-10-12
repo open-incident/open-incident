@@ -7,17 +7,24 @@ summary: One Slack app per instance, one connection per workspace, a channel per
 
 ## For the operator: the Slack app
 
-Create one Slack app for the instance (api.slack.com → _Create New App_) and give it:
+One Slack app serves the whole instance. Generate its manifest — every URL, scope, event and command already in it — and let Slack create the app from it:
 
-| Feature                 | Setting                                                                                                                                                                                          |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Slash command**       | `/incident`, request URL `https://<any workspace host>/api/slack/commands`                                                                                                                       |
-| **Interactivity**       | Request URL `https://<any workspace host>/api/slack/interactions`                                                                                                                                |
-| **Event subscriptions** | Request URL `https://<any workspace host>/api/slack/events`; bot events `reaction_added`, `pin_added`                                                                                            |
-| **OAuth redirect URL**  | `https://<workspace host>/api/slack/oauth/callback` for each workspace host, or one fixed `SLACK_REDIRECT_URI`                                                                                   |
-| **Bot scopes**          | `channels:manage`, `channels:read`, `channels:history`, `chat:write`, `chat:write.public`, `commands`, `pins:write`, `pins:read`, `reactions:read`, `users:read`, `users:read.email`, `im:write` |
+```bash
+PUBLIC_ORIGIN=https://oi.example pnpm slack:manifest
+```
 
-Then set `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` and `SLACK_SIGNING_SECRET` on the instance. Without them, the Slack card in **Settings → Integrations** says the instance is not configured.
+The command prints the manifest and a link that opens Slack's **Create an app** flow with it filled in. `PUBLIC_ORIGIN` is the one fixed address Slack will call; on a multi-workspace deployment it is the bare domain, where the slash command, interactivity, events and OAuth callback are served because they find their workspace from Slack's payload, never from the host. Then set on the instance:
+
+| Variable               | Value                                      |
+| ---------------------- | ------------------------------------------ |
+| `SLACK_CLIENT_ID`      | from the app's **Basic Information**       |
+| `SLACK_CLIENT_SECRET`  | idem                                       |
+| `SLACK_SIGNING_SECRET` | idem                                       |
+| `SLACK_REDIRECT_URI`   | `<PUBLIC_ORIGIN>/api/slack/oauth/callback` |
+
+Without them, the Slack card in **Settings → Integrations** says the instance is not configured.
+
+To distribute the app beyond one Slack workspace — the published app of a cloud deployment — enable **public distribution** and set the **direct install URL** to `<PUBLIC_ORIGIN>/install/slack`. An installation started from the Slack Marketplace lands there signed out: the page asks for the Open Incident workspace, signs the person in, and continues to Slack's consent screen. The app also handles its own removal: when it is uninstalled from Slack, or its token is revoked, the workspace forgets the token at once, the integration card reads _not connected_, and the audit log records _slack.disconnected_.
 
 ## For the administrator: connecting a workspace
 

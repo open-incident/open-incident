@@ -14,7 +14,15 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const current = await currentMember();
-  if (!current || !isManagerRole(current.member)) return new Response("Forbidden", { status: 403 });
+  // Arriving signed out — from the Slack Marketplace's direct install, or a
+  // link — is not a refusal: sign in, and come back here.
+  if (!current) {
+    const origin = requestOrigin({ headers: request.headers, nextUrl: new URL(request.url) });
+    return NextResponse.redirect(
+      `${origin}/login?next=${encodeURIComponent("/api/slack/oauth/start")}`,
+    );
+  }
+  if (!isManagerRole(current.member)) return new Response("Forbidden", { status: 403 });
   if (!slackConfigured())
     return new Response("Slack is not configured on this instance.", { status: 503 });
   const origin = requestOrigin({ headers: request.headers, nextUrl: new URL(request.url) });

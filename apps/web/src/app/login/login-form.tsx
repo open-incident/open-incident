@@ -25,11 +25,14 @@ export function LoginForm({
   initialError,
   providers,
   sso = [],
+  next = "/app/incidents",
 }: {
   initialError?: string;
   providers: Provider[];
   /** The workspace's single sign-on connections (enterprise edition). */
   sso?: Array<{ providerId: string; label: string }>;
+  /** Where to land once signed in — already checked to be a path on this host. */
+  next?: string;
 }) {
   const t = useT();
   const router = useRouter();
@@ -69,20 +72,20 @@ export function LoginForm({
       setPending(false);
       return;
     }
-    router.push("/app/incidents");
+    router.push(next);
     router.refresh();
   }
 
   async function onSocial(provider: Provider) {
     setError(null);
-    const { error } = await authClient.signIn.social({ provider, callbackURL: "/app/incidents" });
+    const { error } = await authClient.signIn.social({ provider, callbackURL: next });
     if (error) setError(t("auth.login.providerMissing"));
   }
 
   async function onSso(providerId: string) {
     setError(null);
     // Absolute: the callback must land on this workspace's host.
-    const callbackURL = `${window.location.origin}/app/incidents`;
+    const callbackURL = `${window.location.origin}${next}`;
     const { error } = await authClient.signIn.sso({ providerId, callbackURL });
     // The provider's refusal is worth reading: a misconfigured connection says why.
     if (error)

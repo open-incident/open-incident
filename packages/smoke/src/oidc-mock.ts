@@ -121,10 +121,11 @@ export function startOidcMock(
   });
   return new Promise((resolve, reject) => {
     // A development stack keeps the standalone mock on 3195 all day; a suite
-    // or the guide shots started beside it take the next free port, and the
-    // issuer follows, since it is derived from the port.
+    // or the guide shots started beside it fall back to 3194, and the issuer
+    // follows, since it is derived from the port. Not 3196 or 3197: those are
+    // the Teams and Slack doubles, which run in the same suite.
     server.once("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "EADDRINUSE" && port < 3199) resolve(startOidcMock(port + 1, user));
+      if (err.code === "EADDRINUSE" && port === 3195) resolve(startOidcMock(3194, user));
       else reject(err);
     });
     server.listen(port, "127.0.0.1", () => {

@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { expect, request, test, type APIRequestContext } from "@playwright/test";
 import { BASE_URL } from "../playwright.config";
-import { MEMBERS, signIn, signOut } from "./helpers";
+import { MEMBERS, PASSWORD, signIn, signOut } from "./helpers";
 import { startSlackMock, type Call } from "./slack-mock";
 
 const SIGNING = process.env.SMOKE_SLACK_SIGNING_SECRET ?? "smoke-signing-secret";
@@ -258,6 +258,55 @@ test.describe("Slack app", () => {
       data: { type: "url_verification", challenge: "abc123" },
     });
     expect(await challenge.json()).toEqual({ challenge: "abc123" });
+    await signOut(page);
+  });
+
+  /**
+   * The Slack Marketplace's direct install knows nothing of us: it lands on
+   * /install/slack signed out. The workspace host hands over to the
+   * authorization step, which sends the visitor to sign in and back — and the
+   * mock authorizes at once, so the journey ends on step 2, connected.
+   */
+  test("an install started signed out — the Marketplace's — signs in and comes back connected", async ({
+    page,
+  }) => {
+    await page.goto("/install/slack");
+    await page.waitForURL(/\/login\?next=/);
+    await page.locator("input[type=email]").fill(MEMBERS.owner);
+    await page.locator("input[type=password]").fill(PASSWORD);
+    await page.locator("button[type=submit]").click();
+    await page.waitForURL(/connect=slack&step=2/, { timeout: 20_000 });
+    await expect(page.getByTestId("slack-authorized")).toBeVisible();
+    await signOut(page);
+  });
+
+  /**
+   * Removing the app from Slack, or revoking its token, kills the install:
+   * the workspace says "not connected" rather than failing on the next
+   * message. Last in the file: the earlier tests need the install alive, and
+   * a rerun installs again from the first test.
+   */
+  test("removing the app from Slack disconnects the workspace", async ({ page }) => {
+    const ev = JSON.stringify({
+      type: "event_callback",
+      team_id: "T_SMOKE",
+      event: { type: "app_uninstalled" },
+    });
+    const r = await api.post("/api/slack/events", {
+      headers: { ...signed(ev), "content-type": "application/json" },
+      data: ev,
+    });
+    expect(r.status()).toBe(200);
+    await signIn(page, MEMBERS.owner);
+    await page.goto("/app/settings/integrations");
+    await expect(
+      page
+        .getByTestId("integration-card")
+        .filter({ hasText: "Slack" })
+        .getByText(/Connectée|Connected|Verbunden/),
+    ).toHaveCount(0);
+    await page.goto("/app/settings/audit");
+    await expect(page.getByText(/slack\.disconnected/).first()).toBeVisible();
     await signOut(page);
   });
 });
