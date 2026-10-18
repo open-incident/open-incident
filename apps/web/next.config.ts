@@ -2,6 +2,8 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // The floating dev badge sits on the sidebar and spoils side-by-side captures.
+  devIndicators: false,
   // Docker image: `NEXT_OUTPUT=standalone pnpm build` produces .next/standalone
   // (a standalone server traced over the whole monorepo). Without the variable,
   // a classic build — `next start` and the smoke suite stay unchanged.
