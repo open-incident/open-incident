@@ -172,6 +172,8 @@ export function updateCard(opts: {
   reference: string;
   statuses: ChoiceOption[];
   currentStatusId: string | null;
+  /** A draft to start from — Atlas's, opened with "Edit". */
+  initialMessage?: string;
 }): unknown {
   return card(
     [
@@ -188,6 +190,7 @@ export function updateCard(opts: {
         id: "message",
         label: "Message",
         isMultiline: true,
+        ...(opts.initialMessage ? { value: opts.initialMessage.slice(0, 2900) } : {}),
         isRequired: true,
         errorMessage: "A message is required",
       },
@@ -231,6 +234,106 @@ export const TEAMS_HELP_TEXT = [
   "• `escalate` — page a path on this incident",
   "• `lead @Name` — name the incident lead",
   "• `status` — this incident's card",
+  "• `atlas stop` — stop Atlas on this incident · `atlas stop all` — stop it everywhere",
+  "• `atlas approve` — approve the fix Atlas proposed on this incident",
   "• `pair <code>` — link this team to an Open Incident workspace (admins)",
   "• `link <code>` — link your Teams account for pages (from the notifications page)",
 ].join("\n\n");
+
+/** What Atlas did on its own, told to the channel at the same moment — with the way back. */
+export function atlasActedCard(v: {
+  level: number;
+  title: string;
+  detail?: string | null;
+  reversible: boolean;
+  actionId: string;
+  incidentId: string;
+  openUrl: string;
+}): unknown {
+  const actions: unknown[] = [];
+  if (v.reversible) actions.push(submit("Undo", { action: "oi_atlas_undo", actionId: v.actionId }));
+  actions.push(
+    submit(
+      "Stop Atlas",
+      { action: "oi_atlas_stop", incidentId: v.incidentId },
+      { style: "destructive" },
+    ),
+  );
+  actions.push(openUrl("Open", v.openUrl));
+  const body: unknown[] = [
+    text(`✦ ATLAS ACTED · LEVEL ${v.level}`, { weight: "Bolder", size: "Small", color: "Accent" }),
+    text(`**${v.title.slice(0, 280)}**`, { weight: "Bolder" }),
+  ];
+  if (v.detail) body.push(text(v.detail.slice(0, 2000)));
+  body.push(
+    text(
+      v.reversible
+        ? "reversible · Atlas acts only through the allowed actions in Settings › Atlas"
+        : "not reversible · Atlas acts only through the allowed actions in Settings › Atlas",
+      { isSubtle: true, size: "Small" },
+    ),
+  );
+  return card(body, actions);
+}
+
+/** An update Atlas suggests — labelled; nothing is published until a person does. */
+export function atlasDraftCard(v: {
+  reference: string;
+  incidentId: string;
+  message: string;
+}): unknown {
+  const message = v.message.slice(0, 1800);
+  return card(
+    [
+      text(`✦ UPDATE DRAFT · ATLAS · ${v.reference}`, {
+        weight: "Bolder",
+        size: "Small",
+        color: "Accent",
+      }),
+      text(message),
+      text("draft · Atlas — nothing is posted until someone clicks Publish.", {
+        isSubtle: true,
+        size: "Small",
+      }),
+    ],
+    [
+      submit(
+        "Publish",
+        { action: "oi_atlas_draft_publish", incidentId: v.incidentId, message },
+        { style: "positive" },
+      ),
+      submit("Edit", { action: "oi_atlas_draft_edit", incidentId: v.incidentId, message }),
+    ],
+  );
+}
+
+/** The test of Settings › Slack & Teams — a real card, said to be one. */
+export function testCard(v: { workspace: string; by: string; url: string }): unknown {
+  return card(
+    [
+      text("TEST", { weight: "Bolder", size: "Small", isSubtle: true }),
+      text("**Open Incident is connected to Microsoft Teams.**", { weight: "Bolder" }),
+      text(
+        `This card was sent end to end from this instance — ${v.by} asked for it from the workspace ${v.workspace}. Incident channels and announcements will appear in this team.`,
+      ),
+    ],
+    [openUrl("Open in Open Incident", v.url)],
+  );
+}
+
+/** "Thomas Moreau, Nadia Benali — you are on INC-220.": the Teams way of adding people to a standard channel. */
+export function mentionActivity(
+  people: Array<{ aadObjectId: string; name: string; onCall?: boolean }>,
+  reference: string,
+): Record<string, unknown> {
+  const mentions = people.map((p) => `<at>${p.name}</at>${p.onCall ? " (on call)" : ""}`);
+  return {
+    type: "message",
+    text: `${mentions.join(", ")} — you are on ${reference}.`,
+    entities: people.map((p) => ({
+      type: "mention",
+      text: `<at>${p.name}</at>`,
+      mentioned: { id: p.aadObjectId, name: p.name },
+    })),
+  };
+}

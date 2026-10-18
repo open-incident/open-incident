@@ -6,9 +6,11 @@
  */
 import { canRespond } from "@openincident/config";
 import { after } from "next/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import {
+  atlasActions,
   auditEvents,
+  incidentChannels,
   escalationPaths,
   followUps,
   forgetApiKeyLookup,
@@ -35,11 +37,15 @@ import {
   incidentForChannel,
   markDmAcknowledged,
   memberForSlackUser,
+  postIncidentNoteAll,
   readViewValues,
+  recordChatEvent,
   slack,
   updateModal,
   type SlackInstall,
 } from "@openincident/chat";
+import { approveAction, setKillSwitch, stopIncident, undoAction } from "@/lib/atlas/control";
+import "@/lib/chat-on-call";
 import { startEscalation, tenantOrigin } from "@openincident/oncall";
 import { ackByToken } from "@/lib/ack";
 import {
@@ -124,12 +130,87 @@ export async function handleSlashCommand(
     const actor = await actorFor(tx, ctx, form.user_id ?? "");
     if (!actor)
       return say(
-        "Your Slack email does not match a member of this workspace. Sign in to Open Incident with the same address first.",
+        "Who are you in Open Incident? We couldn't match your Slack account to a member by email. An admin links it once in Settings › Slack & Teams; after that, your commands and acknowledgements count as you.",
       );
     const inChannel = form.channel_id
       ? await incidentForChannel(tx, ctx.tenantId, form.channel_id)
       : null;
+    await recordChatEvent(
+      ctx.tenantId,
+      {
+        provider: "slack",
+        direction: "in",
+        kind: "command",
+        target: form.channel_name ? `#${form.channel_name}` : null,
+        detail: `/incident ${[sub, ...(sub.toLowerCase() === "atlas" ? rest.slice(0, 2) : [])].join(" ")}`,
+        incidentId: inChannel?.id ?? null,
+        memberId: actor.memberId,
+      },
+      tx,
+    );
     switch (sub.toLowerCase()) {
+      case "atlas": {
+        const verb = (rest[0] ?? "").toLowerCase();
+        const all = (rest[1] ?? "").toLowerCase() === "all";
+        if (!canRespond(actor)) return say("Viewers cannot stop or approve Atlas.");
+        const by = { memberId: actor.memberId, label: actor.name };
+        if (verb === "stop" && all) {
+          await setKillSwitch(ctx.tenantId, true, by);
+          return say(
+            "Atlas is stopped everywhere: it proposes and acts on no incident until an admin resumes it in Settings › Atlas.",
+          );
+        }
+        if (verb === "stop") {
+          if (!inChannel)
+            return say(
+              "Run this in an incident channel — or `/incident atlas stop all` to stop Atlas everywhere.",
+            );
+          const withdrawn = await stopIncident(ctx.tenantId, inChannel.id, by);
+          post.push(() =>
+            postIncidentNoteAll(
+              ctx.tenantId,
+              inChannel.id,
+              `✦ ${actor.name} stopped Atlas on INC-${inChannel.number}.`,
+            ),
+          );
+          return say(
+            `Atlas is stopped on INC-${inChannel.number}${withdrawn ? ` — ${withdrawn} proposal${withdrawn === 1 ? "" : "s"} withdrawn` : ""}. It stays stopped until someone resumes it from the incident.`,
+          );
+        }
+        if (verb === "approve") {
+          if (!inChannel) return say("Run this in the incident's channel.");
+          const [waiting] = await tx
+            .select({ id: atlasActions.id, title: atlasActions.title })
+            .from(atlasActions)
+            .where(
+              and(
+                eq(atlasActions.tenantId, ctx.tenantId),
+                eq(atlasActions.incidentId, inChannel.id),
+                eq(atlasActions.approvalState, "waiting"),
+              ),
+            )
+            .orderBy(desc(atlasActions.at))
+            .limit(1);
+          if (!waiting) return say(`Atlas has no proposal waiting on INC-${inChannel.number}.`);
+          // Running the fix can take longer than Slack waits for an answer:
+          // answer now, approve after, and say so if it could not go through.
+          const channel = form.channel_id ?? "";
+          const user = form.user_id ?? "";
+          post.push(() =>
+            approveAction(ctx.tenantId, waiting.id, by).catch((err: unknown) =>
+              api.postEphemeral(
+                channel,
+                user,
+                `The approval could not go through (${err instanceof Error ? err.message : String(err)}). Nothing ran — approve it from the incident's Atlas tab.`,
+              ),
+            ),
+          );
+          return say(`Approving “${waiting.title}” — Atlas runs it and says so in this channel.`);
+        }
+        return say(
+          "`/incident atlas stop` stops Atlas on this incident, `/incident atlas stop all` everywhere, `/incident atlas approve` approves the fix it proposed.",
+        );
+      }
       case "declare":
       case "new": {
         if (!canRespond(actor)) return say("Viewers cannot declare incidents.");
@@ -319,6 +400,7 @@ type ViewSubmission = {
 type BlockActions = {
   type: "block_actions";
   user: { id: string };
+  trigger_id?: string;
   actions: Array<{ action_id: string; value?: string }>;
   channel?: { id: string };
   message?: { ts: string };
@@ -451,6 +533,10 @@ export async function handleInteraction(
           }).catch((e) => console.error("[slack] investigate", e));
         }
       }
+      if (action.action_id.startsWith("oi_atlas_") && action.value) {
+        await handleAtlasButton(ctx, payload, action.action_id, action.value);
+        continue;
+      }
       if (action.action_id === "oi_ack" && action.value) {
         const r = await ackByToken(ctx.tenantId, action.value, "slack");
         if (r.ok && payload.channel && payload.message)
@@ -537,6 +623,24 @@ async function pinMessage(
     occurredAt: now,
   });
   await tx.update(incidents).set({ lastActivityAt: now }).where(eq(incidents.id, incidentId));
+  const [ch] = await tx
+    .select({ name: incidentChannels.channelName })
+    .from(incidentChannels)
+    .where(
+      and(eq(incidentChannels.tenantId, ctx.tenantId), eq(incidentChannels.channelId, channelId)),
+    );
+  await recordChatEvent(
+    ctx.tenantId,
+    {
+      provider: "slack",
+      direction: "in",
+      kind: "pin",
+      target: ch ? `#${ch.name}` : channelId,
+      incidentId,
+      memberId: actor.memberId ?? null,
+    },
+    tx,
+  );
 }
 
 type SlackEvent = {
@@ -636,4 +740,140 @@ export async function forgetSlackWorkspace(
   });
   await forgetApiKeyLookup(`slack:${teamId}`);
   return done;
+}
+
+/**
+ * The buttons of Atlas's messages: Undo and Stop Atlas under "Atlas acted",
+ * Publish and Edit under an update draft. The clicker is matched to a member
+ * and checked like any responder; each gesture is the web's own function.
+ */
+async function handleAtlasButton(
+  ctx: SlackContext,
+  payload: BlockActions,
+  actionId: string,
+  value: string,
+): Promise<void> {
+  const api = slack(ctx.install.token);
+  const channel = payload.channel?.id ?? "";
+  const tell = (text: string) =>
+    channel ? api.postEphemeral(channel, payload.user.id, text) : Promise.resolve(null);
+  const actor = await withTenant(ctx.tenantId, (tx) => actorFor(tx, ctx, payload.user.id));
+  if (!actor) {
+    await tell(
+      "Your Slack account is not linked to a member of this workspace — nothing was done.",
+    );
+    return;
+  }
+  if (!canRespond(actor)) {
+    await tell("Viewers cannot act on Atlas.");
+    return;
+  }
+  const by = { memberId: actor.memberId, label: actor.name };
+  if (actionId === "oi_atlas_undo") {
+    const [row] = await withTenant(ctx.tenantId, (tx) =>
+      tx
+        .select({ title: atlasActions.title, incidentId: atlasActions.incidentId })
+        .from(atlasActions)
+        .where(and(eq(atlasActions.tenantId, ctx.tenantId), eq(atlasActions.id, value))),
+    );
+    if (!row) {
+      await tell("That action is no longer in Atlas's journal.");
+      return;
+    }
+    try {
+      await undoAction(ctx.tenantId, value, by);
+    } catch (err) {
+      await tell(
+        `The undo could not go through (${err instanceof Error ? err.message : String(err)}). Undo it from the incident's Atlas tab.`,
+      );
+      return;
+    }
+    if (row.incidentId)
+      await postIncidentNoteAll(
+        ctx.tenantId,
+        row.incidentId,
+        `↩ ${actor.name} undid: ${row.title}`,
+      );
+    return;
+  }
+  if (actionId === "oi_atlas_stop") {
+    const [inc] = await withTenant(ctx.tenantId, (tx) =>
+      tx
+        .select({ id: incidents.id, number: incidents.number })
+        .from(incidents)
+        .where(and(eq(incidents.tenantId, ctx.tenantId), eq(incidents.id, value))),
+    );
+    if (!inc) return;
+    const withdrawn = await stopIncident(ctx.tenantId, inc.id, by);
+    await postIncidentNoteAll(
+      ctx.tenantId,
+      inc.id,
+      `✦ ${actor.name} stopped Atlas on INC-${inc.number}${withdrawn ? ` — ${withdrawn} proposal${withdrawn === 1 ? "" : "s"} withdrawn` : ""}.`,
+    );
+    return;
+  }
+  const draft = safeJson(value) as { i?: string; m?: string };
+  if (typeof draft.i !== "string" || typeof draft.m !== "string") return;
+  const incidentId = draft.i;
+  const message = draft.m;
+  if (actionId === "oi_atlas_draft_edit") {
+    if (!payload.trigger_id) return;
+    const view = await withTenant(ctx.tenantId, async (tx) => {
+      const [inc] = await tx
+        .select()
+        .from(incidents)
+        .where(and(eq(incidents.tenantId, ctx.tenantId), eq(incidents.id, incidentId)));
+      if (!inc) return null;
+      const statuses = await tx
+        .select({ id: incidentStatuses.id, name: incidentStatuses.name })
+        .from(incidentStatuses)
+        .where(eq(incidentStatuses.typeId, inc.typeId))
+        .orderBy(asc(incidentStatuses.rank));
+      const sevs = await tx
+        .select({ id: severities.id, name: severities.name })
+        .from(severities)
+        .where(eq(severities.tenantId, ctx.tenantId))
+        .orderBy(asc(severities.rank));
+      return updateModal({
+        reference: `INC-${inc.number}`,
+        statuses,
+        currentStatusId: inc.statusId,
+        severities: sevs,
+        privateMetadata: JSON.stringify({ incidentId: inc.id }),
+        initialMessage: message,
+      });
+    });
+    if (view) await api.openView(payload.trigger_id, view);
+    return;
+  }
+  if (actionId === "oi_atlas_draft_publish") {
+    const post: Post = [];
+    const result = await withTenant(ctx.tenantId, async (tx) => {
+      const [inc] = await tx
+        .select()
+        .from(incidents)
+        .where(and(eq(incidents.tenantId, ctx.tenantId), eq(incidents.id, incidentId)));
+      if (!inc?.statusId || inc.phase === "closed") return null;
+      const t = await workspaceT(tx, ctx.tenantId);
+      const r = await postUpdateCore(tx, ctx.tenantId, actor, inc.id, {
+        statusId: inc.statusId,
+        message,
+        severityId: null,
+        nextUpdateMinutes: null,
+        resolvedLabel: t("incident.update.resolved"),
+      });
+      if (r)
+        post.push(() =>
+          afterIncidentChange(ctx.tenantId, inc.id, ["incident.update_published"], {
+            message,
+            by: actor.name,
+          }),
+        );
+      return r ? inc.number : null;
+    });
+    for (const f of post)
+      await f().catch((err) => console.error("[slack] post-commit work failed", err));
+    if (result === null)
+      await tell("The draft could not be published — the incident is closed or has no status.");
+  }
 }

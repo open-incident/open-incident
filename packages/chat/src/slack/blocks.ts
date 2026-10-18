@@ -215,6 +215,8 @@ export function updateModal(opts: {
   currentStatusId: string | null;
   severities: Array<{ id: string; name: string }>;
   privateMetadata: string;
+  /** A draft to start from — Atlas's, opened with "Edit". */
+  initialMessage?: string;
 }): unknown {
   const statusOptions = [
     ...opts.statuses.map((s) => ({ text: { type: "plain_text", text: s.name }, value: s.id })),
@@ -248,6 +250,7 @@ export function updateModal(opts: {
           type: "plain_text_input",
           action_id: "message",
           multiline: true,
+          ...(opts.initialMessage ? { initial_value: opts.initialMessage.slice(0, 2900) } : {}),
           placeholder: { type: "plain_text", text: "What changed, what is next" },
         },
       },
@@ -331,6 +334,8 @@ export const HELP_TEXT = [
   "`/incident escalate` — page the on-call through an escalation path",
   "`/incident lead @user` — assign the incident lead",
   "`/incident status` — where the incident stands",
+  "`/incident atlas stop` — stop Atlas on this incident · `/incident atlas stop all` — stop it everywhere",
+  "`/incident atlas approve` — approve the fix Atlas proposed on this incident",
   "React with :pushpin: to add a message to the timeline, :white_check_mark: to turn it into a follow-up.",
 ].join("\n");
 
@@ -447,4 +452,96 @@ export function alertChannelBlocks(v: AlertChannelView): unknown[] {
   blocks.push({ type: "actions", elements: actions });
   blocks.push(ctx(`Source: ${v.sourceName}`));
   return blocks;
+}
+
+/** What Atlas did on its own, told to the channel at the same moment — with the way back. */
+export type AtlasActedView = {
+  level: number;
+  title: string;
+  detail?: string | null;
+  reversible: boolean;
+  actionId: string;
+  incidentId: string;
+  openUrl: string;
+};
+
+export function atlasActedBlocks(v: AtlasActedView): unknown[] {
+  const buttons: unknown[] = [];
+  if (v.reversible)
+    buttons.push({
+      type: "button",
+      text: { type: "plain_text", text: "Undo" },
+      action_id: "oi_atlas_undo",
+      value: v.actionId,
+    });
+  buttons.push({
+    type: "button",
+    text: { type: "plain_text", text: "Stop Atlas" },
+    action_id: "oi_atlas_stop",
+    value: v.incidentId,
+    style: "danger",
+  });
+  buttons.push({
+    type: "button",
+    text: { type: "plain_text", text: "Open" },
+    url: v.openUrl,
+    action_id: "oi_open",
+  });
+  const blocks: unknown[] = [
+    ctx(`✦ *ATLAS ACTED · LEVEL ${v.level}*`),
+    md(`*${v.title.slice(0, 280)}*`),
+  ];
+  if (v.detail) blocks.push(md(v.detail.slice(0, 2000)));
+  blocks.push({ type: "actions", elements: buttons });
+  blocks.push(
+    ctx(
+      v.reversible
+        ? "reversible · Atlas acts only through the allowed actions in Settings › Atlas"
+        : "not reversible · Atlas acts only through the allowed actions in Settings › Atlas",
+    ),
+  );
+  return blocks;
+}
+
+/** An update Atlas suggests — labelled as such; nothing is published until a person does. */
+export function atlasDraftBlocks(v: {
+  reference: string;
+  incidentId: string;
+  message: string;
+}): unknown[] {
+  const message = v.message.slice(0, 1800);
+  return [
+    ctx(`✦ *UPDATE DRAFT · ATLAS* · ${v.reference}`),
+    md(message),
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Publish" },
+          style: "primary",
+          action_id: "oi_atlas_draft_publish",
+          value: JSON.stringify({ i: v.incidentId, m: message }),
+        },
+        {
+          type: "button",
+          text: { type: "plain_text", text: "Edit" },
+          action_id: "oi_atlas_draft_edit",
+          value: JSON.stringify({ i: v.incidentId, m: message }),
+        },
+      ],
+    },
+    ctx("draft · Atlas — nothing is posted until someone clicks Publish."),
+  ];
+}
+
+/** The test of Settings › Slack & Teams — a real message, said to be one. */
+export function testBlocks(v: { workspace: string; by: string; url: string }): unknown[] {
+  return [
+    ctx("*TEST*"),
+    md(
+      `*Open Incident is connected to Slack.*\nThis message was sent end to end from this instance — ${v.by} asked for it from the workspace ${v.workspace}.`,
+    ),
+    ctx(`<${v.url}|Open Incident> · nothing is on fire.`),
+  ];
 }

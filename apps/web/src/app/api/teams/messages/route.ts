@@ -5,7 +5,8 @@
  */
 import { after } from "next/server";
 import { teamsConfigured, verifyTeamsToken } from "@openincident/chat";
-import { handleTeamsActivity, type TeamsActivity } from "@/lib/teams";
+import { handleTeamsActivity, handleTeamsInvoke, type TeamsActivity } from "@/lib/teams";
+import "@/lib/chat-on-call";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,16 @@ export async function POST(request: Request) {
     activity.serviceUrl ?? null,
   );
   if (!verified) return new Response("Unauthorized", { status: 401 });
+  // An invoke (the message action "Add to the timeline") is answered in the
+  // response itself; everything else is acknowledged at once and worked after.
+  if (activity.type === "invoke") {
+    try {
+      return Response.json(await handleTeamsInvoke(activity));
+    } catch (err) {
+      console.error("[teams] invoke failed:", err);
+      return Response.json({});
+    }
+  }
   after(async () => {
     try {
       await handleTeamsActivity(activity);

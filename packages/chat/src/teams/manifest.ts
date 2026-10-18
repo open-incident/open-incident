@@ -55,12 +55,42 @@ export function teamsAppManifest({
               { title: "pair", description: "Pair this team with your workspace: pair <code>" },
               { title: "declare", description: "Declare an incident" },
               { title: "status", description: "The incident of this channel" },
+              {
+                title: "atlas stop",
+                description: "Stop Atlas on this incident (atlas stop all: everywhere)",
+              },
+              { title: "atlas approve", description: "Approve the fix Atlas proposed" },
               { title: "help", description: "What I can do" },
             ],
           },
           {
             scopes: ["personal"],
             commands: [{ title: "help", description: "What I can do" }],
+          },
+        ],
+      },
+    ],
+    // "Add to the timeline" on any message of an incident channel — the
+    // Teams counterpart of Slack's :pushpin: reaction.
+    composeExtensions: [
+      {
+        botId: appId,
+        commands: [
+          {
+            id: "oi_pin",
+            type: "action",
+            title: "Add to the timeline",
+            description: "Pin this message to the incident's timeline",
+            context: ["message"],
+            fetchTask: false,
+            parameters: [
+              {
+                name: "note",
+                title: "Note",
+                description: "Optional — why it matters",
+                inputType: "text",
+              },
+            ],
           },
         ],
       },

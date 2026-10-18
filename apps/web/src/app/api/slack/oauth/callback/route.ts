@@ -8,8 +8,10 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import {
   exchangeOAuthCode,
+  getSlackInstall,
   linkSlackIdentity,
   readInstallState,
+  recordChatEvent,
   saveSlackInstall,
   slack,
 } from "@openincident/chat";
@@ -26,7 +28,7 @@ export async function GET(request: Request) {
   if (!state) return new Response("Invalid or expired state.", { status: 400 });
   const tenant = await getTenantById(state.tenantId);
   if (!tenant) return new Response("Unknown workspace.", { status: 404 });
-  const back = `${tenantOrigin(tenant.slug, tenant.customDomain)}/app/settings/integrations`;
+  const back = `${tenantOrigin(tenant.slug, tenant.customDomain)}/app/settings/chat`;
   if (!code)
     return NextResponse.redirect(
       `${back}?connect=slack&step=1&error=${encodeURIComponent(url.searchParams.get("error") ?? "denied")}`,
@@ -38,7 +40,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(
       `${back}?connect=slack&step=1&error=${encodeURIComponent(result.error)}`,
     );
-  await withTenant(state.tenantId, async (tx) => {
+  const reinstall = await withTenant(state.tenantId, async (tx) => {
+    const before = await getSlackInstall(tx, state.tenantId);
     await saveSlackInstall(tx, state.tenantId, {
       teamId: result.teamId,
       teamName: result.teamName,
@@ -61,11 +64,27 @@ export async function GET(request: Request) {
     // Best effort: remember who is who, starting with the active members.
     const api = slack(result.accessToken);
     const rows = await tx
-      .select({ id: members.id, email: members.email })
+      .select({ id: members.id, email: members.email, name: members.name })
       .from(members)
       .where(and(eq(members.tenantId, state.tenantId), eq(members.status, "active")));
+    await recordChatEvent(
+      state.tenantId,
+      {
+        provider: "slack",
+        direction: "in",
+        kind: "install",
+        target: result.teamName,
+        memberId: state.memberId,
+      },
+      tx,
+    );
     for (const m of rows.slice(0, 50))
       await linkSlackIdentity(tx, state.tenantId, api, m).catch(() => null);
+    return before !== null;
   });
-  return NextResponse.redirect(`${back}?connect=slack&step=2&authorized=1`);
+  // A reinstall (Health › Reinstall the app) keeps every setting: back to the
+  // page. A first install continues the wizard on its first step, authorized.
+  return NextResponse.redirect(
+    reinstall ? `${back}?reinstalled=slack` : `${back}?connect=slack&step=1&authorized=1`,
+  );
 }

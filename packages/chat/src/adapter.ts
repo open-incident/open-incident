@@ -4,10 +4,12 @@
  * a direct message that pages someone. It reads installs and channels from
  * the database and never decides anything: the caller already did.
  */
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { decryptSecrets, encryptSecrets } from "@openincident/crypto";
 import {
+  alertRoutes,
   announcements,
+  chatEvents,
   chatIdentities,
   incidentChannels,
   incidentRoles,
@@ -23,12 +25,18 @@ import {
   type SlackConfig,
   type Tx,
 } from "@openincident/db";
+import { markChatPageAcknowledged, recordChatEvent } from "./events";
+import { channelPeople, peopleLine } from "./people";
+import { chatSettings, type ChatSettings } from "./settings";
 import { slack, type SlackClient } from "./slack/client";
 import {
   acknowledgedBlocks,
   alertChannelBlocks,
   type AlertChannelView,
   announcementBlocks,
+  atlasActedBlocks,
+  atlasDraftBlocks,
+  type AtlasActedView,
   escalationDmBlocks,
   type IncidentCard,
   incidentHeaderBlocks,
@@ -36,6 +44,7 @@ import {
   investigationBlocks,
   investigationText,
   type InvestigationView,
+  testBlocks,
 } from "./slack/blocks";
 
 export const DEFAULT_SLACK_CONFIG: SlackConfig = {
@@ -53,7 +62,10 @@ export type SlackInstall = {
   botUserId: string | null;
   token: string;
   config: SlackConfig;
+  /** The switches of Settings › Slack & Teams, defaults filled in. */
+  settings: ChatSettings;
   installedByMemberId: string | null;
+  createdAt: Date;
 };
 
 /** The workspace's Slack install, decrypted — null when Slack is not connected. */
@@ -78,7 +90,9 @@ export async function getSlackInstall(tx: Tx, tenantId: string): Promise<SlackIn
     botUserId: row.botUserId,
     token: secrets.bot_token,
     config: { ...DEFAULT_SLACK_CONFIG, ...(row.config as Partial<SlackConfig>) },
+    settings: chatSettings(row.config),
     installedByMemberId: row.installedByMemberId,
+    createdAt: row.createdAt,
   };
 }
 
@@ -106,13 +120,26 @@ export async function saveSlackInstall(
     installedByMemberId: input.memberId,
     updatedAt: new Date(),
   };
+  const installedAt = new Date().toISOString();
   if (existing) {
-    await tx.update(integrationInstalls).set(values).where(eq(integrationInstalls.id, existing.id));
+    // A reinstall keeps every setting: only the token and who installed it change.
+    await tx
+      .update(integrationInstalls)
+      .set({
+        ...values,
+        config: sql`${integrationInstalls.config} || ${JSON.stringify({ installedAt })}::jsonb`,
+      })
+      .where(eq(integrationInstalls.id, existing.id));
     return existing.id;
   }
   const [row] = await tx
     .insert(integrationInstalls)
-    .values({ tenantId, kind: "slack", config: DEFAULT_SLACK_CONFIG, ...values })
+    .values({
+      tenantId,
+      kind: "slack",
+      config: { ...DEFAULT_SLACK_CONFIG, installedAt },
+      ...values,
+    })
     .returning({ id: integrationInstalls.id });
   return row!.id;
 }
@@ -176,27 +203,31 @@ export async function incidentCard(
   };
 }
 
-/** The Slack user ids of the members holding roles on the incident, plus the declarer. */
-async function incidentSlackUsers(tx: Tx, tenantId: string, incidentId: string): Promise<string[]> {
-  const [inc] = await tx
-    .select({ creator: incidents.creatorMemberId })
-    .from(incidents)
-    .where(eq(incidents.id, incidentId));
-  const roles = await tx
-    .select({ memberId: roleAssignments.memberId })
-    .from(roleAssignments)
-    .where(eq(roleAssignments.incidentId, incidentId));
-  const ids = [
-    ...new Set(
-      [inc?.creator, ...roles.map((r) => r.memberId)].filter((x): x is string => Boolean(x)),
-    ),
-  ];
-  if (ids.length === 0) return [];
-  const rows = await tx
-    .select({ externalUserId: chatIdentities.externalUserId, memberId: chatIdentities.memberId })
-    .from(chatIdentities)
-    .where(and(eq(chatIdentities.tenantId, tenantId), eq(chatIdentities.kind, "slack")));
-  return rows.filter((r) => ids.includes(r.memberId)).map((r) => r.externalUserId);
+/**
+ * The Slack users the channel should hold, matched by email when they have
+ * never acted in Slack (and remembered), with the people nobody could match.
+ */
+async function slackPeopleFor(
+  tx: Tx,
+  tenantId: string,
+  incidentId: string,
+  install: SlackInstall,
+  api: SlackClient,
+) {
+  const people = await channelPeople(tx, tenantId, incidentId, {
+    autoInvite: install.config.autoInvite,
+    inviteOnCall: install.settings.inviteOnCall,
+  });
+  const out: Array<(typeof people)[number] & { slackId: string | null }> = [];
+  for (const p of people) {
+    const slackId = await linkSlackIdentity(tx, tenantId, api, {
+      id: p.memberId,
+      email: p.email,
+      name: p.name,
+    }).catch(() => null);
+    out.push({ ...p, slackId });
+  }
+  return out;
 }
 
 /**
@@ -218,6 +249,13 @@ export async function ensureIncidentChannel(
     const install = await getSlackInstall(tx, tenantId);
     if (!install) return null;
     if (install.config.channelMode !== "auto" && !opts.force) return null;
+    // Incident channels are public channels of the Slack workspace: a private
+    // incident gets none rather than a channel anyone can join.
+    const [vis] = await tx
+      .select({ visibility: incidents.visibility })
+      .from(incidents)
+      .where(eq(incidents.id, incidentId));
+    if (vis?.visibility === "private") return null;
     const card = await incidentCard(tx, tenantId, incidentId, origin);
     if (!card) return null;
     const api = slack(install.token);
@@ -230,9 +268,22 @@ export async function ensureIncidentChannel(
       created = await api.createChannel(`${base}-${Date.now().toString(36).slice(-4)}`);
     if (!created.ok) {
       console.error(`[slack] conversations.create failed: ${created.error}`);
+      await recordChatEvent(
+        tenantId,
+        {
+          provider: "slack",
+          kind: "channel",
+          target: `#${base}`,
+          incidentId,
+          ok: false,
+          error: created.error,
+        },
+        tx,
+      );
       return null;
     }
     const channel = created.channel;
+    const where = `#${channel.name}`;
     await api.setTopic(channel.id, `${card.reference} — ${card.name} · ${card.url}`);
     const header = await api.postMessage(
       channel.id,
@@ -240,10 +291,58 @@ export async function ensureIncidentChannel(
       incidentHeaderBlocks(card),
     );
     if (header.ok) await api.pin(channel.id, header.ts);
-    if (install.config.autoInvite) {
-      const users = await incidentSlackUsers(tx, tenantId, incidentId);
-      if (users.length) await api.invite(channel.id, users);
+    await recordChatEvent(
+      tenantId,
+      {
+        provider: "slack",
+        kind: "channel",
+        target: where,
+        incidentId,
+        ok: header.ok,
+        error: header.ok ? null : header.error,
+      },
+      tx,
+    );
+    const people = await slackPeopleFor(tx, tenantId, incidentId, install, api);
+    const added: typeof people = [];
+    for (const p of people) {
+      if (!p.slackId) {
+        await recordChatEvent(
+          tenantId,
+          {
+            provider: "slack",
+            kind: "invite",
+            target: where,
+            detail: p.name,
+            incidentId,
+            memberId: p.memberId,
+            ok: false,
+            error: "users_not_found",
+          },
+          tx,
+        );
+        continue;
+      }
+      // One by one: a refusal for one person (user_disabled…) must not keep the others out.
+      const r = await api.invite(channel.id, [p.slackId]);
+      if (r.ok) added.push(p);
+      await recordChatEvent(
+        tenantId,
+        {
+          provider: "slack",
+          kind: "invite",
+          target: where,
+          detail: p.name,
+          incidentId,
+          memberId: p.memberId,
+          ok: r.ok,
+          error: r.ok ? null : r.error,
+          meta: p.onCall ? { onCall: true } : {},
+        },
+        tx,
+      );
     }
+    if (added.length) await api.postMessage(channel.id, `${peopleLine(added)} were added.`);
     await tx.insert(incidentChannels).values({
       tenantId,
       incidentId,
@@ -271,11 +370,23 @@ export async function refreshIncidentHeader(
     const install = await getSlackInstall(tx, tenantId);
     const card = await incidentCard(tx, tenantId, incidentId, origin);
     if (!install || !card) return;
-    await slack(install.token).updateMessage(
+    const r = await slack(install.token).updateMessage(
       ch.channelId,
       ch.headerTs,
       `${card.reference} — ${card.name}`,
       incidentHeaderBlocks(card),
+    );
+    await recordChatEvent(
+      tenantId,
+      {
+        provider: "slack",
+        kind: "header",
+        target: `#${ch.channelName}`,
+        incidentId,
+        ok: r.ok,
+        error: r.ok ? null : r.error,
+      },
+      tx,
     );
   });
 }
@@ -309,6 +420,19 @@ export async function postIncidentUpdate(
         resolved: update.resolved,
       }),
     );
+    await recordChatEvent(
+      tenantId,
+      {
+        provider: "slack",
+        kind: "update",
+        target: `#${ch.channelName}`,
+        detail: update.by,
+        incidentId,
+        ok: r.ok,
+        error: r.ok ? null : r.error,
+      },
+      tx,
+    );
     return r.ok;
   });
 }
@@ -328,6 +452,18 @@ export async function postIncidentNote(
     const install = await getSlackInstall(tx, tenantId);
     if (!install) return false;
     const r = await slack(install.token).postMessage(ch.channelId, text);
+    await recordChatEvent(
+      tenantId,
+      {
+        provider: "slack",
+        kind: "note",
+        target: `#${ch.channelName}`,
+        incidentId,
+        ok: r.ok,
+        error: r.ok ? null : r.error,
+      },
+      tx,
+    );
     return r.ok;
   });
 }
@@ -359,8 +495,24 @@ export async function syncAnnouncement(
       url: `${origin}/app/incidents/${inc.number}`,
       closed: a.status === "closed",
     });
+    const where = install.config.announceChannelName
+      ? `#${install.config.announceChannelName}`
+      : install.config.announceChannelId;
     if (a.chatRef?.channelId && a.chatRef.ts) {
-      await api.updateMessage(a.chatRef.channelId, a.chatRef.ts, a.body, blocks);
+      const r = await api.updateMessage(a.chatRef.channelId, a.chatRef.ts, a.body, blocks);
+      await recordChatEvent(
+        tenantId,
+        {
+          provider: "slack",
+          kind: "announcement",
+          target: where,
+          incidentId: a.incidentId,
+          ok: r.ok,
+          error: r.ok ? null : r.error,
+          meta: { edited: true },
+        },
+        tx,
+      );
     } else if (a.status === "live") {
       const r = await api.postMessage(install.config.announceChannelId, a.body, blocks);
       if (r.ok)
@@ -368,6 +520,18 @@ export async function syncAnnouncement(
           .update(announcements)
           .set({ chatRef: { ...(a.chatRef ?? {}), channelId: r.channel, ts: r.ts } })
           .where(eq(announcements.id, a.id));
+      await recordChatEvent(
+        tenantId,
+        {
+          provider: "slack",
+          kind: "announcement",
+          target: where,
+          incidentId: a.incidentId,
+          ok: r.ok,
+          error: r.ok ? null : r.error,
+        },
+        tx,
+      );
     }
   });
 }
@@ -387,12 +551,39 @@ export async function dmSlackUser(
   return withTenant(tenantId, async (tx) => {
     const install = await getSlackInstall(tx, tenantId);
     if (!install) return { ok: false, error: "slack_not_installed" };
+    // The administrator turned direct-message pages off in Settings › Slack & Teams.
+    if (!install.settings.dmPages) return { ok: false, error: "dm_pages_off" };
+    const [who] = await tx
+      .select({ id: members.id, name: members.name })
+      .from(chatIdentities)
+      .innerJoin(members, eq(members.id, chatIdentities.memberId))
+      .where(
+        and(
+          eq(chatIdentities.tenantId, tenantId),
+          eq(chatIdentities.kind, "slack"),
+          eq(chatIdentities.externalUserId, slackUserId),
+        ),
+      );
     const api = slack(install.token);
     const channel = (await api.openDm(slackUserId)) ?? slackUserId;
     const r = await api.postMessage(
       channel,
       `${message.subject} — ${message.text}`,
       escalationDmBlocks(message),
+    );
+    await recordChatEvent(
+      tenantId,
+      {
+        provider: "slack",
+        kind: "page",
+        target: who?.name ?? slackUserId,
+        detail: message.subject,
+        memberId: who?.id ?? null,
+        ok: r.ok,
+        error: r.ok ? null : r.error,
+        meta: r.ok ? { ref: `${r.channel}:${r.ts}` } : {},
+      },
+      tx,
     );
     return r.ok ? { ok: true, ref: `${r.channel}:${r.ts}` } : { ok: false, error: r.error };
   });
@@ -415,6 +606,7 @@ export async function markDmAcknowledged(
       acknowledgedBlocks({ subject, by }),
     );
   });
+  await markChatPageAcknowledged(tenantId, "slack", `${ref.channelId}:${ref.ts}`, by);
 }
 
 /** Links a member to their Slack user by email; remembers it. */
@@ -422,7 +614,7 @@ export async function linkSlackIdentity(
   tx: Tx,
   tenantId: string,
   api: SlackClient,
-  member: { id: string; email: string },
+  member: { id: string; email: string; name?: string },
 ): Promise<string | null> {
   const [existing] = await tx
     .select({ externalUserId: chatIdentities.externalUserId })
@@ -430,6 +622,20 @@ export async function linkSlackIdentity(
     .where(and(eq(chatIdentities.memberId, member.id), eq(chatIdentities.kind, "slack")));
   if (existing) return existing.externalUserId;
   const user = await api.lookupByEmail(member.email);
+  // Remembered either way: a miss is what tells the People section "no Slack account".
+  await recordChatEvent(
+    tenantId,
+    {
+      provider: "slack",
+      kind: "lookup",
+      target: member.name ?? member.email,
+      detail: member.email,
+      memberId: member.id,
+      ok: Boolean(user),
+      error: user ? null : "users_not_found",
+    },
+    tx,
+  );
   if (!user) return null;
   await tx
     .insert(chatIdentities)
@@ -516,20 +722,43 @@ export async function postInvestigation(
       .where(and(eq(incidentChannels.incidentId, incidentId), eq(incidentChannels.kind, "slack")));
     if (!ch) return null;
     const install = await getSlackInstall(tx, tenantId);
-    if (!install) return null;
+    if (!install || !install.settings.postRca) return null;
     const api = slack(install.token);
     const text = investigationText(view);
     const blocks = investigationBlocks(view);
+    const where = `#${ch.channelName}`;
     if (ref?.channelId && ref.ts) {
       const r = await api.updateMessage(ref.channelId, ref.ts, text, blocks);
-      if (r.ok) return { channelId: ref.channelId, ts: ref.ts };
+      if (r.ok) {
+        await recordChatEvent(
+          tenantId,
+          { provider: "slack", kind: "rca", target: where, incidentId, meta: { edited: true } },
+          tx,
+        );
+        return { channelId: ref.channelId, ts: ref.ts };
+      }
     }
     const r = await api.postMessage(ch.channelId, text, blocks);
+    await recordChatEvent(
+      tenantId,
+      {
+        provider: "slack",
+        kind: "rca",
+        target: where,
+        incidentId,
+        ok: r.ok,
+        error: r.ok ? null : r.error,
+      },
+      tx,
+    );
     return r.ok ? { channelId: r.channel, ts: r.ts } : null;
   });
 }
 
-/** An alert in the channel a route names — one message, nothing kept. */
+/**
+ * An alert in the channel a rule names — one message per alert: posted when
+ * it fires, edited in place when it resolves.
+ */
 export async function postAlertToChannel(
   tenantId: string,
   channelId: string,
@@ -538,11 +767,181 @@ export async function postAlertToChannel(
   return withTenant(tenantId, async (tx) => {
     const install = await getSlackInstall(tx, tenantId);
     if (!install) return false;
-    const r = await slack(install.token).postMessage(
-      channelId,
-      `${view.status === "resolved" ? "Resolved" : "Alert"}: ${view.title}`,
-      alertChannelBlocks(view),
+    const api = slack(install.token);
+    const alertId = /\/alerts\/([0-9a-f-]{36})/.exec(view.url)?.[1] ?? null;
+    const text = `${view.status === "resolved" ? "Resolved" : "Alert"}: ${view.title}`;
+    const blocks = alertChannelBlocks(view);
+    // The message of the firing, when there was one: resolved in place.
+    const [first] =
+      alertId && view.status === "resolved"
+        ? await tx
+            .select({ meta: chatEvents.meta })
+            .from(chatEvents)
+            .where(
+              and(
+                eq(chatEvents.tenantId, tenantId),
+                eq(chatEvents.provider, "slack"),
+                eq(chatEvents.kind, "alert"),
+                sql`${chatEvents.meta}->>'alertId' = ${alertId}`,
+                sql`${chatEvents.meta}->>'ts' is not null`,
+              ),
+            )
+            .orderBy(desc(chatEvents.createdAt))
+            .limit(1)
+        : [];
+    const ref = first?.meta as { ts?: string; channel?: string } | undefined;
+    const r =
+      ref?.ts && ref.channel
+        ? await api.updateMessage(ref.channel, ref.ts, text, blocks)
+        : await api.postMessage(channelId, text, blocks);
+    const [route] = await tx
+      .select({ notify: alertRoutes.notify })
+      .from(alertRoutes)
+      .where(
+        and(
+          eq(alertRoutes.tenantId, tenantId),
+          sql`${alertRoutes.notify}->>'slackChannelId' = ${channelId}`,
+        ),
+      )
+      .limit(1);
+    const name = route?.notify?.slackChannelName;
+    await recordChatEvent(
+      tenantId,
+      {
+        provider: "slack",
+        kind: "alert",
+        target: name ? `#${name.replace(/^#/, "")}` : channelId,
+        detail: view.title,
+        ok: r.ok,
+        error: r.ok ? null : r.error,
+        meta: {
+          resolved: view.status === "resolved",
+          ...(alertId ? { alertId } : {}),
+          ...(r.ok && !ref?.ts ? { ts: r.ts, channel: channelId } : {}),
+        },
+      },
+      tx,
     );
     return r.ok;
+  });
+}
+
+/** "Atlas acted" in the incident's Slack channel. False when there is no channel to tell. */
+export async function postAtlasActedSlack(
+  tenantId: string,
+  view: AtlasActedView,
+): Promise<boolean> {
+  return withTenant(tenantId, async (tx) => {
+    const [ch] = await tx
+      .select()
+      .from(incidentChannels)
+      .where(
+        and(eq(incidentChannels.incidentId, view.incidentId), eq(incidentChannels.kind, "slack")),
+      );
+    if (!ch) return false;
+    const install = await getSlackInstall(tx, tenantId);
+    if (!install) return false;
+    const r = await slack(install.token).postMessage(
+      ch.channelId,
+      `Atlas acted (level ${view.level}): ${view.title}`,
+      atlasActedBlocks(view),
+    );
+    await recordChatEvent(
+      tenantId,
+      {
+        provider: "slack",
+        kind: "atlas",
+        target: `#${ch.channelName}`,
+        detail: view.title,
+        incidentId: view.incidentId,
+        ok: r.ok,
+        error: r.ok ? null : r.error,
+        meta: { actionId: view.actionId, level: view.level },
+      },
+      tx,
+    );
+    return r.ok;
+  });
+}
+
+/** An update draft by Atlas in the incident's Slack channel — when the administrator asked for them. */
+export async function postAtlasDraftSlack(
+  tenantId: string,
+  incidentId: string,
+  draft: { reference: string; message: string },
+): Promise<boolean> {
+  return withTenant(tenantId, async (tx) => {
+    const [ch] = await tx
+      .select()
+      .from(incidentChannels)
+      .where(and(eq(incidentChannels.incidentId, incidentId), eq(incidentChannels.kind, "slack")));
+    if (!ch) return false;
+    const install = await getSlackInstall(tx, tenantId);
+    if (!install || !install.settings.atlasDrafts) return false;
+    const r = await slack(install.token).postMessage(
+      ch.channelId,
+      `Update draft by Atlas — ${draft.reference}`,
+      atlasDraftBlocks({ reference: draft.reference, incidentId, message: draft.message }),
+    );
+    await recordChatEvent(
+      tenantId,
+      {
+        provider: "slack",
+        kind: "draft",
+        target: `#${ch.channelName}`,
+        incidentId,
+        ok: r.ok,
+        error: r.ok ? null : r.error,
+      },
+      tx,
+    );
+    return r.ok;
+  });
+}
+
+/**
+ * The test of the settings: a real message in the announcement channel, or
+ * to the person who asked when there is none. Says where it went, or why not.
+ */
+export async function sendSlackTest(
+  tenantId: string,
+  by: { memberId: string; name: string; email: string },
+  workspace: string,
+  url: string,
+): Promise<{ ok: boolean; where: string; error?: string }> {
+  return withTenant(tenantId, async (tx) => {
+    const install = await getSlackInstall(tx, tenantId);
+    if (!install) return { ok: false, where: "", error: "slack_not_installed" };
+    const api = slack(install.token);
+    let channel = install.config.announceChannelId;
+    let where = install.config.announceChannelName ? `#${install.config.announceChannelName}` : "";
+    if (!channel) {
+      const me = await linkSlackIdentity(tx, tenantId, api, {
+        id: by.memberId,
+        email: by.email,
+        name: by.name,
+      });
+      channel = me ? ((await api.openDm(me)) ?? me) : null;
+      where = by.name;
+    }
+    if (!channel) return { ok: false, where, error: "users_not_found" };
+    const r = await api.postMessage(
+      channel,
+      `Open Incident is connected to Slack — a test ${by.name} asked for.`,
+      testBlocks({ workspace, by: by.name, url }),
+    );
+    await recordChatEvent(
+      tenantId,
+      {
+        provider: "slack",
+        kind: "test",
+        target: where,
+        memberId: by.memberId,
+        ok: r.ok,
+        error: r.ok ? null : r.error,
+      },
+      tx,
+    );
+    return r.ok ? { ok: true, where } : { ok: false, where, error: r.error };
   });
 }

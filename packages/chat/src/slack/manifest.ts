@@ -38,7 +38,8 @@ export function slackAppManifest({
           command: "/incident",
           url: `${base}/api/slack/commands`,
           description: "Declare, update and follow incidents",
-          usage_hint: "declare | update | status | lead | help",
+          usage_hint:
+            "declare | update | escalate | lead | status | atlas stop | atlas approve | help",
           should_escape: false,
         },
       ],

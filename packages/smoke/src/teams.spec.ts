@@ -18,9 +18,15 @@ test.describe("Microsoft Teams", () => {
   const TEAM = { id: "team-aad-group-1", name: "Skylark Engineering" };
   const AAD = "aad-tenant-skylark";
   const SERVICE = "http://127.0.0.1:3196/connector";
+  /** The instance carries a bot (TEAMS_* pointing at the mock): unconfigured, the endpoint is a 404. */
+  let teamsReady = false;
   test.beforeAll(async () => {
     mock = await startTeamsMock();
     api = await request.newContext({ baseURL: BASE_URL });
+    teamsReady = (await api.post("/api/teams/messages", { data: {} })).status() !== 404;
+  });
+  test.beforeEach(() => {
+    test.skip(!teamsReady, "Microsoft Teams is not configured on this instance (TEAMS_* unset)");
   });
   test.afterAll(async () => {
     await api.dispose();
@@ -65,19 +71,28 @@ test.describe("Microsoft Teams", () => {
     page,
   }) => {
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/settings/integrations?connect=teams");
-    await page.getByTestId("teams-pair").click();
-    await page.waitForURL(/connect=teams/);
-    const code =
-      (
-        await page.getByTestId("teams-pairing-code").locator("span").first().textContent()
-      )?.trim() ?? "";
+    await page.goto("/app/settings/chat");
+    if ((await page.getByTestId("chat-card-teams").getAttribute("data-state")) === "connected")
+      // A rerun: a new code re-pairs the team, the install stays live.
+      await page.goto("/app/settings/chat?connect=teams&step=1");
+    else await page.getByTestId("chat-connect-teams").click();
+    await page.waitForURL(/connect=teams&step=1/);
+    let code = (await page.getByTestId("teams-pairing-code").getAttribute("data-code")) ?? "";
+    if (!code) {
+      await page.getByTestId("teams-pair").click();
+      await page.waitForURL(/connect=teams&step=1/);
+      code = (await page.getByTestId("teams-pairing-code").getAttribute("data-code")) ?? "";
+    }
     expect(code).toMatch(/^[A-Z0-9]{6}$/);
+    // The screen writes it split for reading (4K7Q-2M); typed that way, it still pairs.
+    await expect(page.getByTestId("teams-pairing-code")).toContainText(
+      `${code.slice(0, 4)}-${code.slice(4)}`,
+    );
 
     // The admin types the code in the team — the mock delivers it as an activity.
     await send(
       activity({
-        text: `<at>Open Incident</at> pair ${code}`,
+        text: `<at>Open Incident</at> pair ${code.slice(0, 4)}-${code.slice(4)}`,
         from: { id: "29:amelie", name: "Amélie Laurent", aadObjectId: "aad-amelie" },
         entities: [
           {
@@ -96,18 +111,21 @@ test.describe("Microsoft Teams", () => {
       )
       .toBe(true);
 
-    await page.goto("/app/settings/integrations?connect=teams&step=2");
+    // "I've typed it" finds the pairing done.
+    await page.goto("/app/settings/chat?connect=teams&step=1");
+    await expect(page.getByTestId("teams-paired")).toBeVisible();
+    await page.getByTestId("chat-wiz-next").click();
+    await page.waitForURL(/step=2/);
     await page
       .getByTestId("teams-config-form")
-      .locator('select[name="announceChannel"]')
+      .locator('select[name="announce"]')
       .selectOption({ label: "Ops" });
-    await page.getByTestId("teams-config-save").click();
+    await page.getByTestId("chat-wiz-next").click();
     await page.waitForURL(/step=3/);
-    await page.getByTestId("teams-test").click();
-    await page.waitForURL(/test=ok/);
-    await expect(
-      page.getByTestId("integration-card").filter({ hasText: "Microsoft Teams" }),
-    ).toContainText(TEAM.name);
+    await page.getByTestId("chat-wiz-test").click();
+    await expect(page.getByTestId("teams-tested")).toBeVisible();
+    await page.getByTestId("chat-wiz-finish").click();
+    await expect(page.getByTestId("chat-card-teams")).toContainText(TEAM.name);
 
     // An incident declared in the web gets a channel and a header card in the team.
     await page.goto("/app/incidents/new");
@@ -136,6 +154,45 @@ test.describe("Microsoft Teams", () => {
         { timeout: 15_000 },
       )
       .toBe(true);
+
+    // From the incident's channel: Atlas stopped here, and a message added to
+    // the timeline with the app's message action.
+    const channelId = [...mock.channels.values()].find((c) => channelName.includes(c.displayName))!.id;
+    const inChannel = (extra: Record<string, unknown>) =>
+      activity({
+        ...extra,
+        conversation: { id: `${channelId};messageid=7`, conversationType: "channel", tenantId: AAD },
+        channelData: {
+          tenant: { id: AAD },
+          team: { id: TEAM.id, aadGroupId: TEAM.id, name: TEAM.name },
+          channel: { id: channelId, name: channelName },
+        },
+        from: { id: "29:amelie", name: "Amélie Laurent", aadObjectId: "aad-amelie" },
+      });
+    const beforeStop = mock.activities.length;
+    await send(inChannel({ text: "<at>Open Incident</at> atlas stop" }));
+    await expect
+      .poll(
+        () =>
+          mock.activities
+            .slice(beforeStop)
+            .some((a) => String(a.activity.text ?? "").includes("Atlas is stopped on INC-")),
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+    const pinned = `Teams pin ${Date.now().toString(36)} — rollback confirmed by the payments team.`;
+    const invoke = await send({
+      ...inChannel({}),
+      type: "invoke",
+      name: "composeExtension/submitAction",
+      value: {
+        commandId: "oi_pin",
+        messagePayload: { id: "m-1", body: { content: `<p>${pinned}</p>` } },
+      },
+    });
+    expect(invoke.status()).toBe(200);
+    await page.reload();
+    await expect(page.getByText(pinned).first()).toBeVisible({ timeout: 15_000 });
 
     // From Teams: the declare card, submitted.
     const before = mock.activities.length;

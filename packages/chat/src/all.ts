@@ -4,6 +4,7 @@
  */
 import {
   ensureIncidentChannel,
+  postAtlasDraftSlack,
   postIncidentNote,
   postIncidentUpdate,
   postInvestigation,
@@ -13,8 +14,10 @@ import {
 import { investigationText, type InvestigationView } from "./slack/blocks";
 import {
   ensureIncidentChannelTeams,
+  postAtlasDraftTeams,
   postIncidentNoteTeams,
   postIncidentUpdateTeams,
+  postInvestigationTeams,
   refreshIncidentHeaderTeams,
   syncAnnouncementTeams,
 } from "./teams/adapter";
@@ -85,30 +88,55 @@ export async function syncAnnouncementAll(
   ]);
 }
 
+export type InvestigationChatRef = {
+  channelId?: string;
+  ts?: string;
+  /** Older rows: the Teams note was posted once, before it could be updated in place. */
+  teamsPosted?: boolean;
+  /** The Teams card of the analysis, updated in place. */
+  teams?: { threadId: string; activityId: string };
+  /** The assessment the last update draft was suggested for — one draft per assessment. */
+  draftRun?: number;
+};
+
 /**
- * The root cause analysis in every connected chat: Slack keeps one message
- * updated in place; Teams gets the synthesis once, as a note, the first time.
- * Returns the reference to keep on the investigation row.
+ * The root cause analysis in every connected chat, one message per tool,
+ * updated in place at every assessment. Each tool honours its own "Post the
+ * root cause analysis" switch; with "Suggest update drafts" on, Atlas also
+ * offers the synthesis as an update draft — once per assessment, labelled,
+ * published only by a person. Returns the reference to keep on the
+ * investigation row.
  */
 export async function postInvestigationAll(
   tenantId: string,
   incidentId: string,
   view: InvestigationView,
-  ref: { channelId?: string; ts?: string; teamsPosted?: boolean } | null,
-): Promise<{ channelId?: string; ts?: string; teamsPosted?: boolean } | null> {
-  const [slackRef, teams] = await Promise.all([
+  ref: InvestigationChatRef | null,
+): Promise<InvestigationChatRef | null> {
+  const [slackRef, teamsRef] = await Promise.all([
     quiet(postInvestigation(tenantId, incidentId, view, ref), "slack investigation", null),
-    ref?.teamsPosted
-      ? Promise.resolve(true)
+    ref?.teamsPosted && !ref.teams
+      ? Promise.resolve(null)
       : quiet(
-          postIncidentNoteTeams(tenantId, incidentId, investigationText(view)),
+          postInvestigationTeams(tenantId, incidentId, investigationText(view), ref?.teams ?? null),
           "teams investigation",
-          false,
+          null,
         ),
   ]);
-  const next = {
+  let draftRun = ref?.draftRun;
+  if (view.whatsGoingOn && view.runs > (ref?.draftRun ?? 0)) {
+    const draft = { reference: view.reference, message: view.whatsGoingOn };
+    const posted = await Promise.all([
+      quiet(postAtlasDraftSlack(tenantId, incidentId, draft), "slack draft", false),
+      quiet(postAtlasDraftTeams(tenantId, incidentId, draft), "teams draft", false),
+    ]);
+    if (posted.some(Boolean)) draftRun = view.runs;
+  }
+  const next: InvestigationChatRef = {
     ...(slackRef ?? (ref?.ts ? { channelId: ref.channelId, ts: ref.ts } : {})),
-    ...(teams ? { teamsPosted: true } : {}),
+    ...(ref?.teamsPosted ? { teamsPosted: true } : {}),
+    ...(teamsRef ? { teams: teamsRef } : ref?.teams ? { teams: ref.teams } : {}),
+    ...(draftRun ? { draftRun } : {}),
   };
   return Object.keys(next).length > 0 ? next : null;
 }

@@ -15,3 +15,6 @@ export * from "./slack/manifest";
 export * from "./teams/manifest";
 export * from "./package-files";
 export * from "./atlas";
+export * from "./events";
+export * from "./settings";
+export * from "./people";

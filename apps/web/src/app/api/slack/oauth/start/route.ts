@@ -46,8 +46,6 @@ export async function GET(request: Request) {
    * this check is that it cannot tell.
    */
   if (pointsAtThisMachine(authorize) && process.env.SLACK_ALLOW_LOCAL_ENDPOINT !== "1")
-    return NextResponse.redirect(
-      `${origin}/app/settings/integrations?connect=slack&error=local-endpoint`,
-    );
+    return NextResponse.redirect(`${origin}/app/settings/chat?connect=slack&error=local-endpoint`);
   return NextResponse.redirect(authorize);
 }

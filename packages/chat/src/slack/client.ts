@@ -145,6 +145,22 @@ export function slack(token: string) {
       const r = await slackCall<{ user: SlackUser }>(token, "users.lookupByEmail", { email }, true);
       return r.ok ? r.user : null;
     },
+    /** The people of the Slack workspace — bots and deactivated accounts left out. */
+    listUsers: async (): Promise<SlackUser[]> => {
+      const out: SlackUser[] = [];
+      let cursor: string | undefined;
+      for (let i = 0; i < 5; i++) {
+        const r = await slackCall<{
+          members: Array<SlackUser & { deleted?: boolean; is_bot?: boolean }>;
+          response_metadata?: { next_cursor?: string };
+        }>(token, "users.list", { limit: 200, ...(cursor ? { cursor } : {}) }, true);
+        if (!r.ok) break;
+        out.push(...r.members.filter((m) => !m.deleted && !m.is_bot && m.id !== "USLACKBOT"));
+        cursor = r.response_metadata?.next_cursor || undefined;
+        if (!cursor) break;
+      }
+      return out;
+    },
     userInfo: async (user: string): Promise<SlackUser | null> => {
       const r = await slackCall<{ user: SlackUser }>(token, "users.info", { user }, true);
       return r.ok ? r.user : null;

@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { expect, request, test, type APIRequestContext } from "@playwright/test";
+import { expect, request, test, type APIRequestContext, type Page } from "@playwright/test";
 import { BASE_URL } from "../playwright.config";
 import { MEMBERS, PASSWORD, signIn, signOut } from "./helpers";
 import { startSlackMock, type Call } from "./slack-mock";
@@ -27,9 +27,17 @@ const form = (o: Record<string, string>) => new URLSearchParams(o).toString();
 test.describe("Slack app", () => {
   let mock: Awaited<ReturnType<typeof startSlackMock>>;
   let api: APIRequestContext;
+  /** The instance answers Slack: it carries the app's signing secret (and points at the mock). */
+  let slackReady = false;
   test.beforeAll(async () => {
     mock = await startSlackMock();
     api = await request.newContext({ baseURL: BASE_URL });
+    const probe = form({ team_id: "T_PROBE", user_id: "U_PROBE", command: "/incident", text: "help" });
+    slackReady =
+      (await api.post("/api/slack/commands", { headers: signed(probe), data: probe })).status() === 200;
+  });
+  test.beforeEach(() => {
+    test.skip(!slackReady, "Slack is not configured on this instance (SLACK_* unset)");
   });
   test.afterAll(async () => {
     await api.dispose();
@@ -38,42 +46,77 @@ test.describe("Slack app", () => {
   const calls = async (): Promise<Call[]> =>
     (await (await fetch("http://127.0.0.1:3197/_calls")).json()) as Call[];
 
-  test("install, configure and test the Slack app from the settings", async ({ page }) => {
+  /** The instance under test must carry the Slack app (SLACK_* pointing at the mock). */
+  async function slackState(page: Page): Promise<string> {
+    await page.goto("/app/settings/chat");
+    return (await page.getByTestId("chat-card-slack").getAttribute("data-state")) ?? "";
+  }
+
+  test("install, configure and test the Slack app from Settings › Slack & Teams", async ({
+    page,
+  }) => {
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/settings/integrations");
-    await page
-      .getByTestId("integration-card")
-      .filter({ hasText: "Slack" })
-      .getByRole("link", { name: /Connecter|Connect|Verbinden|Configurer|Configure|Konfigurieren/ })
-      .click();
+    const state = await slackState(page);
+    test.skip(state === "unavailable", "Slack is not configured on this instance (SLACK_*)");
+    if (state === "not-connected") await page.getByTestId("chat-connect-slack").click();
+    else await page.goto("/app/settings/chat?connect=slack&step=1");
     await expect(page.getByTestId("slack-connect")).toBeVisible();
     // Step 1: authorize — the mock redirects straight back with a code.
     const authorize = page.getByTestId("slack-authorize");
     if (await authorize.isVisible()) {
       await authorize.click();
-      await page.waitForURL(/connect=slack&step=2/);
+      await page.waitForURL(/connect=slack&step=1/);
     }
     await expect(page.getByTestId("slack-authorized")).toBeVisible();
+    await page.getByTestId("chat-wiz-next").click();
+    await page.waitForURL(/step=2/);
     // Step 2: configuration — channels come from the mock.
     await page
-      .locator('form[data-testid="slack-config"] select[name="announceChannelId"]')
-      .selectOption("C_ANNOUNCE");
-    await page.getByTestId("slack-config-save").click();
+      .locator('form[data-testid="slack-config"] select[name="announce"]')
+      .selectOption("C_ANNOUNCE|annonces-incidents");
+    await page.getByTestId("chat-wiz-next").click();
     await page.waitForURL(/step=3/);
     // Step 3: a real test message.
-    await page.getByTestId("slack-test").click();
+    await page.getByTestId("chat-wiz-test").click();
     await expect(page.getByTestId("slack-tested")).toBeVisible();
     const posted = (await calls()).filter(
       (c) => c.method === "chat.postMessage" && c.body.channel === "C_ANNOUNCE",
     );
     expect(posted.length).toBeGreaterThan(0);
-    await page.getByTestId("slack-finish").click();
-    await expect(
-      page
-        .getByTestId("integration-card")
-        .filter({ hasText: "Slack" })
-        .getByText(/Connectée|Connected|Verbunden/),
-    ).toBeVisible();
+    await page.getByTestId("chat-wiz-finish").click();
+    await expect(page.getByTestId("chat-toast")).toBeVisible();
+    await expect(page.getByTestId("chat-card-slack")).toHaveAttribute("data-state", "connected");
+    // The test is in the outbox, delivered.
+    await page.getByTestId("chat-sec-health").getByRole("button").first().click();
+    await expect(page.getByTestId("chat-delivery").first()).toBeVisible();
+    await signOut(page);
+  });
+
+  test("a switch of the page changes what the adapter does, and stays", async ({ page }) => {
+    await signIn(page, MEMBERS.owner);
+    const state = await slackState(page);
+    test.skip(state !== "connected", "needs the Slack app connected (first test)");
+    await page.getByTestId("chat-card-slack").click();
+    await page.getByTestId("chat-sec-atlas").getByRole("button").first().click();
+    const rca = page.getByTestId("chat-toggle-postRca");
+    const before = await rca.getAttribute("aria-checked");
+    await rca.click();
+    await expect(page.getByTestId("chat-toast")).toBeVisible();
+    await page.reload();
+    await page.getByTestId("chat-sec-atlas").getByRole("button").first().click();
+    await expect(page.getByTestId("chat-toggle-postRca")).not.toHaveAttribute(
+      "aria-checked",
+      before ?? "true",
+    );
+    // Back as it was, for the next run.
+    await page.getByTestId("chat-toggle-postRca").click();
+    await expect(page.getByTestId("chat-toast")).toBeVisible();
+    // The channel prefix: saved on blur, used by the next channel.
+    await page.getByTestId("chat-sec-channels").getByRole("button").first().click();
+    const prefix = page.getByTestId("chat-prefix");
+    await prefix.fill("inc-");
+    await prefix.blur();
+    await expect(page.getByTestId("chat-preview-where")).toContainText("#inc-");
     await signOut(page);
   });
 
@@ -200,7 +243,7 @@ test.describe("Slack app", () => {
           await api.post("/api/slack/commands", { headers: signed(stranger), data: stranger })
         ).json()) as { text: string }
       ).text,
-    ).toMatch(/does not match/);
+    ).toMatch(/Who are you in Open Incident/);
     // A forged signature is refused.
     expect(
       (
@@ -210,6 +253,25 @@ test.describe("Slack app", () => {
         })
       ).status(),
     ).toBe(401);
+
+    // Atlas from the channel: stop it here, ask to approve (nothing waits in
+    // this workspace), and the reply says so in each case.
+    const atlas = async (text: string) => {
+      const body = form({
+        team_id: "T_SMOKE",
+        user_id: "U_KARIM",
+        channel_id: channelId,
+        command: "/incident",
+        text,
+      });
+      return (
+        (await (await api.post("/api/slack/commands", { headers: signed(body), data: body })).json()) as {
+          text: string;
+        }
+      ).text;
+    };
+    expect(await atlas("atlas stop")).toContain(`Atlas is stopped on INC-${number}`);
+    expect(await atlas("atlas approve")).toMatch(/no proposal waiting|Approving/);
 
     // :pushpin: on a message → pinned note on the timeline.
     const ev = JSON.stringify({
@@ -275,7 +337,7 @@ test.describe("Slack app", () => {
     await page.locator("input[type=email]").fill(MEMBERS.owner);
     await page.locator("input[type=password]").fill(PASSWORD);
     await page.locator("button[type=submit]").click();
-    await page.waitForURL(/connect=slack&step=2/, { timeout: 20_000 });
+    await page.waitForURL(/connect=slack&step=1/, { timeout: 20_000 });
     await expect(page.getByTestId("slack-authorized")).toBeVisible();
     await signOut(page);
   });
@@ -298,13 +360,8 @@ test.describe("Slack app", () => {
     });
     expect(r.status()).toBe(200);
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/settings/integrations");
-    await expect(
-      page
-        .getByTestId("integration-card")
-        .filter({ hasText: "Slack" })
-        .getByText(/Connectée|Connected|Verbunden/),
-    ).toHaveCount(0);
+    await page.goto("/app/settings/chat");
+    await expect(page.getByTestId("chat-card-slack")).not.toHaveAttribute("data-state", "connected");
     await page.goto("/app/settings/audit");
     await expect(page.getByText(/slack\.disconnected/).first()).toBeVisible();
     await signOut(page);
