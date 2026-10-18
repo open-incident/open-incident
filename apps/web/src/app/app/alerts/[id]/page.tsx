@@ -7,10 +7,11 @@ import { getT, type Translate } from "@/i18n/server";
 import { canRespond, requireMember } from "@/lib/session";
 import { getAlert, type AlertDetail } from "@/lib/alerts";
 import { relatedIncidents } from "@/lib/ai-capabilities";
-import { phaseTone } from "@/lib/tones";
+import { AtlasAlertBanner } from "@/components/atlas/alert";
 import { sharedRoute, sourceChoices } from "../sources/choices";
 import { priorityChip } from "../tone";
 import { Fold } from "../fold";
+import { rich } from "../rich";
 import { Countdown } from "./countdown";
 import {
   addAlertNote,
@@ -57,56 +58,85 @@ function eventInk(kind: string): string {
   return "var(--ink-3)";
 }
 
-/** What one alert event says, in words — the vocabulary the first design already had. */
-function eventText(t: Translate, e: AlertDetail["events"][number]): string {
+type Decision = { path: string | null; via: string | null; skipped: string | null };
+
+/**
+ * "auth-service → Platform → Platform primary", the trail the owner lookup
+ * leaves, read back as words: who owns the service, and the policy paged.
+ */
+function ownerTrail(via: string | null): { service?: string; team: string } | null {
+  if (!via) return null;
+  const parts = via.split(" → ");
+  if (parts.length === 3) return { service: parts[0]!, team: parts[1]! };
+  if (parts.length === 2) return { team: parts[0]! };
+  return null;
+}
+
+/** The escalation decisions an alert's routing recorded, in both payload shapes it was written in. */
+function decisionsOf(p: Record<string, unknown>): Decision[] {
+  if (Array.isArray(p.escalation)) return p.escalation as Decision[];
+  // The first shape: one trail at the top level.
+  if (typeof p.via === "string") {
+    const parts = p.via.split(" → ");
+    return [{ path: parts[parts.length - 1] ?? null, via: p.via, skipped: null }];
+  }
+  return [];
+}
+
+/** One taken decision, as the timeline and "why this path" say it. */
+function pagingLine(t: Translate, d: Decision): string {
+  const owner = ownerTrail(d.via);
+  if (owner?.service)
+    return t("alst.event.pagingOwner", {
+      service: owner.service,
+      team: owner.team,
+      path: d.path ?? "—",
+    });
+  if (owner) return t("alst.event.pagingTeam", { team: owner.team, path: d.path ?? "—" });
+  return t("alst.event.paging", { path: d.path ?? "—" });
+}
+
+/** What one alert event says, in words. */
+function eventText(
+  t: Translate,
+  e: AlertDetail["events"][number],
+  ctx: { rule: string | null; levelOf: Record<string, number>; window: number; source: string },
+): string {
   const p = e.payload as Record<string, unknown>;
   switch (e.kind) {
     case "triggered":
-      return t("alerts.event.triggered", { priority: String(p.priority ?? "—") });
+      return t("alst.event.fired", { priority: String(p.priority ?? "—"), source: ctx.source });
     case "routed": {
       if (p.warning === "path_unpublished") return t("alerts.event.pathUnpublished");
-      if (!p.route) return t("alerts.event.unrouted");
-      const esc = Array.isArray(p.escalation)
-        ? (p.escalation as Array<{
-            path: string | null;
-            via: string | null;
-            skipped: string | null;
-          }>)
-        : [];
-      const paged = esc
-        .filter((x) => x.path && !x.skipped)
-        .map((x) => x.path)
-        .join(", ");
-      const skipped = esc.filter((x) => x.skipped).length;
-      const missing = Array.isArray(p.missing) ? (p.missing as string[]) : [];
-      return [
-        t("alerts.event.routed", { route: String(p.route) }),
-        paged
-          ? t("alerts.event.routedPages", { paths: paged })
-          : esc.length
-            ? ""
-            : t("alerts.event.routedNobody"),
-        skipped ? t("alerts.event.routedSkipped", { count: skipped }) : "",
-        missing.length ? t("alerts.event.routedMissing", { keys: missing.join(", ") }) : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
+      const taken = decisionsOf(p).filter((d) => d.path && !d.skipped);
+      const paging = taken.length
+        ? taken.map((d) => pagingLine(t, d)).join(" · ")
+        : t("alst.event.pagesNobody");
+      return ctx.rule ? t("alst.event.ruleMatched", { rule: ctx.rule, paging }) : paging;
     }
-    case "escalated":
-      return t("alerts.event.escalated", {
-        members: Array.isArray(p.members) ? (p.members as string[]).join(", ") : "—",
+    case "escalated": {
+      const who = Array.isArray(p.members) ? (p.members as string[]).join(", ") : "—";
+      const level = typeof p.nodeId === "string" ? ctx.levelOf[p.nodeId] : undefined;
+      const low = p.urgency === "low";
+      if (level)
+        return t(low ? "alst.event.levelLow" : "alst.event.levelHigh", { level, members: who });
+      return t(low ? "alst.event.levelLowNoLevel" : "alst.event.levelHighNoLevel", {
+        members: who,
       });
+    }
     case "incident_created":
-      return t("alerts.event.incidentCreated", { number: `INC-${String(p.number)}` });
+      return t("alst.event.incidentOpened", {
+        number: String(p.number),
+        phase: t(`incident.phase.${String(p.phase ?? "triage") as "triage"}`).toLowerCase(),
+      });
     case "incident_linked":
       return t("alerts.event.incidentLinked", { number: `INC-${String(p.number)}` });
     case "grouped":
-      return t("alerts.event.grouped", { title: String(p.title ?? p.leaderTitle ?? "") });
+      return p.leaderId
+        ? t("alst.event.joined", { title: String(p.leaderTitle ?? "") })
+        : t("alst.event.grouped", { count: 1, window: t.fmt.duration(ctx.window) });
     case "acknowledged":
-      return t("alerts.event.acknowledged", {
-        by: e.actorName ?? "—",
-        channel: String(p.channel ?? "web"),
-      });
+      return t("alst.event.acknowledged", { by: e.actorName ?? "—" });
     case "unacknowledged":
       return t("alerts.event.unacknowledged", { by: e.actorName ?? "—" });
     case "snoozed":
@@ -127,7 +157,8 @@ function eventText(t: Translate, e: AlertDetail["events"][number]): string {
 /**
  * One alert: its labels, everything that happened to it, the payload it came
  * in with — and, down the right, who is being paged right now, why this path
- * and not another, and what the history says about alerts like it.
+ * and not another, and what the history says about alerts like it. When Atlas
+ * took the alert, a violet line under the title says what it is doing.
  */
 export default async function AlertPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -166,6 +197,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
   const chip = priorityChip(alert.priority?.rank ?? null);
   const esc = alert.escalation;
   const paging = Boolean(esc && esc.status === "pending" && !acked);
+  const window = alert.route?.grouping?.windowMinutes ?? 5;
 
   const statusTone = firing
     ? acked
@@ -177,17 +209,44 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
   // pipeline bound, minus the bookkeeping keys nobody wants on a chip.
   const hidden = new Set(["service", "service_id", "team_id", "priority", "source", "source_name"]);
   const labels = Object.entries(a.attributes).filter(([k, v]) => !hidden.has(k) && v);
-  const teamFromOwner = Boolean(a.attributes.team_id && a.attributes.service);
+
+  // "Why this path": read back from the routing decision the ingest stored.
+  const routed = alert.events.find((e) => e.kind === "routed")?.payload as
+    Record<string, unknown> | undefined;
+  const decided = routed ? decisionsOf(routed) : [];
+  const taken = decided.find((d) => d.path && !d.skipped) ?? null;
+  const blocked = decided.find((d) => d.skipped) ?? null;
+  const owner = ownerTrail(taken?.via ?? null);
+  // Who decided: a rule if the alert points at anything but the shared one,
+  // the source's own three choices otherwise.
+  const byRule = Boolean(alert.route && alert.route.id !== extra.governing.shared?.id);
+  const page = extra.governing.choices.page;
+  const teamFromOwner = Boolean(owner?.service && labels.some(([k]) => k === "team"));
 
   // The timeline: what the pipeline recorded and what people wrote, in order.
+  // A leader's "one more joined" lines fold into one: the design's "2 more
+  // alerts grouped", at the time of the last.
+  const ctx = {
+    rule: byRule ? (alert.route?.name ?? null) : null,
+    levelOf: esc?.levelOf ?? {},
+    window,
+    source: alert.source.name,
+  };
+  const joins = alert.events.filter((e) => e.kind === "grouped" && !e.payload.leaderId);
+  const lastJoin = joins[joins.length - 1];
   const entries = [
-    ...alert.events.map((e) => ({
-      key: e.id,
-      at: e.occurredAt,
-      ink: eventInk(e.kind),
-      text: eventText(t, e),
-      note: null as null | (typeof extra.notes)[number],
-    })),
+    ...alert.events
+      .filter((e) => !(e.kind === "grouped" && !e.payload.leaderId && e !== lastJoin))
+      .map((e) => ({
+        key: e.id,
+        at: e.occurredAt,
+        ink: eventInk(e.kind),
+        text:
+          e === lastJoin
+            ? t("alst.event.grouped", { count: joins.length, window: t.fmt.duration(window) })
+            : eventText(t, e, ctx),
+        note: null as null | (typeof extra.notes)[number],
+      })),
     ...extra.notes.map((n) => ({
       key: n.id,
       at: n.createdAt,
@@ -197,32 +256,50 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
     })),
   ].sort((x, y) => x.at.getTime() - y.at.getTime());
 
-  // "Why this path": read back from the routing decision the ingest stored.
-  const routed = alert.events.find((e) => e.kind === "routed")?.payload as
-    Record<string, unknown> | undefined;
-  const decided = Array.isArray(routed?.escalation)
-    ? (routed!.escalation as Array<{
-        path: string | null;
-        via: string | null;
-        skipped: string | null;
-      }>)
-    : [];
-  const taken = decided.find((d) => d.path && !d.skipped) ?? null;
-  const blocked = decided.find((d) => d.skipped) ?? null;
-  // Who decided: a rule if the alert points at anything but the shared one,
-  // the source's own three choices otherwise.
-  const byRule = Boolean(alert.route && alert.route.id !== extra.governing.shared?.id);
-  const ownRoute = !byRule && extra.governing.choices.own;
-
   // Atlas: only when the instance has a provider — otherwise the card says so.
+  // The alert's own incident is not "similar": it is the same one.
   const atlas = aiConfigured()
-    ? await relatedIncidents(tenant.id, { id: a.id, name: a.title, summary: null }, 1)
+    ? await relatedIncidents(tenant.id, { id: a.id, name: a.title, summary: null }, 4)
     : null;
-  const similar = atlas?.items[0] ?? null;
+  const similar = atlas?.items.find((x) => x.number !== alert.incident?.number) ?? null;
+
+  const whySentence = (() => {
+    if (!alert.route && !extra.governing.choices.own) return <>{t("alt2.detail.whyNoRoute")}</>;
+    const pagedPart = taken
+      ? owner?.service
+        ? rich(
+            t,
+            "alst.why.owner",
+            { service: owner.service, team: owner.team, path: taken.path ?? "—" },
+            ["service", "team"],
+          )
+        : rich(t, "alst.why.path", { path: taken.path ?? "—" }, [])
+      : blocked?.skipped === "unpublished"
+        ? [t("alt2.detail.whyUnpublished", { path: blocked.path ?? "—" })]
+        : [t("alt2.detail.whyNobody")];
+    if (byRule)
+      return (
+        <>
+          {rich(t, "alst.why.rule", { rule: alert.route!.name, source: alert.source.name })}{" "}
+          {pagedPart}
+        </>
+      );
+    const says =
+      page.kind === "owner"
+        ? t("alst.why.saysOwner")
+        : page.kind === "nobody"
+          ? t("alst.why.saysNobody")
+          : t("alst.why.saysPath", { name: page.name });
+    return (
+      <>
+        {rich(t, "alst.why.source", { source: alert.source.name, says }, ["source"])} {pagedPart}{" "}
+        {t("alst.why.noRule")}
+      </>
+    );
+  })();
 
   return (
     <div
-      className="oi-rise"
       style={{
         maxWidth: 1160,
         margin: "0 auto",
@@ -230,6 +307,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
         display: "flex",
         flexDirection: "column",
         gap: 14,
+        animation: "oi-rise .18s ease backwards",
       }}
     >
       <Link
@@ -255,6 +333,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
               {alert.priority?.name ?? "—"}
             </span>
             <span
+              data-testid="alert-status"
               style={{
                 fontSize: 11,
                 fontWeight: 600,
@@ -284,7 +363,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
               {t("alt2.detail.meta", {
                 source: alert.source.name,
                 count: a.groupCount,
-                when: t.fmt.time(a.lastAt),
+                when: t.fmt.time(a.lastAt, t.timeZone),
               })}
             </span>
           </div>
@@ -299,6 +378,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
           >
             {a.title}
           </h1>
+          <AtlasAlertBanner tenantId={tenant.id} alertId={a.id} incidentId={a.incidentId} />
         </div>
         <div style={{ display: "flex", gap: 8, flex: "none", flexWrap: "wrap" }}>
           {acts && firing && !acked && (
@@ -328,12 +408,16 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
                   ? `/app/incidents/${alert.incident.number}`
                   : `/app/incidents/new?alert=${a.id}`
               }
+              data-testid="alert-incident"
+              title={
+                alert.incident
+                  ? t("alst.detail.openIncidentTitle", { number: alert.incident.number })
+                  : undefined
+              }
               className="oi-hover"
               style={{ ...action, fontWeight: 600 }}
             >
-              {alert.incident
-                ? t("alt2.detail.openIncident", { number: alert.incident.number })
-                : t("alt2.detail.createIncident")}
+              {t("alst.detail.openIncident")}
             </Link>
           )}
           {acts && firing && (
@@ -452,10 +536,12 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
             {entries.map((e) => (
               <div
                 key={e.key}
-                data-testid={e.note ? "alert-note" : undefined}
+                data-testid={e.note ? "alert-note" : "alert-event"}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "48px 14px minmax(0,1fr) auto",
+                  gridTemplateColumns: e.note
+                    ? "48px 14px minmax(0,1fr) auto"
+                    : "48px 14px minmax(0,1fr)",
                   gap: 8,
                   padding: "9px 16px",
                   borderBottom: "1px solid var(--line-2)",
@@ -469,7 +555,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
                     paddingTop: 2,
                   }}
                 >
-                  {t.fmt.time(e.at)}
+                  {t.fmt.time(e.at, t.timeZone)}
                 </span>
                 <span
                   style={{
@@ -508,32 +594,38 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
               <form
                 action={addAlertNote}
                 data-testid="alert-note-form"
-                style={{ display: "flex", gap: 8, padding: "10px 16px", alignItems: "flex-start" }}
+                style={{ display: "flex", gap: 8, padding: "8px 16px", alignItems: "center" }}
               >
                 <input type="hidden" name="id" value={a.id} />
-                <textarea
+                <input
                   name="body"
                   required
-                  rows={1}
                   maxLength={4000}
                   placeholder={t("alt2.detail.notePlaceholder")}
-                  className="oi-field"
+                  aria-label={t("alt2.detail.notePlaceholder")}
                   style={{
                     flex: 1,
-                    border: "1px solid var(--line)",
-                    borderRadius: 9,
-                    padding: "7px 10px",
+                    border: 0,
+                    padding: "4px 0",
                     fontSize: 12.5,
-                    background: "var(--panel)",
-                    resize: "vertical",
+                    background: "transparent",
                     fontFamily: "inherit",
                     outline: "none",
+                    color: "inherit",
                   }}
                 />
                 <button
                   type="submit"
-                  className="oi-hover"
-                  style={{ ...action, height: 32, fontSize: 12.5, fontWeight: 600 }}
+                  className="oi-link"
+                  style={{
+                    background: "none",
+                    border: 0,
+                    padding: 0,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "var(--brand)",
+                    cursor: "pointer",
+                  }}
                 >
                   {t("alt2.detail.noteAdd")}
                 </button>
@@ -546,6 +638,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
             showLabel={t("alt2.common.showRaw")}
             hideLabel={t("alt2.common.hide")}
             padding="12px 16px"
+            testId="alert-payload"
           >
             <pre
               style={{
@@ -571,7 +664,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
               data-testid="escalation-card"
               style={{
                 background: "var(--panel)",
-                border: "1.5px solid color-mix(in srgb, var(--dang) 40%, transparent)",
+                border: "1.5px solid rgba(192,52,43,.4)",
                 borderRadius: "var(--radius-card)",
                 padding: "14px 16px",
                 display: "flex",
@@ -581,12 +674,12 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span
-                  className="oi-pulse"
                   style={{
                     width: 8,
                     height: 8,
                     borderRadius: "50%",
                     background: "var(--dang)",
+                    animation: "oi-pulse 1.6s infinite",
                   }}
                 />
                 <span style={{ fontSize: 13.5, fontWeight: 700 }}>
@@ -602,24 +695,25 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
                     : "alt2.detail.pagingDetailLow",
                   { path: esc.pathName, level: esc.level },
                 )}
-              </div>
-              {esc.nextTickAt && (
-                <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
-                  {(() => {
-                    const [before, after] = t.parts(
-                      esc.isLast ? "alt2.detail.lastLevelIn" : "alt2.detail.nextLevelIn",
-                      "timer",
-                    );
+                {esc.nextTickAt &&
+                  (() => {
+                    const [before, after] = esc.isLast
+                      ? t.parts("alt2.detail.lastLevelIn", "timer")
+                      : esc.nextMembers?.length
+                        ? t.parts("alst.detail.nextAfter", "timer", {
+                            name: esc.nextMembers.join(", "),
+                          })
+                        : t.parts("alt2.detail.nextLevelIn", "timer");
                     return (
                       <>
+                        {" "}
                         {before}
                         <Countdown until={esc.nextTickAt.toISOString()} />
                         {after}
                       </>
                     );
                   })()}
-                </div>
-              )}
+              </div>
               {acts && (
                 <form action={acknowledgeAlert}>
                   <input type="hidden" name="id" value={a.id} />
@@ -653,7 +747,7 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
               data-testid="acked-card"
               style={{
                 background: "var(--ok-t)",
-                border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)",
+                border: "1px solid rgba(14,122,88,.3)",
                 borderRadius: "var(--radius-card)",
                 padding: "14px 16px",
                 display: "flex",
@@ -665,36 +759,41 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
                 {t("alt2.detail.status.acked")}
               </div>
               <div style={{ fontSize: 12.5, color: "var(--ink-2)" }}>
-                {t("alt2.detail.ackedBy", {
-                  name: alert.ackedByName ?? esc?.ackedByName ?? "—",
-                  when: a.ackedAt ? t.fmt.relative(a.ackedAt) : "",
-                })}
+                {a.ackedByMemberId === member.id
+                  ? t("alst.detail.ackedByYou", {
+                      when: a.ackedAt ? t.fmt.relative(a.ackedAt) : "",
+                    })
+                  : t("alt2.detail.ackedBy", {
+                      name: alert.ackedByName ?? esc?.ackedByName ?? "—",
+                      when: a.ackedAt ? t.fmt.relative(a.ackedAt) : "",
+                    })}
+                {acts && firing && (
+                  <form action={unacknowledgeAlert} style={{ display: "inline" }}>
+                    <input type="hidden" name="id" value={a.id} />{" "}
+                    <button
+                      type="submit"
+                      data-testid="alert-unack"
+                      className="oi-link"
+                      style={{
+                        background: "none",
+                        border: 0,
+                        padding: 0,
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: "var(--ok)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {t("alst.detail.undo")}
+                    </button>
+                  </form>
+                )}
               </div>
-              {acts && firing && (
-                <form action={unacknowledgeAlert} style={{ marginTop: 4 }}>
-                  <input type="hidden" name="id" value={a.id} />
-                  <button
-                    type="submit"
-                    className="oi-hover"
-                    style={{
-                      width: "100%",
-                      height: 30,
-                      border: "1px solid var(--line)",
-                      borderRadius: 9,
-                      background: "var(--panel)",
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {t("alt2.detail.unack")}
-                  </button>
-                </form>
-              )}
             </div>
           )}
 
           <div
+            data-testid="why-this-path"
             style={{
               ...card,
               padding: "14px 16px",
@@ -704,34 +803,9 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
             }}
           >
             <div style={eyebrow}>{t("alt2.detail.why")}</div>
-            <div style={{ fontSize: 13, lineHeight: 1.55 }}>
-              {ownRoute
-                ? t("alt2.detail.whySource", { source: alert.source.name })
-                : alert.route
-                  ? t("alt2.detail.whyRule", {
-                      rule: alert.route.name,
-                      source: alert.source.name,
-                    })
-                  : t("alt2.detail.whyNoRoute")}
-            </div>
-            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--ink-2)" }}>
-              {taken
-                ? taken.via
-                  ? t("alt2.detail.whyPagedVia", { path: taken.path!, via: taken.via })
-                  : t("alt2.detail.whyPaged", { path: taken.path! })
-                : blocked?.skipped === "unpublished"
-                  ? t("alt2.detail.whyUnpublished", { path: blocked.path ?? "—" })
-                  : blocked
-                    ? t("alt2.detail.whyUnresolved")
-                    : t("alt2.detail.whyNobody")}
-            </div>
-            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--ink-2)" }}>
-              {alert.incident
-                ? t("alt2.detail.whyIncident", { number: alert.incident.number })
-                : t("alt2.detail.whyNoIncident")}
-            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.55 }}>{whySentence}</div>
             <Link
-              href="/app/settings/alert-routes"
+              href="/app/settings/rules"
               style={{
                 fontSize: 12,
                 fontWeight: 600,
@@ -770,13 +844,24 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
             ) : similar ? (
               <>
                 <div style={{ fontSize: 13, lineHeight: 1.5 }}>
-                  {t("alt2.detail.atlasSimilar", {
-                    number: similar.number,
-                    name: similar.name,
-                  })}
+                  {rich(
+                    t,
+                    "alst.detail.atlasSimilar",
+                    {
+                      label: t("alst.detail.atlasSimilarLabel"),
+                      number: similar.number,
+                      month: similar.declaredAt.toLocaleDateString(t.locale.tag, {
+                        month: "short",
+                        timeZone: t.timeZone,
+                      }),
+                      name: similar.name,
+                    },
+                    ["label"],
+                  )}
                 </div>
                 <Link
                   href={`/app/incidents/${similar.number}`}
+                  data-testid="atlas-similar"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -790,21 +875,14 @@ export default async function AlertPage({ params }: { params: Promise<{ id: stri
                     textDecoration: "none",
                   }}
                 >
-                  {t("alt2.detail.atlasFrom", {
+                  {t("alst.detail.atlasFrom", {
                     number: similar.number,
                     when: t.fmt.dateCompact(similar.declaredAt),
                   })}
-                  <span style={{ color: phaseTone(similar.phase).ink, fontWeight: 600 }}>
-                    {t(`incident.phase.${similar.phase}`)}
+                  <span style={{ color: "var(--brand)", fontWeight: 600 }}>
+                    {t("alst.detail.atlasOpen")}
                   </span>
                 </Link>
-                <div style={{ fontSize: 11, color: "var(--ink-3)" }}>
-                  {t(
-                    atlas.method === "embeddings"
-                      ? "alt2.detail.atlasByMeaning"
-                      : "alt2.detail.atlasByTitle",
-                  )}
-                </div>
               </>
             ) : (
               <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-2)" }}>

@@ -20,17 +20,20 @@ import { ConditionsEditor } from "@/components/alerting/conditions-editor";
 import { MappingEditor } from "@/components/alerting/mapping-editor";
 import { PriorityRuleEditor } from "@/components/alerting/priority-rule-editor";
 import { PayloadTester } from "@/components/alerting/payload-tester";
-import { IntegrationIcon } from "../../../settings/integrations/icons";
+import { SourceGlyph } from "@/components/alerting/source-glyph";
 import {
   saveSourceFilter,
+  setSourceTestMode,
   testSource,
   toggleSource,
 } from "../../../settings/alert-sources/actions";
 import { priorityChip } from "../../tone";
 import { Fold } from "../../fold";
-import { sourceChoices, urgentFrom, pageableSchedules, pageableTeams } from "../choices";
+import { whenCompact } from "../../when";
+import { sourceChoices, priorityLevels, pageableSchedules, pageableTeams } from "../choices";
 import { ChoiceRows } from "../choice-rows";
 import { DeleteSource } from "../delete-source";
+import { sourceStatus } from "../status";
 import { FirstAlert, RotateSecret } from "../waiting";
 
 const DAY = 86_400_000;
@@ -178,8 +181,8 @@ export default async function AlertSourcePage({
       priorities,
       samples: await recentPayloads(tx, source.id),
       choices: await sourceChoices(tx, tenant.id, source.id),
-      urgent: await urgentFrom(tx, tenant.id),
-      teams: await pageableTeams(tx, tenant.id),
+      levels: await priorityLevels(tx, tenant.id),
+      teams: await pageableTeams(tx, tenant.id, member.id),
       schedules: await pageableSchedules(tx, tenant.id),
     };
   });
@@ -203,21 +206,17 @@ export default async function AlertSourcePage({
       labelValues.set(k, set);
     }
 
-  const quietDays = source.lastAlertAt
-    ? Math.floor((Date.now() - source.lastAlertAt.getTime()) / DAY)
-    : null;
-  const status = !source.active
-    ? { label: t("alt2.sources.st.paused"), ink: "var(--ink-3)" }
-    : data.choices.route?.testMode
-      ? { label: t("alt2.sources.st.test"), ink: "var(--viol)" }
-      : quietDays === null
-        ? { label: t("alt2.source.waitingFirst"), ink: "var(--wait)" }
-        : quietDays >= 7
-          ? { label: t("alt2.sources.st.quiet", { count: quietDays }), ink: "var(--wait)" }
-          : {
-              label: t("alt2.source.receiving", { when: t.fmt.relative(source.lastAlertAt!) }),
-              ink: "var(--ok)",
-            };
+  const now = new Date();
+  const base = sourceStatus(t, source, now);
+  const status =
+    base.state === "receiving"
+      ? {
+          ...base,
+          label: t("alt2.source.receiving", { when: whenCompact(t, source.lastAlertAt!, now) }),
+        }
+      : base.state === "waiting"
+        ? { ...base, label: t("alt2.source.waitingFirst") }
+        : base;
 
   const serviceMapping = source.mappings.find((m) => m.attribute === "service");
   const priorityRule = source.priorityRule;
@@ -240,7 +239,6 @@ export default async function AlertSourcePage({
 
   return (
     <div
-      className="oi-rise"
       style={{
         maxWidth: 1160,
         margin: "0 auto",
@@ -248,6 +246,7 @@ export default async function AlertSourcePage({
         display: "flex",
         flexDirection: "column",
         gap: 14,
+        animation: "oi-rise .18s ease backwards",
       }}
     >
       <Link
@@ -266,10 +265,11 @@ export default async function AlertSourcePage({
             background: "var(--sunk)",
             display: "grid",
             placeItems: "center",
+            color: "var(--ink)",
             flex: "none",
           }}
         >
-          <IntegrationIcon id={meta.icon} />
+          <SourceGlyph kind={source.kind} />
         </span>
         <h1
           data-testid="source-title"
@@ -309,16 +309,7 @@ export default async function AlertSourcePage({
                 {t("alt2.source.sendTest")}
               </button>
             </form>
-            <form action={toggleSource}>
-              <input type="hidden" name="id" value={source.id} />
-              <button type="submit" className="oi-hover" style={{ ...btn, fontWeight: 500 }}>
-                {source.active ? t("alt2.source.pause") : t("alt2.source.resume")}
-              </button>
-            </form>
-            <RotateSecret id={source.id} name={source.name} />
-            {!source.managed && (
-              <DeleteSource id={source.id} name={source.name} alertCount={data.alertCount} />
-            )}
+            <RotateSecret id={source.id} name={source.name} kind={source.kind} />
           </>
         )}
       </div>
@@ -348,10 +339,11 @@ export default async function AlertSourcePage({
               sourceId={source.id}
               page={data.choices.page}
               incident={data.choices.incident}
+              fromRank={data.choices.fromRank}
               autoResolve={data.choices.autoResolve}
               teams={data.teams.map((x) => ({ id: x.id, name: x.name }))}
               schedules={data.schedules}
-              urgentFrom={data.urgent}
+              levels={data.levels}
               readerId={member.id}
               canEdit={manages}
             />
@@ -365,7 +357,16 @@ export default async function AlertSourcePage({
                 lineHeight: 1.5,
               }}
             >
-              {t("alt2.source.ownerNote")}
+              {(() => {
+                const [before, after] = t.parts("alst.source.ownerNote", "instead");
+                return (
+                  <>
+                    {before}
+                    <strong>{t("alst.source.ownerInstead")}</strong>
+                    {after}
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -390,8 +391,10 @@ export default async function AlertSourcePage({
                 <span style={{ color: "var(--ink-2)" }}>{t("alt2.source.adv.service")}</span>
                 <code style={code}>
                   {serviceMapping
-                    ? `$.${serviceMapping.path || serviceMapping.value} → service`
-                    : t("alt2.source.adv.unmapped")}
+                    ? serviceMapping.path
+                      ? `$.${serviceMapping.path} → service`
+                      : `service = ${serviceMapping.value ?? ""}`
+                    : (meta.paths.service ?? t("alt2.source.adv.unmapped"))}
                 </code>
               </div>
               <div style={advRow}>
@@ -401,12 +404,16 @@ export default async function AlertSourcePage({
                     ? `$.${priorityRule.path}`
                     : priorityRule?.mode === "static"
                       ? (data.priorities.find((p) => p.id === priorityRule.priorityId)?.name ?? "—")
-                      : t("alt2.source.adv.fromPayload")}
+                      : meta.paths.severity
+                        ? meta.paths.levels && data.priorities.length > 1
+                          ? `${meta.paths.severity} (${data.priorities[0]!.name}–${data.priorities[data.priorities.length - 1]!.name})`
+                          : meta.paths.severity
+                        : t("alt2.source.adv.fromPayload")}
                 </code>
               </div>
               <div style={advRow}>
                 <span style={{ color: "var(--ink-2)" }}>{t("alt2.source.adv.dedup")}</span>
-                <code style={code}>{data.recent[0]?.dedupKey ?? t("alt2.source.adv.noneYet")}</code>
+                <code style={code}>{meta.paths.dedup}</code>
               </div>
               <div style={advRow}>
                 <span style={{ color: "var(--ink-2)" }}>{t("alt2.source.adv.window")}</span>
@@ -459,6 +466,59 @@ export default async function AlertSourcePage({
                   </form>
                   <div data-testid="source-preview">
                     <PayloadTester sourceId={source.id} initialText={tester} />
+                  </div>
+                  <div
+                    data-testid="source-controls"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                      borderTop: "1px solid var(--line-2)",
+                      paddingTop: 14,
+                    }}
+                  >
+                    <div style={advRow}>
+                      <span style={{ color: "var(--ink-2)" }}>{t("alst.source.trial")}</span>
+                      <form
+                        action={setSourceTestMode}
+                        style={{ display: "flex", alignItems: "center", gap: 10 }}
+                      >
+                        <input type="hidden" name="id" value={source.id} />
+                        <input type="hidden" name="on" value={source.testMode ? "off" : "on"} />
+                        <button
+                          type="submit"
+                          data-testid="source-test-mode"
+                          data-state={source.testMode ? "on" : "off"}
+                          className="oi-hover"
+                          style={{ ...btn, height: 30, fontWeight: 500 }}
+                        >
+                          {source.testMode ? t("alst.source.trialOff") : t("alst.source.trialOn")}
+                        </button>
+                        <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                          {t("alst.source.trialNote")}
+                        </span>
+                      </form>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <form action={toggleSource}>
+                        <input type="hidden" name="id" value={source.id} />
+                        <button
+                          type="submit"
+                          data-testid="source-pause"
+                          className="oi-hover"
+                          style={{ ...btn, height: 30, fontWeight: 500 }}
+                        >
+                          {source.active ? t("alt2.source.pause") : t("alt2.source.resume")}
+                        </button>
+                      </form>
+                      {!source.managed && (
+                        <DeleteSource
+                          id={source.id}
+                          name={source.name}
+                          alertCount={data.alertCount}
+                        />
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -553,7 +613,7 @@ export default async function AlertSourcePage({
                     </span>
                   )}
                   <span style={{ fontSize: 11.5, color: "var(--ink-3)", flex: "none" }}>
-                    {t.fmt.relativeCompact(r.firstAt)}
+                    {whenCompact(t, r.firstAt, now)}
                   </span>
                 </Link>
               );

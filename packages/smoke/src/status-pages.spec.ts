@@ -23,6 +23,12 @@ test.describe("Status pages", () => {
     expect(rss.status()).toBe(200);
     expect(await rss.text()).toContain("<rss");
     expect((await api.get(`${STATUS_BASE_URL}/atom.xml`)).status()).toBe(200);
+    // Each of the ninety bars says what happened that day: its date, how
+    // available the component was, and the real incident or "no incident".
+    const bars = page.getByTestId("components").getByTestId("component-bar");
+    await bars.last().hover();
+    await expect(page.getByTestId("bar-tip")).toBeVisible();
+    await expect(page.getByTestId("bar-tip-text")).toHaveText(/\S/);
     /*
      * An unknown host is a 404, never a page.
      *
@@ -74,17 +80,26 @@ test.describe("Status pages", () => {
     await page.getByTestId("component-new").click();
     const name = `Smoke component ${stamp}`;
     await page.locator('form[data-testid="component-form"] input[name="name"]').fill(name);
+    // Manual: the state is set by a person, which the dialog below exercises.
+    const manual = page.getByTestId("component-source-manual");
+    if (await manual.count()) await manual.click();
     await page.locator('form[data-testid="component-form"] button[type=submit]').click();
     await expect(page.getByTestId("component-row").filter({ hasText: name })).toBeVisible();
     // The public page sees it at once — the snapshot was rewritten.
     await page.goto(STATUS_BASE_URL);
     await expect(page.getByTestId("components").getByText(name)).toBeVisible();
     await page.goto("/app/status-pages");
-    await page
-      .getByTestId("component-row")
-      .filter({ hasText: name })
-      .getByRole("button", { name: /^✕$|Supprimer|Delete|Löschen/ })
-      .click();
+    // A row opens its dialog: the state for a manual component, and delete.
+    await page.getByTestId("component-row").filter({ hasText: name }).click();
+    const dialog = page.getByTestId("component-edit-form");
+    await expect(dialog).toBeVisible();
+    await dialog.getByTestId("component-state").selectOption("degraded");
+    await dialog.locator("button[type=submit]").last().click();
+    await expect(page.getByTestId("component-row").filter({ hasText: name })).toContainText(
+      /Degraded|Dégradé|Beeinträchtigt/,
+    );
+    await page.getByTestId("component-row").filter({ hasText: name }).click();
+    await page.getByTestId("component-delete").click();
     await expect(page.getByTestId("component-row").filter({ hasText: name })).toHaveCount(0);
     // Maintenance
     await page.getByTestId("maintenance-open").click();
@@ -108,11 +123,12 @@ test.describe("Status pages", () => {
       .check();
     await page.locator('form[data-testid="maintenance-form"] button[type=submit]').click();
     await expect(page.getByTestId("maintenance-row").filter({ hasText: title })).toBeVisible();
-    await page
-      .getByTestId("maintenance-row")
-      .filter({ hasText: title })
-      .getByRole("button", { name: /Annuler|Cancel|Abbrechen/ })
-      .click();
+    // The row opens the maintenance; calling it off sits apart from Save.
+    await page.getByTestId("maintenance-row").filter({ hasText: title }).click();
+    await page.getByTestId("maintenance-cancel").click();
+    await expect(
+      page.getByTestId("maintenance-row").filter({ hasText: title }).first(),
+    ).toContainText(/Cancelled|Annulée|Abgesagt|Annulé/i);
     await signOut(page);
   });
 
@@ -131,7 +147,7 @@ test.describe("Status pages", () => {
     await page.locator('form[data-testid="update-form"] button[type=submit]').click();
     await expect(page.getByText(message)).toBeVisible();
     await expect(
-      page.getByTestId("status-page-section").getByText(/Publié|Published|Veröffentlicht/),
+      page.getByTestId("status-page-section").getByText(/Publié|Published|Veröffentlicht/i),
     ).toBeVisible();
     // The timeline shows the update over SSE before the action has finished
     // publishing; the public page is polled until the snapshot carries it.
@@ -150,9 +166,9 @@ test.describe("Status pages", () => {
   test("a published update can be corrected, and the page says so", async ({ page }) => {
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/status-pages");
-    const updates = page.getByTestId("public-updates").first();
-    await expect(updates).toBeVisible();
-    await updates.locator("summary").click();
+    // A public incident's row opens its updates, each one correctable.
+    await page.getByTestId("public-incident").first().click();
+    await expect(page.getByTestId("public-updates")).toBeVisible();
     const form = page.getByTestId("update-form").first();
     const corrected = `Corrected at ${stamp} — the affected service was api-gateway.`;
     await form.locator("textarea").fill(corrected);
@@ -169,8 +185,12 @@ test.describe("Status pages", () => {
     await expect(async () => {
       await page.goto(STATUS_BASE_URL);
       if (!(await page.getByText(corrected).count())) {
+        // One entry opens at a time: open each in turn until the text shows.
         const history = page.getByTestId("history-item");
-        for (let i = 0; i < (await history.count()); i++) await history.nth(i).click();
+        for (let i = 0; i < (await history.count()); i++) {
+          await history.nth(i).click();
+          if (await page.getByText(corrected).count()) break;
+        }
       }
       await expect(page.getByText(corrected).first()).toBeVisible({ timeout: 2_000 });
       await expect(page.getByText(/corrected|corrigé|korrigiert/).first()).toBeVisible({
@@ -205,7 +225,7 @@ test.describe("Status pages", () => {
     const row = page.getByTestId("maintenance-row").filter({ hasText: title });
     await expect(row).toBeVisible();
 
-    await row.getByTestId("maintenance-edit").click();
+    await row.click();
     const edit = page.getByTestId("maintenance-edit-form");
     await expect(edit).toBeVisible();
     // The form arrives filled: an editor that opens empty rewrites by accident.
@@ -216,7 +236,7 @@ test.describe("Status pages", () => {
       .locator('input[type="datetime-local"]')
       .nth(1)
       .fill(local(new Date(moved.getTime() + 3_600_000)));
-    await edit.locator("button[type=submit]").click();
+    await edit.locator("button[type=submit]").last().click();
     await page.waitForURL(/maintenance=edited/);
     const day = String(moved.getDate()).padStart(2, "0");
     await expect(
@@ -224,11 +244,8 @@ test.describe("Status pages", () => {
     ).toContainText(day);
 
     // Cancel it so the demo workspace is left as it was found.
-    await page
-      .getByTestId("maintenance-row")
-      .filter({ hasText: title })
-      .getByRole("button", { name: /Annuler|Cancel|Abbrechen/ })
-      .click();
+    await page.getByTestId("maintenance-row").filter({ hasText: title }).first().click();
+    await page.getByTestId("maintenance-cancel").click();
     await signOut(page);
   });
 });

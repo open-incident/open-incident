@@ -8,7 +8,15 @@ import type { AlertSourceKind } from "@openincident/db";
 export type SourceKindMeta = {
   kind: AlertSourceKind;
   label: string;
+  /** The tool's name on its tile and as a new source's default name — "Prometheus", not the protocol. */
+  short: string;
   icon: string;
+  /**
+   * Where the parser reads the service, the severity and the dedup key in
+   * this tool's payload — what "Advanced" shows before anybody maps anything.
+   * `severity` names a field holding P1–P4 when `levels` is true.
+   */
+  paths: { service: string | null; severity: string | null; levels: boolean; dedup: string };
   /** How the endpoint is called: the tool posts JSON, or the payload follows our own schema. */
   mode: "tool" | "schema";
   sample: (sourceName: string, stamp: string) => unknown;
@@ -18,7 +26,14 @@ export const SOURCE_KINDS: SourceKindMeta[] = [
   {
     kind: "datadog",
     label: "Datadog",
+    short: "Datadog",
     icon: "datadog",
+    paths: {
+      service: "$.scope → service:*",
+      severity: "$.priority",
+      levels: true,
+      dedup: "$.monitor_id",
+    },
     mode: "tool",
     sample: (name) => ({
       monitor_id: 999001,
@@ -32,7 +47,14 @@ export const SOURCE_KINDS: SourceKindMeta[] = [
   {
     kind: "prometheus",
     label: "Prometheus / Alertmanager",
+    short: "Prometheus",
     icon: "prometheus",
+    paths: {
+      service: "$.alerts[].labels.service",
+      severity: "$.alerts[].labels.severity",
+      levels: false,
+      dedup: "$.alerts[].fingerprint",
+    },
     mode: "tool",
     sample: (name, stamp) => ({
       alerts: [
@@ -53,7 +75,14 @@ export const SOURCE_KINDS: SourceKindMeta[] = [
   {
     kind: "grafana",
     label: "Grafana",
+    short: "Grafana",
     icon: "grafana",
+    paths: {
+      service: "$.alerts[].labels.service",
+      severity: "$.alerts[].labels.severity",
+      levels: false,
+      dedup: "$.ruleId",
+    },
     mode: "tool",
     sample: (name, stamp) => ({
       title: `[TEST] ${name} — synthetic rule`,
@@ -65,7 +94,14 @@ export const SOURCE_KINDS: SourceKindMeta[] = [
   {
     kind: "sentry",
     label: "Sentry",
+    short: "Sentry",
     icon: "sentry",
+    paths: {
+      service: "$.data.event.tags → service",
+      severity: "$.data.issue.level",
+      levels: false,
+      dedup: "$.data.issue.id",
+    },
     mode: "tool",
     sample: (name) => ({
       action: "created",
@@ -87,7 +123,9 @@ export const SOURCE_KINDS: SourceKindMeta[] = [
   {
     kind: "cloudwatch",
     label: "Amazon CloudWatch",
+    short: "CloudWatch",
     icon: "cloudwatch",
+    paths: { service: null, severity: null, levels: false, dedup: "$.Message.AlarmArn" },
     mode: "tool",
     sample: (name) => ({
       Message: JSON.stringify({
@@ -101,7 +139,9 @@ export const SOURCE_KINDS: SourceKindMeta[] = [
   {
     kind: "uptime_kuma",
     label: "Uptime Kuma",
+    short: "Uptime Kuma",
     icon: "uptime_kuma",
+    paths: { service: null, severity: null, levels: false, dedup: "$.monitor.id" },
     mode: "tool",
     sample: (name) => ({
       heartbeat: { status: 0, msg: "synthetic down" },
@@ -111,7 +151,9 @@ export const SOURCE_KINDS: SourceKindMeta[] = [
   {
     kind: "http",
     label: "HTTP / webhook",
+    short: "HTTP",
     icon: "webhook",
+    paths: { service: "$.service", severity: "$.priority", levels: true, dedup: "$.dedup_key" },
     mode: "schema",
     sample: (name, stamp) => ({
       title: `[TEST] ${name} — synthetic alert`,

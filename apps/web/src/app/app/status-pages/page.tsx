@@ -19,24 +19,14 @@ import { getT } from "@/i18n/server";
 import { canRespond, requireMember } from "@/lib/session";
 import { listMonitors } from "@/lib/monitors";
 import {
-  EditComponentDialog,
+  ComponentDialog,
   MaintenanceDialog,
   MaintenanceEditDialog,
   NewComponentDialog,
   NewPageDialog,
+  PublicIncidentDialog,
 } from "./dialogs";
-import {
-  cancelMaintenance,
-  deleteComponent,
-  deleteStatusPage,
-  deleteTemplate,
-  importSubscribers,
-  saveCustomDomain,
-  saveStatusPage,
-  saveTemplate,
-  updateComponentState,
-  correctIncidentUpdate,
-} from "./actions";
+import { SettingsView } from "./settings-view";
 
 /** A day's bar. The green is the design's — `--ok` at 55 %, so a good month reads as texture. */
 const BAR: Record<string, string> = {
@@ -95,17 +85,55 @@ const ICON = {
   ),
 };
 
+const panel: React.CSSProperties = {
+  background: "var(--panel)",
+  border: "1px solid var(--line)",
+  borderRadius: "var(--radius-card)",
+  boxShadow: "var(--shadow-card)",
+  overflow: "hidden",
+};
+const card: React.CSSProperties = {
+  background: "var(--panel)",
+  border: "1px solid var(--line)",
+  borderRadius: "var(--radius-card)",
+  boxShadow: "var(--shadow-card)",
+  padding: "14px 16px",
+  display: "flex",
+  flexDirection: "column",
+  gap: 9,
+};
+const head: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  padding: "12px 16px",
+  borderBottom: "1px solid var(--line)",
+};
+const eyebrow: React.CSSProperties = {
+  fontSize: 10.5,
+  fontWeight: 700,
+  letterSpacing: ".08em",
+  textTransform: "uppercase",
+  color: "var(--ink-3)",
+};
+const pill = (ink: string, bg: string): React.CSSProperties => ({
+  fontSize: 11,
+  fontWeight: 600,
+  color: ink,
+  background: bg,
+  borderRadius: 999,
+  padding: "2px 9px",
+  flex: "none",
+});
+
 /**
  * Status pages — the V2 screen.
  *
  * The page one is looking at holds the top of the screen; its components are
  * the heart of it. A component either tracks a monitor — and then its state,
  * its uptime and its thirty bars are the monitor's, nobody's to set — or it is
- * manual and a human moves it from the incidents. A tracked component that has
- * never been measured says so, with grey bars, rather than inventing a green.
- *
- * The other pages, the subscriber channels and the page's own settings sit in
- * the right-hand column; everything written here rewrites the snapshot the
+ * manual and a human moves it from the incidents. A row opens its dialog; the
+ * page's own settings (brand, language, domain, wording) live one click away,
+ * at `?tab=settings`. Everything written here rewrites the snapshot the
  * isolated public app serves.
  */
 export default async function StatusPagesPage({
@@ -160,7 +188,6 @@ export default async function StatusPagesPage({
       monitors: [],
       webhookCount,
       counts: new Map(compCounts.map((c) => [c.pageId, c.n])),
-      updatesCount: new Map<string, number>(),
       updateRows: [] as Array<typeof statusPageIncidentUpdates.$inferSelect>,
       linked: new Map<string, number>(),
     };
@@ -177,14 +204,8 @@ export default async function StatusPagesPage({
       .where(eq(statusPageIncidents.pageId, page.id))
       .orderBy(desc(statusPageIncidents.startedAt))
       .limit(8);
-    /*
-     * The updates themselves, not only how many.
-     *
-     * The screen showed a count, which is enough to say "three updates" and
-     * not enough to correct the one with the wrong service in it. Eight
-     * incidents' worth of updates is a small read, and it is what makes the
-     * text on the public page reachable from the screen that publishes it.
-     */
+    // The updates themselves, not only how many: a published sentence with
+    // the wrong service in it is corrected from the row it belongs to.
     const updateRows = publicIncidents.length
       ? await tx
           .select()
@@ -243,17 +264,22 @@ export default async function StatusPagesPage({
       subs: subs?.n ?? 0,
       services,
       monitors: await listMonitors(tx, tenant.id),
-      updatesCount: new Map(
-        publicIncidents.map((i) => [
-          i.id,
-          updateRows.filter((u) => u.statusPageIncidentId === i.id).length,
-        ]),
-      ),
       updateRows,
       linked: new Map(linked.map((l) => [l.id, l.number])),
     };
   });
   const { page, snap } = data;
+
+  if (page && q.tab === "settings")
+    return (
+      <SettingsView
+        page={page}
+        templates={data.templates}
+        manages={manages}
+        isOwner={member.role === "owner"}
+        notices={q}
+      />
+    );
 
   const tone = (s: string): [string, string] =>
     s === "operational"
@@ -265,98 +291,15 @@ export default async function StatusPagesPage({
           : ["var(--wait-t)", "var(--wait)"];
   const stateLabel = (s: string) =>
     s === "unknown" ? t("monitors.state.waiting") : t(`statusPages.state.${s as "operational"}`);
-  const uptimeInk = (v: number | null) =>
-    v === null ? "var(--ink-3)" : v >= 99.9 ? "var(--ok)" : v >= 99 ? "var(--wait)" : "var(--dang)";
-  const localeName = (l: string) => t(`statusPages.locale.${l as "en" | "fr" | "de"}`);
   const hostOf = (p: {
     slug: string;
     customDomain: string | null;
     customDomainVerifiedAt: Date | null;
   }) => new URL(statusPageUrl(p)).host;
+  const time = (d: Date) => t.fmt.time(d, t.timeZone);
+  const day = (d: Date) =>
+    d.toLocaleDateString(t.locale.tag, { day: "numeric", month: "short", timeZone: t.timeZone });
 
-  const panel: React.CSSProperties = {
-    background: "var(--panel)",
-    border: "1px solid var(--line)",
-    borderRadius: "var(--radius-card)",
-    boxShadow: "var(--shadow-card)",
-    overflow: "hidden",
-  };
-  const card: React.CSSProperties = {
-    background: "var(--panel)",
-    border: "1px solid var(--line)",
-    borderRadius: "var(--radius-card)",
-    boxShadow: "var(--shadow-card)",
-    padding: "14px 16px",
-    display: "flex",
-    flexDirection: "column",
-    gap: 9,
-  };
-  const head: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    padding: "12px 16px",
-    borderBottom: "1px solid var(--line)",
-  };
-  const eyebrow: React.CSSProperties = {
-    fontSize: 10.5,
-    fontWeight: 700,
-    letterSpacing: ".08em",
-    textTransform: "uppercase",
-    color: "var(--ink-3)",
-  };
-  const label: React.CSSProperties = {
-    fontSize: 10.5,
-    fontWeight: 600,
-    letterSpacing: ".06em",
-    textTransform: "uppercase",
-    color: "var(--ink-3)",
-  };
-  const control: React.CSSProperties = {
-    height: 32,
-    padding: "0 10px",
-    border: "1px solid var(--line)",
-    borderRadius: 8,
-    outline: "none",
-    fontSize: 12.5,
-    background: "var(--panel)",
-    width: "100%",
-  };
-  const small: React.CSSProperties = {
-    height: 26,
-    padding: "0 10px",
-    border: "1px solid var(--line)",
-    borderRadius: 7,
-    background: "var(--panel)",
-    display: "inline-flex",
-    alignItems: "center",
-    fontSize: 11,
-    cursor: "pointer",
-    color: "inherit",
-    textDecoration: "none",
-  };
-  const saveBtn: React.CSSProperties = {
-    height: 30,
-    border: "1px solid var(--line)",
-    borderRadius: 8,
-    background: "var(--panel)",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-  };
-  const Row = ({ k, children }: { k: string; children: React.ReactNode }) => (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        gap: 10,
-        fontSize: 12.5,
-      }}
-    >
-      <span style={{ color: "var(--ink-3)" }}>{k}</span>
-      <span style={{ fontWeight: 600, textAlign: "right" }}>{children}</span>
-    </div>
-  );
   const Channel = ({
     icon,
     name,
@@ -426,6 +369,22 @@ export default async function StatusPagesPage({
     </div>
   );
 
+  const compRow: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "minmax(150px,1fr) minmax(200px,2fr) 150px",
+    gap: 14,
+    alignItems: "center",
+    padding: "11px 16px",
+    borderBottom: "1px solid var(--line-2)",
+  };
+  const feedRow: React.CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "11px 16px",
+    borderBottom: "1px solid var(--line-2)",
+  };
+
   return (
     <div
       style={{
@@ -454,11 +413,6 @@ export default async function StatusPagesPage({
           {t("sp2.countInternal", { count: nInternal })}
         </span>
         <span style={{ flex: 1 }} />
-        {q.saved === "1" && (
-          <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
-            {t("common.saved")}
-          </span>
-        )}
         {q.error && (
           <span role="alert" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--dang)" }}>
             {q.error === "slug"
@@ -490,19 +444,6 @@ export default async function StatusPagesPage({
           {q.maintenance === "1" && notice(t("statusPages.maintenanceScheduled"))}
           {q.maintenance === "edited" && notice(t("sp2.maintenanceMoved"))}
           {q.corrected === "1" && notice(t("sp2.updateCorrected"))}
-          {q.imported !== undefined &&
-            notice(t("statusPages.imported", { count: Number(q.imported) }))}
-          {q.domain &&
-            notice(
-              q.domain === "verified"
-                ? t("statusPages.domainOk")
-                : q.domain === "pending"
-                  ? t("statusPages.domainNotYet", {
-                      target: `status.${(process.env.BASE_DOMAIN ?? "localhost").split(":")[0]}`,
-                    })
-                  : t("statusPages.domainCleared"),
-              q.domain === "verified" || q.domain === "cleared",
-            )}
 
           <div
             style={{
@@ -542,8 +483,7 @@ export default async function StatusPagesPage({
                   ? page.customDomainVerifiedAt
                     ? t("statusPages.domainVerified")
                     : t("statusPages.domainPending")
-                  : t("statusPages.noDomain")}{" "}
-                · {localeName(page.locale)}
+                  : t("statusPages.noDomain")}
               </div>
             </div>
             {(() => {
@@ -607,7 +547,7 @@ export default async function StatusPagesPage({
             }}
           >
             <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-              <section style={panel}>
+              <section style={panel} data-testid="components">
                 <div style={head}>
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>
                     {t("statusPages.components")}
@@ -635,29 +575,15 @@ export default async function StatusPagesPage({
                   const mon = data.monitors.find((m) => m.id === c.monitorId);
                   // The AUTO badge already says where the state comes from, so
                   // the line under the name spends itself on the source: the
-                  // monitor, the service, or the plain admission that a human
-                  // sets this one from the incidents.
+                  // monitor, or the service a person sets it from.
                   const source =
                     c.source === "monitor"
                       ? `${c.monitorName ?? ""}${mon ? ` ${mon.type}` : ""}`.trim()
                       : svc
-                        ? svc.name
+                        ? t("alst.sp.manualService", { service: svc.name })
                         : t("sp2.manualSource");
-                  return (
-                    <div
-                      key={c.id}
-                      data-testid="component-row"
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: acts
-                          ? "minmax(110px,1fr) minmax(110px,2fr) 138px auto"
-                          : "minmax(150px,1fr) minmax(200px,2fr) 150px",
-                        gap: acts ? 10 : 14,
-                        alignItems: "center",
-                        padding: "11px 16px",
-                        borderBottom: "1px solid var(--line-2)",
-                      }}
-                    >
+                  const cells = (
+                    <>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 13.5, fontWeight: 600 }}>{c.name}</div>
                         <div
@@ -703,12 +629,10 @@ export default async function StatusPagesPage({
                         title={t("monitors.colLast30")}
                       >
                         {/* The public page draws ninety; this column is a
-                            glance the width of a thumb, and ninety bars in it
-                            are a smear. The last thirty, as the title says. */}
+                            glance the width of a thumb. The last thirty. */}
                         {c.ticks.slice(-30).map((tk, k) => (
                           <span
                             key={k}
-                            title={tk === "none" ? t("sp2.noData") : stateLabel(tk)}
                             style={{
                               flex: 1,
                               height: 16,
@@ -732,7 +656,8 @@ export default async function StatusPagesPage({
                             fontFamily: "var(--mono)",
                             fontSize: 12,
                             fontWeight: 600,
-                            color: uptimeInk(c.uptime90),
+                            color: c.uptime90 === null ? "var(--ink-3)" : "var(--ok)",
+                            whiteSpace: "nowrap",
                           }}
                         >
                           {c.uptime90 === null ? "—" : `${c.uptime90.toFixed(2)} %`}
@@ -745,6 +670,7 @@ export default async function StatusPagesPage({
                             fontSize: 11,
                             fontWeight: 600,
                             color: STATE_INK[c.state] ?? "var(--ink-3)",
+                            whiteSpace: "nowrap",
                           }}
                         >
                           <span
@@ -759,76 +685,25 @@ export default async function StatusPagesPage({
                           {stateLabel(c.state)}
                         </span>
                       </div>
-                      {acts && (
-                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                          {c.source === "manual" && (
-                            <form action={updateComponentState} style={{ display: "contents" }}>
-                              <input type="hidden" name="id" value={c.id} />
-                              <select
-                                name="state"
-                                defaultValue={c.state}
-                                aria-label={t("sp2.stateLabel")}
-                                className="oi-field"
-                                style={{ ...control, width: 104, height: 26, fontSize: 11 }}
-                              >
-                                {(
-                                  [
-                                    "operational",
-                                    "degraded",
-                                    "partial_outage",
-                                    "major_outage",
-                                    "maintenance",
-                                  ] as const
-                                ).map((s) => (
-                                  <option key={s} value={s}>
-                                    {t(`statusPages.state.${s}`)}
-                                  </option>
-                                ))}
-                              </select>
-                              <button
-                                type="submit"
-                                aria-label={t("common.apply")}
-                                title={t("common.apply")}
-                                className="oi-hover"
-                                style={{
-                                  ...small,
-                                  width: 26,
-                                  padding: 0,
-                                  justifyContent: "center",
-                                }}
-                              >
-                                ✓
-                              </button>
-                            </form>
-                          )}
-                          {manages && (
-                            <EditComponentDialog
-                              id={c.id}
-                              name={c.name}
-                              description={row?.description ?? null}
-                            />
-                          )}
-                          {manages && (
-                            <form action={deleteComponent}>
-                              <input type="hidden" name="id" value={c.id} />
-                              <button
-                                type="submit"
-                                aria-label={t("common.delete")}
-                                className="oi-hover-dang"
-                                style={{
-                                  ...small,
-                                  color: "var(--dang)",
-                                  width: 26,
-                                  padding: 0,
-                                  justifyContent: "center",
-                                }}
-                              >
-                                ✕
-                              </button>
-                            </form>
-                          )}
-                        </div>
-                      )}
+                    </>
+                  );
+                  return acts ? (
+                    <ComponentDialog
+                      key={c.id}
+                      id={c.id}
+                      name={c.name}
+                      description={row?.description ?? null}
+                      groupName={row?.groupName ?? null}
+                      state={c.state}
+                      tracked={c.source === "monitor"}
+                      manages={manages}
+                      rowStyle={compRow}
+                    >
+                      {cells}
+                    </ComponentDialog>
+                  ) : (
+                    <div key={c.id} data-testid="component-row" style={compRow}>
+                      {cells}
                     </div>
                   );
                 })}
@@ -851,276 +726,110 @@ export default async function StatusPagesPage({
                   )}
                 </div>
                 {data.publicIncidents.map((i) => {
-                  const n = i.incidentId ? data.linked.get(i.incidentId) : null;
-                  const resolvedIn = i.resolvedAt
-                    ? Math.round((i.resolvedAt.getTime() - i.startedAt.getTime()) / 60_000)
-                    : null;
+                  const n = i.incidentId ? (data.linked.get(i.incidentId) ?? null) : null;
                   const mine = data.updateRows.filter((u) => u.statusPageIncidentId === i.id);
+                  const resolved = i.status === "resolved";
+                  const [ink, bg] = resolved
+                    ? ["var(--ok)", "var(--ok-t)"]
+                    : ["var(--wait)", "var(--wait-t)"];
+                  const meta = [
+                    n ? t("alst.sp.fromIncident", { number: String(n) }) : null,
+                    resolved ? day(i.startedAt) : null,
+                    t("alst.sp.publicUpdates", { count: mine.length }),
+                    resolved && i.resolvedAt
+                      ? t("statusPages.resolvedIn", {
+                          duration: t.fmt.duration(
+                            (i.resolvedAt.getTime() - i.startedAt.getTime()) / 60_000,
+                          ),
+                        })
+                      : mine[0]
+                        ? t("alst.sp.lastAt", { time: time(mine[0].publishedAt) })
+                        : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
                   return (
-                    <div
+                    <PublicIncidentDialog
                       key={i.id}
-                      data-testid="public-incident"
-                      style={{ borderBottom: "1px solid var(--line-2)" }}
+                      pageId={page.id}
+                      title={i.title}
+                      incidentNumber={n}
+                      acts={acts}
+                      rowStyle={feedRow}
+                      updates={mine.map((u) => ({
+                        id: u.id,
+                        status: u.status,
+                        body: u.body,
+                        at: u.publishedAt.toISOString(),
+                        notified: u.notifiedCount,
+                        correctedAt: u.correctedAt?.toISOString() ?? null,
+                      }))}
                     >
-                      <div
+                      <span
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 12,
-                          padding: "11px 16px",
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: ink,
+                          flex: "none",
                         }}
-                      >
-                        <span
-                          style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: "50%",
-                            background: i.status === "resolved" ? "var(--ok)" : "var(--wait)",
-                            flex: "none",
-                          }}
-                        />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600 }}>{i.title}</div>
-                          <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                            {t("statusPages.incidentMeta", {
-                              date: t.fmt.dayMonth(i.startedAt),
-                              count: data.updatesCount.get(i.id) ?? 0,
-                            })}
-                            {n ? (
-                              <>
-                                {" · "}
-                                {t("statusPages.linkedTo")}{" "}
-                                <Link
-                                  href={`/app/incidents/${n}`}
-                                  className="oi-link"
-                                  style={{ fontFamily: "var(--mono)", fontSize: 11 }}
-                                >
-                                  INC-{n}
-                                </Link>
-                              </>
-                            ) : null}
-                            {resolvedIn !== null
-                              ? ` · ${t("statusPages.resolvedIn", { duration: t.fmt.duration(resolvedIn) })}`
-                              : ""}
-                          </div>
-                        </div>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 600,
-                            color: i.status === "resolved" ? "var(--ok)" : "var(--wait)",
-                            background: i.status === "resolved" ? "var(--ok-t)" : "var(--wait-t)",
-                            borderRadius: 999,
-                            padding: "2px 9px",
-                            flex: "none",
-                          }}
-                        >
-                          {t(`statusPages.publicStatus.${i.status}`)}
-                        </span>
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{i.title}</div>
+                        <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{meta}</div>
                       </div>
-                      {/*
-                        The words, where they were published from.
-                        A `details` rather than a dialog: it is server-rendered,
-                        it works without JavaScript, and correcting a sentence
-                        is something somebody does while reading it.
-                      */}
-                      {mine.length > 0 && (
-                        <details data-testid="public-updates">
-                          <summary
-                            style={{
-                              cursor: "pointer",
-                              fontSize: 11.5,
-                              color: "var(--ink-3)",
-                              padding: "0 16px 10px 36px",
-                            }}
-                          >
-                            {t("statusPages.readUpdates")}
-                          </summary>
-                          <div
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              gap: 10,
-                              padding: "0 16px 14px 36px",
-                            }}
-                          >
-                            {mine.map((u, k) => (
-                              <form
-                                key={u.id}
-                                action={correctIncidentUpdate}
-                                data-testid="update-form"
-                                style={{ display: "flex", flexDirection: "column", gap: 5 }}
-                              >
-                                <input type="hidden" name="id" value={u.id} />
-                                <input type="hidden" name="pageId" value={page.id} />
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    alignItems: "baseline",
-                                    gap: 8,
-                                    fontSize: 11.5,
-                                    color: "var(--ink-3)",
-                                  }}
-                                >
-                                  <strong style={{ color: "var(--ink-2)" }}>
-                                    {t(`statusPages.publicStatus.${u.status}`)}
-                                  </strong>
-                                  <span>{t.fmt.dateTime(u.publishedAt)}</span>
-                                  {u.notifiedCount > 0 && (
-                                    <span>
-                                      {t("statusPages.notifiedCount", { n: u.notifiedCount })}
-                                    </span>
-                                  )}
-                                  {u.correctedAt && (
-                                    <span style={{ color: "var(--wait)" }}>
-                                      {t("statusPages.correctedAt", {
-                                        when: t.fmt.dateTime(u.correctedAt),
-                                      })}
-                                    </span>
-                                  )}
-                                </div>
-                                <textarea
-                                  name="body"
-                                  defaultValue={u.body}
-                                  rows={2}
-                                  readOnly={!acts}
-                                  className="oi-field"
-                                  style={{ width: "100%", fontSize: 12.5, lineHeight: 1.5 }}
-                                />
-                                {acts && (
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    {/* Only the newest update owns the status the
-                                        page is showing; an older one's status is
-                                        what the page said at a moment that has
-                                        passed. */}
-                                    {k === 0 && (
-                                      <select
-                                        name="status"
-                                        defaultValue={u.status}
-                                        className="oi-field"
-                                        style={{ fontSize: 12, height: 28 }}
-                                      >
-                                        {(
-                                          [
-                                            "investigating",
-                                            "identified",
-                                            "monitoring",
-                                            "resolved",
-                                          ] as const
-                                        ).map((x) => (
-                                          <option key={x} value={x}>
-                                            {t(`statusPages.publicStatus.${x}`)}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    )}
-                                    <button
-                                      type="submit"
-                                      data-testid="correct-update"
-                                      style={{
-                                        height: 28,
-                                        padding: "0 10px",
-                                        border: "1px solid var(--line)",
-                                        borderRadius: 8,
-                                        background: "var(--panel)",
-                                        fontSize: 12,
-                                        fontWeight: 600,
-                                        cursor: "pointer",
-                                      }}
-                                    >
-                                      {t("statusPages.correct")}
-                                    </button>
-                                    <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
-                                      {t("statusPages.correctNote")}
-                                    </span>
-                                  </div>
-                                )}
-                              </form>
-                            ))}
-                          </div>
-                        </details>
-                      )}
-                    </div>
+                      <span style={pill(ink, bg)}>{t(`statusPages.publicStatus.${i.status}`)}</span>
+                    </PublicIncidentDialog>
                   );
                 })}
-                {data.maints.map((m) => (
-                  <div
-                    key={m.id}
-                    data-testid="maintenance-row"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      padding: "11px 16px",
-                      borderBottom: "1px solid var(--line-2)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        background: "var(--viol)",
-                        flex: "none",
-                      }}
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{m.title}</div>
-                      <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                        {t("statusPages.maintenanceMeta", {
-                          date: t.fmt.dayMonth(m.startAt),
-                          from: t.fmt.time(m.startAt),
-                          to: t.fmt.time(m.endAt),
-                        })}
-                        {m.autoTransitions ? ` · ${t("statusPages.autoTransitions")}` : ""}
-                      </div>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: m.status === "cancelled" ? "var(--ink-3)" : "var(--viol)",
-                        background: m.status === "cancelled" ? "var(--sunk)" : "var(--viol-t)",
-                        borderRadius: 999,
-                        padding: "2px 9px",
-                        flex: "none",
-                      }}
+                {data.maints.map((m) => {
+                  const off = m.status === "cancelled";
+                  const done = m.status === "completed";
+                  const [ink, bg] = off
+                    ? ["var(--ink-3)", "var(--sunk)"]
+                    : done
+                      ? ["var(--ok)", "var(--ok-t)"]
+                      : ["var(--viol)", "var(--viol-t)"];
+                  const meta = [
+                    `${day(m.startAt)} · ${time(m.startAt)}–${time(m.endAt)}`,
+                    m.autoTransitions ? t("statusPages.autoTransitions") : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ");
+                  return (
+                    <MaintenanceEditDialog
+                      key={m.id}
+                      id={m.id}
+                      pageId={page.id}
+                      title={m.title}
+                      body={m.body}
+                      startAt={m.startAt.toISOString()}
+                      endAt={m.endAt.toISOString()}
+                      componentIds={m.componentIds}
+                      components={data.comps.map((c) => ({ id: c.id, name: c.name }))}
+                      editable={acts && m.status === "scheduled"}
+                      cancellable={acts && (m.status === "scheduled" || m.status === "in_progress")}
+                      rowStyle={feedRow}
                     >
-                      {t(`statusPages.maintenanceStatus.${m.status}`)}
-                    </span>
-                    {/*
-                      A window that has not started can still move, and until
-                      now the only way to move one was to cancel it and
-                      schedule another — which tells every subscriber the
-                      maintenance was cancelled and then tells them about a new
-                      one, for what is the same maintenance.
-                    */}
-                    {acts && m.status === "scheduled" && (
-                      <MaintenanceEditDialog
-                        id={m.id}
-                        pageId={page.id}
-                        title={m.title}
-                        body={m.body}
-                        startAt={m.startAt.toISOString()}
-                        endAt={m.endAt.toISOString()}
-                        componentIds={m.componentIds}
-                        components={data.comps.map((c) => ({ id: c.id, name: c.name }))}
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: off ? "var(--ink-3)" : "var(--viol)",
+                          flex: "none",
+                        }}
                       />
-                    )}
-                    {acts && (m.status === "scheduled" || m.status === "in_progress") && (
-                      <form action={cancelMaintenance}>
-                        <input type="hidden" name="id" value={m.id} />
-                        <button
-                          type="submit"
-                          className="oi-hover-dang"
-                          style={{ ...small, color: "var(--dang)" }}
-                        >
-                          {t("common.cancel")}
-                        </button>
-                      </form>
-                    )}
-                  </div>
-                ))}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{m.title}</div>
+                        <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{meta}</div>
+                      </div>
+                      <span style={pill(ink, bg)}>
+                        {t(`statusPages.maintenanceStatus.${m.status}`)}
+                      </span>
+                    </MaintenanceEditDialog>
+                  );
+                })}
                 {data.publicIncidents.length === 0 && data.maints.length === 0 && (
                   <div style={{ padding: 16, fontSize: 12.5, color: "var(--ink-3)" }}>
                     {t("statusPages.nothingRecent")}
@@ -1156,53 +865,27 @@ export default async function StatusPagesPage({
                 <div style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
                   {t("sp2.subscribersNote")}
                 </div>
-                {member.role === "owner" && (
-                  <form
-                    action={importSubscribers}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
-                      borderTop: "1px solid var(--line-2)",
-                      paddingTop: 9,
-                    }}
-                  >
-                    <input type="hidden" name="pageId" value={page.id} />
-                    <input
-                      name="file"
-                      type="file"
-                      accept=".csv,text/csv,text/plain"
-                      className="oi-field"
-                      style={{ fontSize: 11.5 }}
-                    />
-                    <button type="submit" className="oi-hover" style={saveBtn}>
-                      {t("statusPages.importCsv")}
-                    </button>
-                  </form>
-                )}
               </section>
 
               {data.pages
                 .filter((p) => p.id !== page.id)
                 .map((p) => (
-                  <section key={p.id} style={{ ...card, gap: 8 }}>
+                  <Link
+                    key={p.id}
+                    href={`/app/status-pages?page=${p.id}`}
+                    data-testid="other-page"
+                    className="oi-hover-edge"
+                    style={{ ...card, gap: 8, color: "inherit", textDecoration: "none" }}
+                  >
                     <div style={eyebrow}>
                       {p.visibility === "internal" ? t("sp2.internalPage") : t("sp2.publicPage")}
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{p.name}</div>
                     <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                      {p.visibility === "internal" ? t("sp2.ssoOnly") : t("sp2.visibilityPublic")} ·{" "}
-                      {t("sp2.nComponents", { count: data.counts.get(p.id) ?? 0 })} ·{" "}
-                      {localeName(p.locale)}
+                      {p.visibility === "internal" ? t("sp2.ssoOnly") : hostOf(p)} ·{" "}
+                      {t("sp2.nComponents", { count: data.counts.get(p.id) ?? 0 })}
                     </div>
-                    <Link
-                      href={`/app/status-pages?page=${p.id}`}
-                      className="oi-link"
-                      style={{ fontSize: 12, fontWeight: 600 }}
-                    >
-                      {t("sp2.openPage")}
-                    </Link>
-                  </section>
+                  </Link>
                 ))}
 
               <div
@@ -1218,319 +901,20 @@ export default async function StatusPagesPage({
                 {t("statusPages.isolationNote")}
               </div>
 
-              <section style={card}>
-                <div style={eyebrow}>{t("statusPages.templates")}</div>
-                {data.templates.map((tpl) => (
-                  <div
-                    key={tpl.id}
-                    data-testid="template-row"
-                    style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}
-                  >
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        flex: "none",
-                        background:
-                          tpl.status === "resolved"
-                            ? "var(--ok)"
-                            : tpl.status === "monitoring"
-                              ? "var(--wait)"
-                              : tpl.status === "identified"
-                                ? "var(--viol)"
-                                : "var(--dang)",
-                      }}
-                    />
-                    <span
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                      title={tpl.body}
-                    >
-                      {tpl.name}
-                    </span>
-                    <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
-                      {tpl.approved ? t("statusPages.approved") : t("statusPages.draft")}
-                    </span>
-                    {manages && (
-                      <form action={deleteTemplate}>
-                        <input type="hidden" name="id" value={tpl.id} />
-                        <button
-                          type="submit"
-                          aria-label={t("common.delete")}
-                          className="oi-hover-dang"
-                          style={{
-                            width: 22,
-                            height: 22,
-                            border: 0,
-                            borderRadius: 6,
-                            background: "transparent",
-                            color: "var(--ink-3)",
-                            cursor: "pointer",
-                            fontSize: 11,
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </form>
-                    )}
-                  </div>
-                ))}
-                {manages && (
-                  <form
-                    action={saveTemplate}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 6,
-                      borderTop: "1px solid var(--line-2)",
-                      paddingTop: 9,
-                    }}
-                  >
-                    <input type="hidden" name="pageId" value={page.id} />
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 110px", gap: 6 }}>
-                      <input
-                        name="name"
-                        required
-                        placeholder={t("statusPages.templateName")}
-                        className="oi-field"
-                        style={control}
-                      />
-                      <select
-                        name="status"
-                        defaultValue="investigating"
-                        className="oi-field"
-                        style={control}
-                      >
-                        {(["investigating", "identified", "monitoring", "resolved"] as const).map(
-                          (s) => (
-                            <option key={s} value={s}>
-                              {t(`statusPages.publicStatus.${s}`)}
-                            </option>
-                          ),
-                        )}
-                      </select>
-                    </div>
-                    <textarea
-                      name="body"
-                      required
-                      rows={2}
-                      placeholder={t("statusPages.templateBody")}
-                      className="oi-field"
-                      style={{
-                        ...control,
-                        height: "auto",
-                        padding: "8px 10px",
-                        resize: "vertical",
-                      }}
-                    />
-                    <button type="submit" className="oi-hover" style={saveBtn}>
-                      {t("statusPages.addTemplate")}
-                    </button>
-                  </form>
-                )}
-                <div style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
-                  {t("statusPages.templatesNote")}
+              <Link
+                href={`/app/status-pages?page=${page.id}&tab=settings`}
+                data-testid="page-settings"
+                className="oi-hover-edge"
+                style={{ ...card, gap: 6, color: "inherit", textDecoration: "none" }}
+              >
+                <div style={eyebrow}>{t("sp2.settings")}</div>
+                <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
+                  {t("alst.sp.settingsHint")}
                 </div>
-              </section>
-
-              <form action={saveStatusPage} style={card} data-testid="brand-form">
-                <input type="hidden" name="id" value={page.id} />
-                <div style={eyebrow}>{t("statusPages.brand")}</div>
-                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={label}>{t("oncall.name")}</span>
-                  <input
-                    name="name"
-                    defaultValue={page.name}
-                    required
-                    className="oi-field"
-                    style={control}
-                    readOnly={!manages}
-                  />
-                </label>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={label}>{t("statusPages.accent")}</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span
-                        style={{
-                          width: 14,
-                          height: 14,
-                          borderRadius: 5,
-                          background: page.accentColor,
-                          flex: "none",
-                        }}
-                      />
-                      <input
-                        name="accentColor"
-                        defaultValue={page.accentColor}
-                        pattern="#[0-9a-fA-F]{6}"
-                        className="oi-field"
-                        style={{ ...control, fontFamily: "var(--mono)", fontSize: 12 }}
-                        readOnly={!manages}
-                      />
-                    </div>
-                  </label>
-                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <span style={label}>{t("statusPages.language")}</span>
-                    <select
-                      name="locale"
-                      defaultValue={page.locale}
-                      className="oi-field"
-                      style={control}
-                      disabled={!manages}
-                    >
-                      {(["en", "fr", "de"] as const).map((l) => (
-                        <option key={l} value={l}>
-                          {localeName(l)}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  <span style={label}>{t("statusPages.threshold")}</span>
-                  <select
-                    name="minSeverityRank"
-                    defaultValue={String(page.minSeverityRank)}
-                    className="oi-field"
-                    style={control}
-                    disabled={!manages}
-                  >
-                    {[0, 1, 2, 3].map((r) => (
-                      <option key={r} value={r}>
-                        {t("statusPages.thresholdOption", { severity: `SEV${r + 1}` })}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <span style={label}>{t("statusPages.visibility")}</span>
-                  <select
-                    name="visibility"
-                    defaultValue={page.visibility}
-                    disabled={!manages}
-                    data-testid="status-visibility"
-                    className="oi-field"
-                    style={control}
-                  >
-                    <option value="public">{t("statusPages.visibilityPublic")}</option>
-                    <option value="internal">{t("statusPages.visibilityInternal")}</option>
-                  </select>
-                  <span style={{ fontSize: 11, color: "var(--ink-3)", lineHeight: 1.5 }}>
-                    {t("statusPages.visibilityHint")}
-                  </span>
-                </label>
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 12,
-                    color: "var(--ink-2)",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    name="noindex"
-                    defaultChecked={page.noindex}
-                    disabled={!manages}
-                  />{" "}
-                  {t("statusPages.noindex")}
-                </label>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <input
-                    name="privacyUrl"
-                    type="url"
-                    defaultValue={page.privacyUrl ?? ""}
-                    placeholder={t("statusPages.privacyUrl")}
-                    className="oi-field"
-                    style={{ ...control, fontSize: 11.5 }}
-                    readOnly={!manages}
-                  />
-                  <input
-                    name="legalUrl"
-                    type="url"
-                    defaultValue={page.legalUrl ?? ""}
-                    placeholder={t("statusPages.legalUrl")}
-                    className="oi-field"
-                    style={{ ...control, fontSize: 11.5 }}
-                    readOnly={!manages}
-                  />
-                </div>
-                <input
-                  name="replyTo"
-                  type="email"
-                  defaultValue={page.replyTo ?? ""}
-                  placeholder={t("statusPages.replyTo")}
-                  className="oi-field"
-                  style={{ ...control, fontSize: 11.5 }}
-                  readOnly={!manages}
-                />
-                {manages && (
-                  <button type="submit" className="oi-hover" style={saveBtn}>
-                    {t("common.save")}
-                  </button>
-                )}
-              </form>
-
-              <form action={saveCustomDomain} style={card} data-testid="domain-form">
-                <input type="hidden" name="id" value={page.id} />
-                <div style={eyebrow}>{t("statusPages.domain")}</div>
-                <Row k={t("statusPages.address")}>
-                  <span style={{ fontFamily: "var(--mono)", fontSize: 11.5 }}>{hostOf(page)}</span>
-                </Row>
-                <Row k={t("statusPages.customDomain")}>
-                  {page.customDomain ? (
-                    <span
-                      style={{ color: page.customDomainVerifiedAt ? "var(--ok)" : "var(--wait)" }}
-                    >
-                      {page.customDomainVerifiedAt
-                        ? t("statusPages.verifiedTls")
-                        : t("statusPages.pendingDns")}
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </Row>
-                <input
-                  name="customDomain"
-                  defaultValue={page.customDomain ?? ""}
-                  placeholder="status.example.com"
-                  className="oi-field"
-                  style={{ ...control, fontFamily: "var(--mono)", fontSize: 12 }}
-                  readOnly={!manages}
-                />
-                <div style={{ fontSize: 11, color: "var(--ink-3)", lineHeight: 1.5 }}>
-                  {t("statusPages.domainNote", {
-                    target: `status.${(process.env.BASE_DOMAIN ?? "localhost").split(":")[0]}`,
-                  })}
-                </div>
-                <Row k={t("statusPages.indexing")}>
-                  {page.noindex ? t("statusPages.noindexBefore") : t("statusPages.indexed")}
-                </Row>
-                {manages && (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button type="submit" className="oi-hover" style={{ ...saveBtn, flex: 1 }}>
-                      {t("statusPages.verifyDomain")}
-                    </button>
-                    <button
-                      type="submit"
-                      formAction={deleteStatusPage}
-                      formNoValidate
-                      className="oi-hover-dang"
-                      style={{ ...saveBtn, padding: "0 10px", color: "var(--dang)" }}
-                    >
-                      {t("statusPages.deletePage")}
-                    </button>
-                  </div>
-                )}
-              </form>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--brand)" }}>
+                  {t("alst.sp.settingsOpen")}
+                </span>
+              </Link>
             </div>
           </div>
         </>

@@ -2,7 +2,7 @@
 title: Status pages
 section: daily-use
 order: 10
-summary: A public or internal page per workspace; components bound to services; incidents and maintenances published from the product; subscribers, feeds, brand, domain.
+summary: A public or internal page per workspace; components that track a monitor or follow the incidents; incidents and maintenances published from the product; subscribers, feeds, brand, domain.
 ---
 
 ## Two applications
@@ -13,17 +13,24 @@ Pages answer on `{slug}.<STATUS_BASE_DOMAIN>` at once (`skylark.status.localhost
 
 ## Creating and shaping a page
 
-![Status pages, admin side](img/status-pages-admin.png "Components with their service and state, recent incidents and maintenances, subscribers, templates, brand and domain.")
+![Status pages, admin side](img/status-pages-admin.png "The page with its overall state, its components, its public incidents and maintenances, its subscribers.")
 
-**Status pages → + New page** asks for an address (slug). The page is `noindex` until you launch it.
+**Status pages** shows one page at a time: its address, its overall state and **View public page →**, its components, its public incidents and maintenances, its subscribers by channel. The workspace's other pages are cards on the right — the internal one included — and open with a click. **+ New page** asks for an address (slug). The page is `noindex` until you launch it.
+
+The page's own settings — brand and language, publication threshold, visibility, domain, message templates, subscriber import, deleting the page — are one click away, on the **Page settings** card (`?tab=settings`).
 
 ### Components
 
-**+ Component** with a name, an optional group, and a **service** picked among the workspace's own. Bound to a service, the component is affected automatically when an incident on that service is published: the impact is derived from the incident's severity (degraded, partial outage, major outage). Each component shows 30-day bars and a 90-day uptime from the impact history.
+**+ Component** asks for a public name and where its **status comes from**:
+
+- **A monitor** — automatic status, uptime % and 90-day bars, all read off the monitor's own checks. The row carries the **AUTO** badge; neither a person nor a published incident can overwrite what the monitor says.
+- **Manual** — you set it from incidents. Bound to a **service**, the component is affected automatically when an incident on that service is published: the impact is derived from the incident's severity (degraded, partial outage, major outage).
+
+Each row shows the last 30 days of bars and the 90-day uptime. Clicking a row opens the component: its name, the line the public page shows under it and its group for a manager, its state for a responder when the component is manual, and **Delete**.
 
 ### Visibility
 
-**Public — anyone with the address**, or **Internal — members of the workspace only**. An internal page does not exist for anyone outside: 404 on the page and its feeds, no subscription form. A signed-in member opens it from the product (**View the public page →**) and receives a day's access through a signed token the status app verifies without a session or a database.
+**Public — anyone with the address**, or **Internal — members of the workspace only**. An internal page does not exist for anyone outside: 404 on the page and its feeds, no subscription form. A signed-in member opens it from the product (**View public page →**) and receives a day's access through a signed token the status app verifies without a session or a database.
 
 ### Brand and language
 
@@ -51,11 +58,15 @@ From the incident's **Share an update** dialog, tick **Status page — <page>** 
 
 ![The public page](img/status-page-public.png "Overall state, components with their bars, the current incident with its updates, past incidents and maintenances.")
 
+### The ninety bars
+
+Each component on the public page draws one bar per day for ninety days, with its uptime and its state in columns of their own. Resting the pointer on a bar says what happened that day, in the page's language: the date, the day's **availability** (_94.79 %_), and the **real incident** that touched the component — its public title, how long it lasted and how it ended — or the maintenance under way. A quiet day says _No incident. All checks passed._ for a component a monitor checks, _No incident._ for a manual one; a day nothing measured is grey and says so, never green. Near either edge the tooltip slides to stay on screen; its arrow stays on the bar.
+
 ### Correcting an update
 
 A public update goes out to every subscriber the moment it is published, and some of them go out wrong: the service named is the wrong one, the time is off by an hour, a sentence says the opposite of what it meant.
 
-Each published incident on the admin screen opens on its **public updates**, one form per update. Edit the text and press **Correct**. The newest update can also change its public status — **Investigating**, **Identified**, **Monitoring**, **Resolved** — and doing so moves the incident's public status with it; the older ones can only be reworded, because a timeline whose middle entries change status afterwards is a timeline nobody can read.
+Clicking a public incident on the admin screen opens its **public updates**, one form per update. Edit the text and press **Correct**. The newest update can also change its public status — **Investigating**, **Identified**, **Monitoring**, **Resolved** — and doing so moves the incident's public status with it; the older ones can only be reworded, because a timeline whose middle entries change status afterwards is a timeline nobody can read.
 
 Two things a correction deliberately does not do. **It does not notify again**: the email went out with the old words, and a second one that says almost the same thing costs more trust than the mistake did. And **it does not hide itself** — the update carries _corrected at <time>_ on the public page and in the history, because a page that silently rewrites its own past is worth less than one that admits an edit.
 
@@ -67,7 +78,7 @@ Two things a correction deliberately does not do. **It does not notify again**: 
 
 ### Moving one
 
-A window that has not started can move: the pencil beside a **scheduled** maintenance reopens the same form — title, message, dates, components — filled in.
+A window that has not started can move: clicking a **scheduled** maintenance reopens the same form — title, message, dates, components — filled in, with **Cancel maintenance** beside it.
 
 Until this existed, the only way to move a window was to cancel it and schedule another, which tells every subscriber the maintenance was cancelled and then tells them about a new one, for what is the same maintenance.
 

@@ -1,31 +1,74 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useT } from "@/i18n/client";
+import { sourceHeard } from "../../settings/alert-sources/actions";
+
+/** Where each tool takes a webhook URL — the end of "Paste this URL in Datadog → …". */
+const WHERE: Record<string, string> = {
+  datadog: "alst.secret.where.datadog",
+  prometheus: "alst.secret.where.prometheus",
+  grafana: "alst.secret.where.grafana",
+  sentry: "alst.secret.where.sentry",
+  cloudwatch: "alst.secret.where.cloudwatch",
+  uptime_kuma: "alst.secret.where.uptime_kuma",
+};
 
 /**
  * The secret, shown once.
  *
  * It is never stored in a readable form, so this dialog is the only moment it
  * exists on a screen: it carries the whole URL the tool is given, a copy
- * button, and a line that waits for the first alert to come back.
+ * button, and — for a new source — a line that watches for the tool's first
+ * alert and says so when it lands.
  */
 export function SecretDialog({
   name,
+  kind,
   endpoint,
   secret,
+  watchSourceId,
   doneLabel,
   onDone,
 }: {
   name: string;
+  kind: string;
   endpoint: string;
   secret: string;
+  /** A new source: the dialog polls until its first alert arrives. */
+  watchSourceId?: string;
   doneLabel: string;
   onDone: () => void;
 }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
+  const [heard, setHeard] = useState<{ title: string | null } | null>(null);
   const url = `${endpoint}?secret=${secret}`;
+
+  useEffect(() => {
+    if (!watchSourceId || heard) return;
+    let stop = false;
+    const tick = async () => {
+      const r = await sourceHeard(watchSourceId).catch(() => null);
+      if (!stop && r?.received) setHeard({ title: r.title });
+    };
+    const timer = window.setInterval(tick, 3000);
+    const end = window.setTimeout(() => window.clearInterval(timer), 15 * 60_000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+      window.clearTimeout(end);
+    };
+  }, [watchSourceId, heard]);
+
+  const where = WHERE[kind];
+  const [before, after] = where
+    ? t.parts("alst.secret.text", "once", {
+        name,
+        where: t(where as "alst.secret.where.datadog"),
+      })
+    : t.parts("alst.secret.textHttp", "once");
+
   return (
     <div
       style={{
@@ -40,7 +83,8 @@ export function SecretDialog({
       }}
     >
       <div
-        className="oi-rise-fast"
+        role="dialog"
+        aria-modal="true"
         data-testid="source-created"
         style={{
           width: 560,
@@ -50,6 +94,7 @@ export function SecretDialog({
           boxShadow: "var(--shadow-modal)",
           overflow: "hidden",
           textAlign: "left",
+          animation: "oi-rise .16s ease backwards",
         }}
       >
         <div style={{ padding: "20px 22px", display: "flex", flexDirection: "column", gap: 14 }}>
@@ -73,7 +118,9 @@ export function SecretDialog({
             </span>
           </div>
           <div style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.55 }}>
-            {t("alt2.secret.text", { name })}
+            {before}
+            <strong style={{ color: "var(--wait)" }}>{t("alst.secret.once")}</strong>
+            {after}
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <code
@@ -95,6 +142,7 @@ export function SecretDialog({
             </code>
             <button
               type="button"
+              data-testid="source-copy"
               onClick={() => {
                 navigator.clipboard?.writeText(url).catch(() => {});
                 setCopied(true);
@@ -115,33 +163,39 @@ export function SecretDialog({
                 flex: "none",
               }}
             >
-              {copied ? t("common.copied") : t("common.copy")}
+              {copied ? t("alst.secret.copied") : t("common.copy")}
             </button>
           </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 9,
-              background: "var(--viol-t)",
-              borderRadius: 10,
-              padding: "10px 13px",
-              fontSize: 12.5,
-              color: "var(--ink-2)",
-            }}
-          >
-            <span
-              className="oi-pulse"
+          {watchSourceId && (
+            <div
+              data-testid="source-first-alert"
+              data-state={heard ? "received" : "waiting"}
               style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                background: "var(--viol)",
-                flex: "none",
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                background: heard ? "var(--ok-t)" : "var(--viol-t)",
+                borderRadius: 10,
+                padding: "10px 13px",
+                fontSize: 12.5,
+                color: "var(--ink-2)",
               }}
-            />
-            {t("alt2.secret.waiting", { name })}
-          </div>
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: heard ? "var(--ok)" : "var(--viol)",
+                  flex: "none",
+                  animation: heard ? undefined : "oi-pulse 2s infinite",
+                }}
+              />
+              {heard
+                ? t("alst.secret.heard", { name, title: heard.title ?? "—" })
+                : t("alt2.secret.waiting", { name })}
+            </div>
+          )}
         </div>
         <div
           style={{

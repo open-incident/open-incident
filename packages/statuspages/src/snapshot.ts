@@ -61,6 +61,18 @@ export type Snapshot = {
     responseMs: number | null;
     /** When this component last appeared in a published incident. */
     lastIncidentAt: string | null;
+    /**
+     * Each bar's availability, as a percentage with two decimals, parallel to
+     * `ticks`; null on a day nothing measured. Absent from snapshots written
+     * before the bars said it.
+     */
+    dayUptime?: Array<number | null>;
+    /**
+     * What happened on each bar's day, parallel to `ticks`: the ids of the
+     * published incidents and maintenances that touched this component that
+     * day — the tooltip tells their story rather than a generic sentence.
+     */
+    dayEvents?: string[][];
   }>;
   incidents: Array<{
     id: string;
@@ -202,6 +214,11 @@ export async function buildSnapshot(
         if (d.degradedSeconds > 0) return "degraded";
         return "operational";
       }),
+      dayUptime: barKeys.map((k) => {
+        const d = mine?.get(k);
+        const total = d ? d.onlineSeconds + d.degradedSeconds + d.offlineSeconds : 0;
+        return d && total > 0 ? Math.round((d.onlineSeconds / total) * 10_000) / 100 : null;
+      }),
     };
   };
   const nameOf = new Map(comps.map((c) => [c.id, c.name]));
@@ -290,6 +307,35 @@ export async function buildSnapshot(
       latency.set(id, list[Math.floor(list.length / 2)]!);
     }
   }
+  // The bars' days, as instants: the same UTC days the ticks were rolled up on.
+  const endOfToday = new Date(now.getTime());
+  endOfToday.setUTCHours(23, 59, 59, 999);
+  const barSpans = barKeys.map((_, i) => {
+    const end = endOfToday.getTime() - (BAR_DAYS - 1 - i) * DAY;
+    return { start: end - DAY + 1, end };
+  });
+  /** The published incidents and maintenances that touched a component, per bar. */
+  const eventsOf = (componentId: string): string[][] =>
+    barSpans.map(({ start, end }) => [
+      ...incidents
+        .filter(
+          (i) =>
+            i.componentIds.includes(componentId) &&
+            i.startedAt.getTime() <= end &&
+            (i.resolvedAt ?? now).getTime() >= start,
+        )
+        .map((i) => i.id),
+      ...maints
+        .filter(
+          (m) =>
+            m.status !== "cancelled" &&
+            m.componentIds.includes(componentId) &&
+            m.startAt.getTime() <= end &&
+            m.endAt.getTime() >= start,
+        )
+        .map((m) => m.id),
+    ]);
+
   // When each component was last named by a published incident.
   const lastIncident = new Map<string, string>();
   for (const inc of incidents) {
@@ -315,6 +361,8 @@ export async function buildSnapshot(
         monitorName: v.name,
         responseMs: latency.get(c.monitorId) ?? null,
         lastIncidentAt: lastIncident.get(c.id) ?? null,
+        dayUptime: v.dayUptime,
+        dayEvents: eventsOf(c.id),
       };
     }
     const mine = history
@@ -335,6 +383,10 @@ export async function buildSnapshot(
       // Nothing measures a component a person sets by hand.
       responseMs: null,
       lastIncidentAt: lastIncident.get(c.id) ?? null,
+      dayUptime: barSpans.map(({ start, end }) =>
+        computeUptime(mine, new Date(start), new Date(Math.min(end, now.getTime()))),
+      ),
+      dayEvents: eventsOf(c.id),
     };
   });
   return {

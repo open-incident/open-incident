@@ -21,6 +21,7 @@ import {
   withTenant,
 } from "@openincident/db";
 import { refreshStatusSnapshot, setComponentState } from "@openincident/statuspages";
+import { isManagerRole } from "@openincident/config";
 import { recordAudit } from "@/lib/audit";
 import { requireManager, requireMember, requireResponder } from "@/lib/session";
 
@@ -135,7 +136,7 @@ export async function saveStatusPage(formData: FormData) {
   });
   await refreshStatusSnapshot(current.tenant.id, input.id);
   revalidatePath(PAGE);
-  redirect(`${PAGE}?page=${input.id}&saved=1`);
+  redirect(`${PAGE}?page=${input.id}&tab=settings&saved=1`);
 }
 
 /** Custom domain: saved, then verified by a real DNS lookup (CNAME → status.<base domain>). TLS is the proxy's job. */
@@ -175,10 +176,12 @@ export async function saveCustomDomain(formData: FormData) {
       verified: Boolean(verified),
       detail,
     });
-  }).catch(() => redirect(`${PAGE}?page=${id}&error=domain`));
+  }).catch(() => redirect(`${PAGE}?page=${id}&tab=settings&error=domain`));
   await refreshStatusSnapshot(current.tenant.id, id);
   revalidatePath(PAGE);
-  redirect(`${PAGE}?page=${id}&domain=${domain ? (verified ? "verified" : "pending") : "cleared"}`);
+  redirect(
+    `${PAGE}?page=${id}&tab=settings&domain=${domain ? (verified ? "verified" : "pending") : "cleared"}`,
+  );
 }
 
 export async function deleteStatusPage(formData: FormData) {
@@ -307,6 +310,64 @@ export async function updateComponent(formData: FormData) {
  * gate on the server: a screen that hides a button and an action that accepts
  * it from anyone is a screen that hides nothing.
  */
+/**
+ * The component dialog's one save: the name, the line under it and its group
+ * for a manager; the state for anybody who responds, and only on a manual
+ * component — a tracked one says what its monitor says.
+ */
+export async function saveComponent(formData: FormData) {
+  const current = await requireResponder();
+  const parsed = z
+    .object({
+      id: uuid,
+      name: z.string().trim().min(1).max(60).optional(),
+      description: z.string().trim().max(120).optional(),
+      groupName: z.string().trim().max(60).optional(),
+      state: z
+        .enum(["operational", "degraded", "partial_outage", "major_outage", "maintenance"])
+        .optional(),
+    })
+    .safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) redirect(`${PAGE}?error=invalid`);
+  const input = parsed.data;
+  const manages = isManagerRole(current.member);
+  const pageId = await withTenant(current.tenant.id, async (tx) => {
+    const [c] = await tx
+      .select()
+      .from(statusPageComponents)
+      .where(
+        and(
+          eq(statusPageComponents.tenantId, current.tenant.id),
+          eq(statusPageComponents.id, input.id),
+        ),
+      );
+    if (!c) return null;
+    if (manages && input.name) {
+      await tx
+        .update(statusPageComponents)
+        .set({
+          name: input.name,
+          description: input.description || null,
+          groupName: input.groupName || null,
+        })
+        .where(eq(statusPageComponents.id, c.id));
+      await recordAudit(tx, current, "config", "status_component.updated", { name: input.name });
+    }
+    if (input.state && !c.monitorId && input.state !== c.state) {
+      await setComponentState(tx, current.tenant.id, c.id, input.state);
+      await recordAudit(tx, current, "config", "status_component.state", {
+        name: c.name,
+        state: input.state,
+      });
+    }
+    return c.pageId;
+  });
+  if (!pageId) redirect(`${PAGE}?error=invalid`);
+  await refreshStatusSnapshot(current.tenant.id, pageId);
+  revalidatePath(PAGE);
+  redirect(`${PAGE}?page=${pageId}`);
+}
+
 export async function updateComponentState(formData: FormData) {
   const current = await requireResponder();
   const id = uuid.parse(formData.get("id"));
@@ -488,7 +549,7 @@ export async function saveTemplate(formData: FormData) {
     await recordAudit(tx, current, "config", "status_template.saved", { name: input.name });
   });
   revalidatePath(PAGE);
-  redirect(`${PAGE}?page=${input.pageId}`);
+  redirect(`${PAGE}?page=${input.pageId}&tab=settings`);
 }
 
 export async function deleteTemplate(formData: FormData) {
@@ -506,13 +567,13 @@ export async function deleteTemplate(formData: FormData) {
     return t.pageId;
   });
   revalidatePath(PAGE);
-  if (pageId) redirect(`${PAGE}?page=${pageId}`);
+  if (pageId) redirect(`${PAGE}?page=${pageId}&tab=settings`);
 }
 
 /** CSV import of already-consented subscribers — owners only, audited, confirmed on arrival. */
 export async function importSubscribers(formData: FormData) {
   const current = await requireMember();
-  if (current.member.role !== "owner") redirect(`${PAGE}?error=owner`);
+  if (current.member.role !== "owner") redirect(`${PAGE}?tab=settings&error=owner`);
   const pageId = uuid.parse(formData.get("pageId"));
   const file = formData.get("file");
   const text = file instanceof File ? await file.text() : String(formData.get("csv") ?? "");
@@ -550,7 +611,7 @@ export async function importSubscribers(formData: FormData) {
   });
   await refreshStatusSnapshot(current.tenant.id, pageId);
   revalidatePath(PAGE);
-  redirect(`${PAGE}?page=${pageId}&imported=${imported}`);
+  redirect(`${PAGE}?page=${pageId}&tab=settings&imported=${imported}`);
 }
 
 /**

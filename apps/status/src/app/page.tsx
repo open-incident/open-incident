@@ -94,6 +94,48 @@ export default async function StatusPage({
             : "maintenanceD",
   );
 
+  const maintStatus = (s: string) =>
+    s === "completed"
+      ? t("maintDone")
+      : s === "in_progress"
+        ? t("maintProgress")
+        : s === "cancelled"
+          ? t("maintCancelled")
+          : t("maintScheduled");
+
+  // What a bar's day says when the pointer rests on it: the real incident or
+  // maintenance that touched the component that day, in the page's language —
+  // a generic sentence only when nothing was published.
+  const lower = (s: string) => (L === "de" ? s : s.toLocaleLowerCase(L));
+  const minutes = (from: string, to: string) =>
+    Math.max(0, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60_000));
+  const duration = (m: number) =>
+    m < 60
+      ? `${m} min`
+      : m % 60 === 0
+        ? `${Math.floor(m / 60)} h`
+        : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}`;
+  const incidentById = new Map(snap.incidents.map((i) => [i.id, i]));
+  const maintById = new Map(snap.maintenances.map((m) => [m.id, m]));
+  const noteOf = (id: string): string | null => {
+    const inc = incidentById.get(id);
+    if (inc) {
+      const status = lower(t((inc.updates[0]?.status ?? inc.status) as "resolved"));
+      return inc.resolvedAt
+        ? t("tipIncident", {
+            title: inc.title,
+            duration: duration(minutes(inc.startedAt, inc.resolvedAt)),
+            status,
+          })
+        : t("tipOngoing", { title: inc.title, status });
+    }
+    const m = maintById.get(id);
+    return m ? t("tipMaint", { title: m.title, status: maintStatus(m.status) }) : null;
+  };
+  const pct = new Intl.NumberFormat(L === "fr" ? "fr-FR" : L === "de" ? "de-DE" : "en-GB", {
+    maximumFractionDigits: 2,
+  });
+
   // The bars carry no dates of their own: they are the days ending at the
   // snapshot's own clock, which is how they were rolled up in the first place.
   const generated = new Date(snap.generatedAt).getTime();
@@ -102,7 +144,26 @@ export default async function StatusPage({
     const bars = c.ticks.map((state, i) => {
       const day = new Date(generated - (c.ticks.length - 1 - i) * DAY).toISOString().slice(0, 10);
       if (!dayFormat[day]) dayFormat[day] = fmtDate(day, L, { day: "numeric", month: "short" });
-      return { day, state };
+      const up = c.dayUptime?.[i] ?? null;
+      const notes = (c.dayEvents?.[i] ?? []).map(noteOf).filter((n): n is string => Boolean(n));
+      const fallback =
+        state === "operational"
+          ? c.source === "manual"
+            ? t("tipOkManual")
+            : t("tipOk")
+          : state === "degraded" || state === "partial_outage"
+            ? t("tipDeg")
+            : state === "major_outage"
+              ? t("tipOut")
+              : state === "maintenance"
+                ? t("stateMaintenance")
+                : t("tipNone");
+      return {
+        day,
+        state,
+        up: state === "none" || up === null ? null : `${pct.format(up)} %`,
+        text: notes.length ? notes.join(" ") : fallback,
+      };
     });
     return {
       id: c.id,
@@ -147,14 +208,6 @@ export default async function StatusPage({
   const when = (iso: string) => (day(iso) === today ? time(iso) : dated(iso));
   const since = (iso: string, from: string) => (day(iso) === day(from) ? time(iso) : dated(iso));
   const impact = (k: string) => t(`impact_${k}` as "impact_degraded");
-  const maintStatus = (s: string) =>
-    s === "completed"
-      ? t("maintDone")
-      : s === "in_progress"
-        ? t("maintProgress")
-        : s === "cancelled"
-          ? t("maintCancelled")
-          : t("maintScheduled");
 
   // Past incidents and finished maintenances, newest first, grouped by month.
   const items: Array<{ at: string; item: HistoryItem }> = [
@@ -594,10 +647,6 @@ export default async function StatusPage({
               operational: t("legendOperational"),
               degraded: t("legendDegraded"),
               outage: t("legendOutage"),
-              tipOk: t("tipOk"),
-              tipDeg: t("tipDeg"),
-              tipOut: t("tipOut"),
-              tipNone: t("tipNone"),
             }}
           />
         </section>

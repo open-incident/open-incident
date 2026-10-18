@@ -14,7 +14,8 @@ import { useState } from "react";
  * paints silence as success is the one thing a status page must never do.
  */
 
-export type Bar = { day: string; state: string };
+/** One day: its state, how available it was ("99.94 %"), and what happened, in words. */
+export type Bar = { day: string; state: string; up: string | null; text: string };
 
 export type Row = {
   id: string;
@@ -40,10 +41,6 @@ export type Labels = {
   operational: string;
   degraded: string;
   outage: string;
-  tipOk: string;
-  tipDeg: string;
-  tipOut: string;
-  tipNone: string;
 };
 
 const TICK: Record<string, string> = {
@@ -65,13 +62,6 @@ const STATE_INK: Record<string, string> = {
   unknown: "#8A8378",
 };
 
-function tipText(state: string, l: Labels): string {
-  if (state === "operational") return l.tipOk;
-  if (state === "degraded" || state === "partial_outage") return l.tipDeg;
-  if (state === "major_outage") return l.tipOut;
-  return l.tipNone;
-}
-
 export function ComponentsList({
   rows,
   labels,
@@ -83,9 +73,7 @@ export function ComponentsList({
   dayFormat: Record<string, string>;
 }) {
   const [open, setOpen] = useState<string | null>(null);
-  const [tip, setTip] = useState<{ row: string; day: string; state: string; at: number } | null>(
-    null,
-  );
+  const [tip, setTip] = useState<(Bar & { row: string; at: number }) | null>(null);
 
   return (
     <div
@@ -93,7 +81,8 @@ export function ComponentsList({
         background: "#fff",
         border: "1px solid rgba(27,25,23,.08)",
         borderRadius: 18,
-        overflow: "hidden",
+        // Not clipped: a bar's tooltip rises above the first row, past the
+        // card's own edge. The first row rounds its own hover instead.
         boxShadow: "0 1px 2px rgba(27,25,23,.03)",
       }}
     >
@@ -152,12 +141,7 @@ export function ComponentsList({
                   key={b.day}
                   data-testid="component-bar"
                   onMouseEnter={() =>
-                    setTip({
-                      row: c.id,
-                      day: b.day,
-                      state: b.state,
-                      at: ((n + 0.5) / c.bars.length) * 100,
-                    })
+                    setTip({ ...b, row: c.id, at: ((n + 0.5) / c.bars.length) * 100 })
                   }
                   onMouseLeave={() => setTip(null)}
                   onClick={(e) => e.stopPropagation()}
@@ -173,58 +157,82 @@ export function ComponentsList({
                 />
               ))}
               {tip?.row === c.id && (
-                <div
-                  style={{
-                    position: "absolute",
-                    bottom: 32,
-                    // Over the hovered day, kept inside the row at either edge.
-                    left: `clamp(0px, calc(${tip.at}% - 115px), calc(100% - 230px))`,
-                    width: 230,
-                    background: "#1B1917",
-                    color: "#fff",
-                    borderRadius: 10,
-                    padding: "9px 12px",
-                    fontSize: 12,
-                    lineHeight: 1.45,
-                    boxShadow: "0 12px 30px -12px rgba(27,25,23,.5)",
-                    zIndex: 30,
-                    pointerEvents: "none",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                    <span
-                      style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: "50%",
-                        background: TICK[tip.state] ?? TICK.none,
-                      }}
-                    />
-                    <strong>{dayFormat[tip.day] ?? tip.day}</strong>
+                <>
+                  <div
+                    data-testid="bar-tip"
+                    role="tooltip"
+                    style={{
+                      position: "absolute",
+                      bottom: 36,
+                      // Over the hovered day, kept inside the row at either
+                      // edge: the box slides, the arrow stays on the bar.
+                      left: `clamp(0px, calc(${tip.at}% - 110px), calc(100% - 220px))`,
+                      width: 220,
+                      background: "#1B1917",
+                      color: "#fff",
+                      borderRadius: 10,
+                      padding: "9px 12px",
+                      fontSize: 12,
+                      lineHeight: 1.45,
+                      boxShadow: "0 12px 30px -12px rgba(27,25,23,.5)",
+                      zIndex: 30,
+                      pointerEvents: "none",
+                      animation: "st-rise .12s ease backwards",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <span
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: "50%",
+                          background: TICK[tip.state] ?? TICK.none,
+                          flex: "none",
+                        }}
+                      />
+                      <strong>{dayFormat[tip.day] ?? tip.day}</strong>
+                      <span style={{ flex: 1 }} />
+                      {tip.up && (
+                        <span
+                          data-testid="bar-tip-up"
+                          style={{ color: "rgba(255,255,255,.65)", whiteSpace: "nowrap" }}
+                        >
+                          {tip.up}
+                        </span>
+                      )}
+                    </div>
+                    <div data-testid="bar-tip-text" style={{ color: "rgba(255,255,255,.85)" }}>
+                      {tip.text}
+                    </div>
                   </div>
-                  <div style={{ color: "rgba(255,255,255,.85)" }}>{tipText(tip.state, labels)}</div>
-                </div>
+                  <span
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      bottom: 26,
+                      left: `calc(${tip.at}% - 5px)`,
+                      border: "5px solid transparent",
+                      borderTopColor: "#1B1917",
+                      zIndex: 30,
+                      pointerEvents: "none",
+                    }}
+                  />
+                </>
               )}
             </div>
-            <div
-              className="st-crow-meta"
+            <span
+              className="st-crow-up"
               style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "flex-end",
-                gap: 10,
+                fontFamily: "var(--mono)",
+                fontSize: 12.5,
+                color: "#5C5750",
+                whiteSpace: "nowrap",
+                textAlign: "right",
               }}
             >
-              <span
-                style={{
-                  fontFamily: "var(--mono)",
-                  fontSize: 12.5,
-                  color: "#5C5750",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {c.uptime90}
-              </span>
+              {c.uptime90}
+            </span>
+            <div className="st-crow-meta">
               <span
                 style={{
                   display: "inline-flex",

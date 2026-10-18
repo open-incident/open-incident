@@ -4,10 +4,10 @@ import { useT } from "@/i18n/client";
 import { deleteSource } from "@/app/app/settings/alert-sources/actions";
 
 /**
- * Deleting a source, where a person looks for it: in the header with the
- * other actions, not at the foot of the advanced settings. It is the one
- * gesture here that takes history with it — alerts cascade — so it asks
- * first, and says how many.
+ * Deleting a source, under Advanced with the other gestures that change what
+ * the source is rather than what it does. It is the one gesture here that
+ * takes history with it — alerts cascade — so it asks first, and says how
+ * many.
  */
 export function DeleteSource({
   id,

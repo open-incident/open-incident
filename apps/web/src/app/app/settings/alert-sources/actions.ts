@@ -12,10 +12,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   alertSources,
+  alerts,
   forgetApiKeyLookup,
   registerApiKeyLookup,
   schedules,
@@ -36,7 +37,6 @@ import { SOURCE_KINDS } from "@/lib/alert-sources";
 import { ensureQuickPath } from "@/lib/alerting-setup";
 import { requireManager } from "@/lib/session";
 import { requestOrigin } from "@/lib/tenant";
-import { type IncidentChoice } from "@/app/app/alerts/sources/choices";
 import { headers } from "next/headers";
 
 const KINDS = SOURCE_KINDS.map((k) => k.kind) as [AlertSourceKind, ...AlertSourceKind[]];
@@ -69,6 +69,27 @@ function revalidateSources(id?: string) {
 }
 
 /* ---------- The three choices ---------- */
+
+/**
+ * "Open an incident": in triage, from a severity, only when urgent, never.
+ * The chips post `from:<rank>`; `urgent` is the older answer, kept for the
+ * sources that still follow the workspace's urgency.
+ */
+const incidentAnswer = z.union([
+  z.enum(["triage", "urgent", "never"]),
+  z.string().regex(/^from:[0-9]{1,2}$/),
+]);
+type IncidentAnswer = z.infer<typeof incidentAnswer>;
+
+function incidentColumns(answer: IncidentAnswer): {
+  incidentOpens: "never" | "always" | "conditional";
+  incidentFromRank: number | null;
+} {
+  if (answer === "never") return { incidentOpens: "never", incidentFromRank: null };
+  if (answer === "triage") return { incidentOpens: "always", incidentFromRank: null };
+  if (answer === "urgent") return { incidentOpens: "conditional", incidentFromRank: null };
+  return { incidentOpens: "conditional", incidentFromRank: Number(answer.slice(5)) };
+}
 
 const pageChoice = z.object({
   kind: z.enum(["owner", "me", "team", "schedule", "nobody"]),
@@ -145,17 +166,14 @@ async function applyChoices(
   tenantId: string,
   actor: { memberId: string; name: string },
   source: { id: string; name: string },
-  patch: { page?: PageInput; incident?: IncidentChoice; autoResolve?: boolean },
+  patch: { page?: PageInput; incident?: IncidentAnswer; autoResolve?: boolean },
 ): Promise<void> {
   const next: Partial<typeof alertSources.$inferInsert> = {};
   if (patch.page) {
     const { rules } = await rulesFor(tx, tenantId, actor, patch.page);
     next.escalations = rules;
   }
-  if (patch.incident) {
-    next.incidentOpens =
-      patch.incident === "never" ? "never" : patch.incident === "triage" ? "always" : "conditional";
-  }
+  if (patch.incident) Object.assign(next, incidentColumns(patch.incident));
   if (patch.autoResolve !== undefined) next.autoResolve = patch.autoResolve;
   if (Object.keys(next).length === 0) return;
   await tx
@@ -179,15 +197,14 @@ export async function saveSourceChoices(formData: FormData) {
   const source = await loadSource(current.tenant.id, input.id);
   if (!source) return;
   const actor = { memberId: current.member.id, name: current.member.name };
-  const patch: { page?: PageInput; incident?: IncidentChoice; autoResolve?: boolean } = {};
+  const patch: { page?: PageInput; incident?: IncidentAnswer; autoResolve?: boolean } = {};
   if (input.field === "page")
     patch.page = pageChoice.parse({
       kind: input.value,
       teamId: input.teamId || undefined,
       scheduleId: input.scheduleId || undefined,
     });
-  if (input.field === "incident")
-    patch.incident = z.enum(["triage", "urgent", "never"]).parse(input.value);
+  if (input.field === "incident") patch.incident = incidentAnswer.parse(input.value);
   if (input.field === "autoResolve") patch.autoResolve = input.value === "on";
   await withTenant(current.tenant.id, async (tx) => {
     await applyChoices(tx, current.tenant.id, actor, source, patch);
@@ -217,7 +234,7 @@ export async function createSource(
       page: z.enum(["owner", "me", "team", "schedule", "nobody"]).optional(),
       teamId: z.string().max(60).optional(),
       scheduleId: z.string().max(60).optional(),
-      incident: z.enum(["triage", "urgent", "never"]).optional(),
+      incident: incidentAnswer.optional(),
       autoResolve: z.enum(["on", "off"]).optional(),
     })
     .safeParse(Object.fromEntries(formData.entries()));
@@ -457,6 +474,52 @@ export async function toggleSource(formData: FormData) {
     );
   });
   revalidateSources(id);
+}
+
+/** A source on trial, or back to paging: its alerts are logged and routed either way. */
+export async function setSourceTestMode(formData: FormData) {
+  const current = await requireManager();
+  const id = uuid.parse(formData.get("id"));
+  const on = formData.get("on") === "on";
+  await withTenant(current.tenant.id, async (tx) => {
+    const [s] = await tx
+      .update(alertSources)
+      .set({ testMode: on })
+      .where(and(eq(alertSources.tenantId, current.tenant.id), eq(alertSources.id, id)))
+      .returning({ name: alertSources.name });
+    if (s)
+      await recordAudit(
+        tx,
+        current,
+        "config",
+        on ? "alert_source.test_on" : "alert_source.test_off",
+        {
+          name: s.name,
+        },
+      );
+  });
+  revalidateSources(id);
+}
+
+/**
+ * Has the source heard from its tool yet — the line under the secret that
+ * "updates by itself". Read-only, and it says nothing a manager cannot see on
+ * the source page.
+ */
+export async function sourceHeard(
+  id: string,
+): Promise<{ received: boolean; title: string | null }> {
+  const current = await requireManager();
+  const sourceId = uuid.parse(id);
+  return withTenant(current.tenant.id, async (tx) => {
+    const [last] = await tx
+      .select({ title: alerts.title })
+      .from(alerts)
+      .where(and(eq(alerts.tenantId, current.tenant.id), eq(alerts.sourceId, sourceId)))
+      .orderBy(desc(alerts.firstAt))
+      .limit(1);
+    return { received: Boolean(last), title: last?.title ?? null };
+  });
 }
 
 export async function deleteSource(formData: FormData) {

@@ -53,10 +53,15 @@ export async function POST(
   let payload: unknown;
   const type = request.headers.get("content-type") ?? "";
   try {
-    if (type.includes("application/json") || type === "") payload = await request.json();
+    const text = await request.clone().text();
+    const trimmed = text.trim();
+    // `curl -d '{…}'` labels its body as a form; what decides is what the body
+    // is. A JSON document is read as JSON whatever header came with it.
+    if (type.includes("application/json") || type === "") payload = JSON.parse(text);
+    else if (trimmed.startsWith("{") || trimmed.startsWith("[")) payload = JSON.parse(trimmed);
     else if (type.includes("form"))
       payload = Object.fromEntries((await request.formData()).entries());
-    else payload = { title: (await request.text()).slice(0, 500) };
+    else payload = { title: text.slice(0, 500) };
   } catch {
     return apiError(400, "invalid_payload", "The body could not be read.");
   }

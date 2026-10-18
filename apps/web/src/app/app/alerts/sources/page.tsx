@@ -3,10 +3,10 @@ import { and, asc, eq, gte, sql } from "drizzle-orm";
 import { alertSources, alerts, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { isManager, requireMember } from "@/lib/session";
-import { sourceKindMeta } from "@/lib/alert-sources";
-import { IntegrationIcon } from "../../settings/integrations/icons";
-import { sourceChoices, urgentFrom, pageableSchedules, pageableTeams } from "./choices";
+import { SourceGlyph } from "@/components/alerting/source-glyph";
+import { sourceChoices, priorityLevels, pageableSchedules, pageableTeams } from "./choices";
 import { describePage, describeIncident } from "./describe";
+import { sourceMeta, sourceStatus } from "./status";
 import { ConnectTool } from "./connect-tool";
 
 const DAY = 86_400_000;
@@ -33,10 +33,14 @@ export default async function AlertSourcesPage({
       .select()
       .from(alertSources)
       .where(and(eq(alertSources.tenantId, tenant.id), eq(alertSources.managed, false)))
-      .orderBy(asc(alertSources.name));
+      .orderBy(asc(alertSources.createdAt), asc(alertSources.name));
     const since = new Date(Date.now() - 90 * DAY);
     const counted = await tx
-      .select({ sourceId: alerts.sourceId, n: sql<number>`count(*)::int`.mapWith(Number) })
+      .select({
+        sourceId: alerts.sourceId,
+        n: sql<number>`count(*)::int`.mapWith(Number),
+        test: sql<number>`count(*) filter (where ${alerts.testMode})::int`.mapWith(Number),
+      })
       .from(alerts)
       .where(and(eq(alerts.tenantId, tenant.id), gte(alerts.lastAt, since)))
       .groupBy(alerts.sourceId);
@@ -47,17 +51,17 @@ export default async function AlertSourcesPage({
     );
     return {
       rows,
-      counts: new Map(counted.map((c) => [c.sourceId, c.n])),
+      counts: new Map(counted.map((c) => [c.sourceId, { all: c.n, test: c.test }])),
       choices,
-      urgent: await urgentFrom(tx, tenant.id),
-      teams: await pageableTeams(tx, tenant.id),
+      levels: await priorityLevels(tx, tenant.id),
+      teams: await pageableTeams(tx, tenant.id, member.id),
       schedules: await pageableSchedules(tx, tenant.id),
     };
   });
+  const now = new Date();
 
   return (
     <div
-      className="oi-rise"
       style={{
         maxWidth: 1160,
         margin: "0 auto",
@@ -65,6 +69,7 @@ export default async function AlertSourcesPage({
         display: "flex",
         flexDirection: "column",
         gap: 14,
+        animation: "oi-rise .18s ease backwards",
       }}
     >
       <Link
@@ -94,7 +99,7 @@ export default async function AlertSourcesPage({
             initialKind={params.new && params.new !== "1" ? params.new : null}
             teams={data.teams.map((x) => ({ id: x.id, name: x.name }))}
             schedules={data.schedules}
-            urgentFrom={data.urgent}
+            levels={data.levels}
           />
         )}
       </div>
@@ -135,26 +140,15 @@ export default async function AlertSourcesPage({
         }}
       >
         {data.rows.map((s) => {
-          const meta = sourceKindMeta(s.kind);
           const c = data.choices.get(s.id)!;
-          const count = data.counts.get(s.id) ?? 0;
-          const quietDays = s.lastAlertAt
-            ? Math.floor((Date.now() - s.lastAlertAt.getTime()) / DAY)
-            : null;
-          const status = !s.active
-            ? { label: t("alt2.sources.st.paused"), ink: "var(--ink-3)" }
-            : c.route?.testMode
-              ? { label: t("alt2.sources.st.test"), ink: "var(--viol)" }
-              : quietDays === null
-                ? { label: t("alt2.sources.st.waiting"), ink: "var(--wait)" }
-                : quietDays >= 7
-                  ? { label: t("alt2.sources.st.quiet", { count: quietDays }), ink: "var(--wait)" }
-                  : { label: t("alt2.sources.st.receiving"), ink: "var(--ok)" };
+          const status = sourceStatus(t, s, now);
+          const meta = sourceMeta(t, s, status, data.counts.get(s.id) ?? { all: 0, test: 0 }, now);
           return (
             <Link
               key={s.id}
               href={`/app/alerts/sources/${s.id}`}
               data-testid="source-row"
+              data-state={status.state}
               className="oi-hover-edge"
               style={{
                 background: "var(--panel)",
@@ -182,7 +176,7 @@ export default async function AlertSourcesPage({
                     flex: "none",
                   }}
                 >
-                  <IntegrationIcon id={meta.icon} />
+                  <SourceGlyph kind={s.kind} />
                 </span>
                 <span
                   style={{
@@ -234,7 +228,7 @@ export default async function AlertSourcesPage({
                 </span>
                 <span>
                   <strong style={{ color: "var(--ink)" }}>{t("alt2.sources.incidentLabel")}</strong>{" "}
-                  {describeIncident(t, c.incident, data.urgent)}
+                  {describeIncident(t, c.incident, c.fromRank, data.levels)}
                 </span>
                 <span>
                   <strong style={{ color: "var(--ink)" }}>{t("alt2.sources.autoLabel")}</strong>{" "}
@@ -249,9 +243,7 @@ export default async function AlertSourcesPage({
                   paddingTop: 8,
                 }}
               >
-                {s.lastAlertAt
-                  ? t("alt2.sources.meta", { count, when: t.fmt.relative(s.lastAlertAt) })
-                  : t("alt2.sources.metaWaiting")}
+                {meta}
               </div>
             </Link>
           );

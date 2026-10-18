@@ -53,7 +53,7 @@ export function FirstAlert({
 }
 
 /** A new secret, shown once — the old one stops working the moment this returns. */
-export function RotateSecret({ id, name }: { id: string; name: string }) {
+export function RotateSecret({ id, name, kind }: { id: string; name: string; kind: string }) {
   const t = useT();
   const router = useRouter();
   const [state, action, pending] = useActionState(rotateSecret, {});
@@ -66,6 +66,7 @@ export function RotateSecret({ id, name }: { id: string; name: string }) {
         <button
           type="submit"
           disabled={pending}
+          data-testid="source-rotate"
           className="oi-hover"
           style={{
             height: 32,
@@ -86,6 +87,7 @@ export function RotateSecret({ id, name }: { id: string; name: string }) {
       {shown && (
         <SecretDialog
           name={state.name ?? name}
+          kind={kind}
           endpoint={state.endpoint!}
           secret={state.secret!}
           doneLabel={t("alt2.secret.added", { name: state.name ?? name })}

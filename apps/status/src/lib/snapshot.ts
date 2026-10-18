@@ -25,10 +25,36 @@ export async function currentSnapshot(opts: { skipAccess?: boolean } = {}): Prom
   ).catch(() => null);
   if (!row) return null;
   const proto = schemeOf(host, h.get("x-forwarded-proto"));
-  const snap = row.snapshot as unknown as Snapshot;
+  const snap = normalize(row.snapshot as unknown as Snapshot);
   if (snap.page.visibility === "internal" && !opts.skipAccess) {
     const jar = await cookies();
     if (!verifyStatusAccess(jar.get(STATUS_ACCESS_COOKIE)?.value, row.pageId)) return null;
   }
   return { row, snap, origin: `${proto}://${host}` };
+}
+
+/**
+ * A snapshot as this page reads it, whatever version wrote it. Fields came in
+ * over time; a page published before one existed still has to render — the
+ * public page is the one screen that must never answer 500.
+ */
+function normalize(snap: Snapshot): Snapshot {
+  return {
+    ...snap,
+    incidents: snap.incidents ?? [],
+    maintenances: snap.maintenances ?? [],
+    components: (snap.components ?? []).map((c) => ({
+      ...c,
+      description: c.description ?? null,
+      groupName: c.groupName ?? null,
+      ticks: c.ticks ?? [],
+      uptime90: c.uptime90 ?? null,
+      uptime30: c.uptime30 ?? null,
+      source: c.source ?? (c.monitorId ? "monitor" : "manual"),
+      monitorId: c.monitorId ?? null,
+      monitorName: c.monitorName ?? null,
+      responseMs: c.responseMs ?? null,
+      lastIncidentAt: c.lastIncidentAt ?? null,
+    })),
+  };
 }

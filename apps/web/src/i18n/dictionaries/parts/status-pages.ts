@@ -48,7 +48,7 @@ const en = {
   "sp2.descriptionHint": "What a visitor needs to recognise the thing",
   "sp2.sourceLabel": "Status comes from",
   "sp2.sourceMonitor": "A monitor",
-  "sp2.sourceMonitorHint": "automatic status, uptime over 90 days, 90 days of bars",
+  "sp2.sourceMonitorHint": "automatic status, uptime %, 90-day bars",
   "sp2.sourceManual": "Manual",
   "sp2.sourceManualHint": "you set it from incidents",
   "sp2.monitorLabel": "Monitor",

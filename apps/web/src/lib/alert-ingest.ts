@@ -53,6 +53,7 @@ import {
   declareIncidentCore,
 } from "@/lib/incident-writes";
 import { observeService } from "./services";
+import { atlasPagingHoldMinutes } from "./atlas/hold";
 
 export type IngestOutcome = {
   alertId: string;
@@ -391,7 +392,9 @@ export async function planAlert(
   if (priority) attributes.priority = priority.name;
   ctx.priority = priority?.name ?? null;
   const urgency = route?.urgencyOverride ?? priority?.urgency ?? "high";
-  const testMode = Boolean(opts.test) || Boolean(route?.testMode);
+  // A source on trial logs and routes like any other and pages nobody — the
+  // same road a test alert takes, decided by the source rather than a rule.
+  const testMode = Boolean(opts.test) || Boolean(route?.testMode) || source.testMode;
 
   // Escalation rules, each resolved to a path — or to the reason it did not.
   const escalations: EscalationDecision[] = [];
@@ -439,10 +442,18 @@ export async function planAlert(
   let typeName: string | null = null;
   let severityId: string | null = null;
   let severityName: string | null = null;
+  // "From P1": a source that names its own threshold opens an incident from
+  // that priority up. It only speaks when its own choices govern — a rule
+  // that matched says what it says — and without one, urgency decides.
+  const threshold = !rule && source.incidentOpens !== null ? source.incidentFromRank : null;
+  const urgentEnough =
+    threshold !== null && threshold !== undefined
+      ? priority !== null && priority.rank <= threshold
+      : urgency === "high";
   const wants =
     Boolean(template) &&
     !testMode &&
-    (template!.mode === "always" || (template!.mode === "conditional" && urgency === "high"));
+    (template!.mode === "always" || (template!.mode === "conditional" && urgentEnough));
   if (template && template.mode !== "never") {
     const [type] = template.typeId
       ? await tx.select().from(incidentTypes).where(eq(incidentTypes.id, template.typeId))
@@ -963,7 +974,8 @@ async function startOne(tenantId: string, source: SourceRow, e: Escalate): Promi
     incidentId: e.incidentId,
     urgency: e.urgency,
     priorityRank: e.priorityRank,
-    deferMinutes: e.deferMinutes,
+    // At level 4 Atlas tries first: the first page waits while it does (lib/atlas/hold.ts).
+    deferMinutes: Math.max(e.deferMinutes, await atlasPagingHoldMinutes(tenantId, e.incidentId)),
     triggeredBy: { kind: "system", name: source.name },
   }).catch((err: unknown) => {
     console.error("[alerts] escalation start failed", err);

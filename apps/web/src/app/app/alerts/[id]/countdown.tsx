@@ -14,7 +14,7 @@ export function Countdown({ until }: { until: string }) {
   return (
     <span
       data-testid="escalation-countdown"
-      style={{ fontWeight: 700, fontFamily: "var(--font-mono)", color: "var(--dang)" }}
+      style={{ fontWeight: 600, fontFamily: "var(--mono)", color: "var(--dang)" }}
     >
       {Math.floor(s / 60)}:{String(s % 60).padStart(2, "0")}
     </span>

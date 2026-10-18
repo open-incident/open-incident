@@ -14,6 +14,7 @@ import {
   members,
   type Tx,
 } from "@openincident/db";
+import { resolveTargets } from "@openincident/oncall";
 
 export type AlertListRow = {
   id: string;
@@ -26,6 +27,7 @@ export type AlertListRow = {
   service: string | null;
   groupCount: number;
   lastAt: Date;
+  incidentId: string | null;
   incidentNumber: number | null;
   acked: boolean;
   testMode: boolean;
@@ -74,6 +76,7 @@ export async function listAlerts(
     service: a.attributes.service ?? null,
     groupCount: a.groupCount,
     lastAt: a.lastAt,
+    incidentId: a.incidentId,
     incidentNumber: incidentNumber ?? null,
     acked: Boolean(a.ackedAt),
     testMode: a.testMode,
@@ -167,6 +170,10 @@ export async function getAlert(tx: Tx, tenantId: string, id: string) {
     ackedAt: Date | null;
     ackedChannel: string | null;
     isLast: boolean;
+    /** Who the next level pages if nobody acknowledges — null when the path branches or ends. */
+    nextMembers: string[] | null;
+    /** Each level of the path by node id, numbered from 1 — the timeline's "Level 2". */
+    levelOf: Record<string, number>;
   } = null;
   if (esc) {
     const [path] = await tx
@@ -197,6 +204,18 @@ export async function getAlert(tx: Tx, tenantId: string, id: string) {
           .from(members)
           .where(eq(members.id, esc.ackedByMemberId))
       : [];
+    // The level after this one, when the path goes straight to it: the people
+    // it would page at the moment the timer runs out.
+    const nextNode =
+      node?.kind === "level" && node.next
+        ? version?.graph.nodes.find((n) => n.id === node.next)
+        : undefined;
+    const nextMembers =
+      nextNode?.kind === "level"
+        ? (await resolveTargets(tx, tenantId, nextNode.targets, esc.nextTickAt ?? new Date())).map(
+            (m) => m.name,
+          )
+        : null;
     escalation = {
       id: esc.id,
       status: esc.status,
@@ -213,6 +232,8 @@ export async function getAlert(tx: Tx, tenantId: string, id: string) {
       ackedAt: esc.ackedAt,
       ackedChannel: esc.ackedChannel,
       isLast: node?.kind === "level" ? node.next === null : false,
+      nextMembers,
+      levelOf: Object.fromEntries(levels.map((l, i) => [l.id, i + 1])),
     };
   }
   const [acker] = row.ackedByMemberId

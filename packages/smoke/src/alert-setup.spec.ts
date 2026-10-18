@@ -9,8 +9,6 @@ import { MEMBERS, signIn } from "./helpers";
  * alerts, and a payload posted to the endpoint is routed, pages, and opens a
  * triage incident.
  */
-/** The delete button of a row, in the three languages the suite may run in. */
-const DELETE = /^Supprimer$|^Delete$|^Löschen$/;
 
 test.describe("Alert configuration", () => {
   test("a source page, a route page, and a real alert through it all", async ({ page }) => {
@@ -32,7 +30,12 @@ test.describe("Alert configuration", () => {
     const endpoint = (await page.getByTestId("source-endpoint").textContent())?.trim() ?? "";
     const secret = (await page.getByTestId("source-secret").textContent())?.trim() ?? "";
     expect(endpoint).toMatch(/\/api\/ingest\/alerts\/[0-9a-f-]{36}$/);
+    // The secret is shown once, with a line that waits for the first alert.
+    await expect(page.getByTestId("source-first-alert")).toHaveAttribute("data-state", "waiting");
+    // "I've added it": back to the sources, where the new one has its card.
     await page.getByTestId("source-configure").click();
+    await page.waitForURL(/\/app\/alerts\/sources(\?|$)/);
+    await page.getByTestId("source-row").filter({ hasText: name }).click();
     await expect(page.getByTestId("source-title")).toHaveText(name);
     const sourceUrl = page.url();
     await expect(page.getByTestId("source-waiting")).toHaveAttribute("data-state", "waiting");
@@ -90,15 +93,15 @@ test.describe("Alert configuration", () => {
     await expect(page.getByTestId("alert-notes")).toBeVisible();
     await page
       .getByTestId("alert-note-form")
-      .locator("textarea")
+      .locator('input[name="body"]')
       .fill("Setup smoke: checked the deploy, rolled back.");
     await page.getByTestId("alert-note-form").getByRole("button").click();
     await expect(page.getByTestId("alert-note")).toContainText("Setup smoke");
 
-    // Routes: the list in order, the editor with its preview.
-    await page.goto("/app/settings/alert-routes");
+    // Rules: the list in order, then the full editor ("More options…") with its preview.
+    await page.goto("/app/settings/rules");
     await expect(page.getByTestId("route-row").first()).toBeVisible();
-    await page.getByTestId("route-new").click();
+    await page.goto("/app/settings/rules/new");
     const ruleName = `Setup route ${Date.now().toString(36)}`;
     await page.getByTestId("route-name").fill(ruleName);
     await page.getByTestId("conditions-conditions-add").click();
@@ -107,7 +110,7 @@ test.describe("Alert configuration", () => {
     await page.getByTestId("route-preview-run").click();
     await expect(page.getByTestId("route-preview")).toContainText(/Setup: checkout/);
     await page.getByTestId("route-save").click();
-    await expect(page).toHaveURL(/alert-routes\?saved=/);
+    await expect(page).toHaveURL(/\/app\/settings\/rules(\?|$)/);
 
     // The source's three choices are the source's own columns, not a rule.
     // They used to be written as a route scoped to that source and slipped in
@@ -116,16 +119,21 @@ test.describe("Alert configuration", () => {
     // Nothing in this list is named after a source any more.
     await expect(page.getByTestId("route-row").filter({ hasText: name })).toHaveCount(0);
 
-    // Attributes: the registry with its coverage.
-    await page.goto("/app/settings/alert-attributes");
-    const attributes = page.getByTestId("attribute-row");
-    const beforeAttributes = await attributes.count();
-    expect(beforeAttributes).toBeGreaterThanOrEqual(5);
-    await page.getByTestId("attribute-new").click();
-    await page.locator('[data-testid="attribute-form"] input[name="key"]').fill("customer");
-    await page.locator('[data-testid="attribute-form"] input[name="label"]').fill("Customer");
-    await page.getByTestId("attribute-save").click();
-    await expect(attributes).toHaveCount(beforeAttributes + 1);
+    // Labels: observed in the alerts — the ones just sent among them — and
+    // read the way the pipeline reads them, which a manager can change.
+    await page.goto("/app/settings/labels");
+    const environment = page.locator('[data-testid="label-row"][data-key="environment"]');
+    await expect(environment).toBeVisible();
+    const required = environment.getByTestId("label-required-chip");
+    const wasRequired = (await required.count()) > 0;
+    const flipRequired = async () => {
+      await environment.click();
+      await page.getByTestId("label-required").dispatchEvent("click");
+      await page.getByTestId("label-dialog-submit").click();
+      await expect(page.getByTestId("label-dialog")).toHaveCount(0);
+    };
+    await flipRequired();
+    await expect(required).toHaveCount(wasRequired ? 0 : 1);
 
     /*
      * Put the workspace back. Everything above is written for a workspace the
@@ -134,15 +142,18 @@ test.describe("Alert configuration", () => {
      * keeps deciding — and the next run finds a workspace that is no longer
      * the one this test describes.
      */
-    await attributes.filter({ hasText: "customer" }).getByRole("button", { name: DELETE }).click();
-    await expect(attributes).toHaveCount(beforeAttributes);
+    await flipRequired();
+    await expect(required).toHaveCount(wasRequired ? 1 : 0);
 
-    await page.goto("/app/settings/alert-routes");
+    await page.goto("/app/settings/rules");
     const rule = page.getByTestId("route-row").filter({ hasText: ruleName });
-    // Deleting waits behind the row's "more" glyph.
-    await rule.locator("summary").click();
-    await rule.getByRole("button", { name: DELETE }).click();
-    await expect(rule).toHaveCount(0);
+    // Deleting is on the rule's own page, and asks first.
+    const ruleId = await rule.getAttribute("data-rule-id");
+    await page.goto(`/app/settings/rules/${ruleId}`);
+    await page.getByTestId("rule-delete").click();
+    await page.getByTestId("rule-delete-dialog-submit").click();
+    await expect(page).toHaveURL(/\/app\/settings\/rules(\?|$)/);
+    await expect(page.getByTestId("route-row").filter({ hasText: ruleName })).toHaveCount(0);
 
     // Closed through the door they came in: the source's own endpoint.
     for (const key of [testKey, realKey]) {
@@ -152,7 +163,9 @@ test.describe("Alert configuration", () => {
       });
     }
     await page.goto(sourceUrl);
-    // Deleting sits in the header now and asks first; the dialog is accepted.
+    // Deleting sits under Advanced, with pausing and the trial mode, and asks
+    // first; the browser's dialog is accepted.
+    await page.getByTestId("source-advanced").click();
     page.once("dialog", (d) => d.accept());
     await page.getByTestId("source-delete").click();
     await expect(page).toHaveURL(/\/app\/alerts\/sources/);
@@ -161,34 +174,6 @@ test.describe("Alert configuration", () => {
   });
 });
 
-/**
- * The welcome screen's tool grid, and the field that used to lag behind it.
- *
- * The name field defaulted to the picked tool's label with `defaultValue`,
- * which React applies at mount and never again. The form stays mounted while
- * somebody tries the tiles, so picking one tool and then another created a
- * source named after the first and parsed as the second — and the alerts
- * screen printed a sample payload for a tool the source was not named after.
- */
-test("the source name follows the tool the second click picked", async ({ page }) => {
-  await signIn(page, MEMBERS.owner);
-  await page.goto("/app");
-  // The step is a collapsed card until it is the one being worked on, and the
-  // grid lives inside it — a workspace that already has a source never opens
-  // it, which is why this runs on the throwaway one.
-  const header = page.getByText(
-    /D'où viennent les alertes|Where do alerts come from|Woher kommen die Alarme/,
-  );
-  if (await header.count()) await header.first().click();
-  const grid = page.getByTestId("onboarding-tool-datadog");
-  test.skip(!(await grid.isVisible().catch(() => false)), "the welcome step is already done here");
-
-  await grid.click();
-  const form = page.getByTestId("onboarding-source");
-  await expect(form.locator('input[name="name"]')).toHaveValue("Datadog");
-
-  // Change one's mind: the hidden kind and the visible name must agree.
-  await page.getByTestId("onboarding-tool-grafana").click();
-  expect(await form.locator('input[name="kind"]').inputValue()).toBe("grafana");
-  await expect(form.locator('input[name="name"]')).toHaveValue("Grafana");
-});
+// The welcome screen's tool grid (the source follows the tool the second click
+// picked) is checked in home.spec.ts, on a workspace of its own that really is
+// empty — here every step was already done and the check always skipped.

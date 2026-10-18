@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
+  alertEvents,
   alertSources,
   alerts,
   escalationEvents,
@@ -13,8 +14,12 @@ import { getT } from "@/i18n/server";
 import { isManager, requireMember } from "@/lib/session";
 import { requestOrigin } from "@/lib/tenant";
 import { listAlerts, type AlertListRow } from "@/lib/alerts";
-import { curlSnippet } from "@/lib/alert-sources";
+import { sourceKindMeta } from "@/lib/alert-sources";
+import { alertAtlasStates } from "@/lib/atlas/queries";
+import { AtlasAlertBadge } from "@/components/atlas/alert";
+import { sharedRoute } from "./sources/choices";
 import { priorityChip } from "./tone";
+import { whenCompact } from "./when";
 
 type Tab = "firing" | "acked" | "resolved";
 
@@ -24,19 +29,19 @@ type Tab = "firing" | "acked" | "resolved";
  * Firing is what nobody has taken yet, Acknowledged what somebody has, and
  * Resolved what closed itself or was closed. The row says in one line who is
  * being paged for it, because that is the only question a responder has in
- * front of a list of alerts.
+ * front of a list of alerts — and, when Atlas took one, that it did.
  */
 export default async function AlertsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; tab?: string }>;
 }) {
   const { tenant, member } = await requireMember();
   const t = await getT();
   const params = await searchParams;
   const manages = isManager(member);
-  const tab: Tab =
-    params.view === "resolved" ? "resolved" : params.view === "acked" ? "acked" : "firing";
+  const asked = params.tab ?? params.view;
+  const tab: Tab = asked === "resolved" ? "resolved" : asked === "acked" ? "acked" : "firing";
 
   const data = await withTenant(tenant.id, async (tx) => {
     const [counts] = await tx
@@ -62,7 +67,7 @@ export default async function AlertsPage({
     const ids = rows.map((r) => r.id);
     const ackers = ids.length
       ? await tx
-          .select({ id: alerts.id, name: members.name })
+          .select({ id: alerts.id, memberId: alerts.ackedByMemberId, name: members.name })
           .from(alerts)
           .leftJoin(members, eq(members.id, alerts.ackedByMemberId))
           .where(inArray(alerts.id, ids))
@@ -73,9 +78,11 @@ export default async function AlertsPage({
             id: escalations.id,
             alertId: escalations.alertId,
             status: escalations.status,
+            nextTickAt: escalations.nextTickAt,
           })
           .from(escalations)
           .where(and(eq(escalations.tenantId, tenant.id), inArray(escalations.alertId, ids)))
+          .orderBy(desc(escalations.startedAt))
       : [];
     const escIds = escRows.map((e) => e.id);
     const notified = escIds.length
@@ -93,26 +100,48 @@ export default async function AlertsPage({
           )
           .orderBy(asc(escalationEvents.occurredAt))
       : [];
+    // Who closed a resolved alert: a person, or the tool saying it recovered.
+    const closers =
+      tab === "resolved" && ids.length
+        ? await tx
+            .select({
+              alertId: alertEvents.alertId,
+              payload: alertEvents.payload,
+              actorName: alertEvents.actorName,
+            })
+            .from(alertEvents)
+            .where(and(inArray(alertEvents.alertId, ids), eq(alertEvents.kind, "resolved")))
+            .orderBy(asc(alertEvents.occurredAt))
+        : [];
     const [sourceCount] = await tx
       .select({ n: sql<number>`count(*)::int`.mapWith(Number) })
       .from(alertSources)
       .where(and(eq(alertSources.tenantId, tenant.id), eq(alertSources.managed, false)));
-    const [sample] = await tx
+    const sources = await tx
       .select({ id: alertSources.id, kind: alertSources.kind })
       .from(alertSources)
       .where(and(eq(alertSources.tenantId, tenant.id), eq(alertSources.managed, false)))
-      .orderBy(asc(alertSources.createdAt))
-      .limit(1);
+      .orderBy(asc(alertSources.createdAt));
+    const shared = await sharedRoute(tx, tenant.id);
     return {
       counts: counts ?? { firing: 0, acked: 0, resolved: 0 },
       rows,
       ackers,
       escRows,
       notified,
+      closers,
       sourceCount: sourceCount?.n ?? 0,
-      sample: sample ?? null,
+      // The empty state's curl: an HTTP source reads the shortest payload.
+      sample: sources.find((s) => s.kind === "http") ?? sources[0] ?? null,
+      windowMinutes: shared?.grouping?.windowMinutes ?? 5,
     };
   });
+
+  // Atlas, for the whole list at once.
+  const atlas = await alertAtlasStates(
+    tenant.id,
+    data.rows.map((r) => ({ alertId: r.id, incidentId: r.incidentId })),
+  );
 
   // The last people a level really notified, per escalation — the "Paging …" column.
   const pagedBy = new Map<string, string[]>();
@@ -120,26 +149,49 @@ export default async function AlertsPage({
     const who = Array.isArray(e.payload.members) ? (e.payload.members as string[]) : [];
     if (who.length) pagedBy.set(e.escalationId, who);
   }
-  const escOf = new Map(data.escRows.map((e) => [e.alertId ?? "", e]));
-  const ackerOf = new Map(data.ackers.map((a) => [a.id, a.name]));
+  const escOf = new Map<string, (typeof data.escRows)[number]>();
+  for (const e of data.escRows) if (e.alertId && !escOf.has(e.alertId)) escOf.set(e.alertId, e);
+  const ackerOf = new Map(data.ackers.map((a) => [a.id, a]));
+  const closerOf = new Map(data.closers.map((c) => [c.alertId, c]));
+  const now = new Date();
+
+  /** Somebody is being paged for it right now — the row's dot pulses. */
+  const paging = (a: AlertListRow): boolean => {
+    if (a.status !== "firing" || a.acked || a.testMode) return false;
+    const esc = escOf.get(a.id);
+    return Boolean(esc && esc.status === "pending" && pagedBy.get(esc.id)?.length);
+  };
 
   const who = (a: AlertListRow): string => {
     if (a.testMode) return t("alt2.list.who.test");
-    if (a.status === "resolved")
-      return a.incidentNumber
-        ? t("alt2.list.who.resolvedIncident", { number: a.incidentNumber })
-        : t("alt2.list.who.resolved");
+    if (a.status === "resolved") {
+      const state = atlas.get(a.id);
+      if (state && (state.state === "alone" || state.state === "told") && a.incidentNumber)
+        return t("alst.list.who.byAtlas", { number: a.incidentNumber });
+      if (a.incidentNumber)
+        return t("alt2.list.who.resolvedIncident", { number: a.incidentNumber });
+      const closer = closerOf.get(a.id);
+      if (closer && closer.payload.by === "member" && closer.actorName)
+        return t("alst.list.who.resolvedBy", { name: closer.actorName });
+      return t("alst.list.who.autoResolved");
+    }
     if (a.acked) {
-      const name = ackerOf.get(a.id);
-      return name ? t("alt2.list.who.acked", { name }) : t("alt2.list.who.ackedNoName");
+      const acker = ackerOf.get(a.id);
+      if (acker?.memberId === member.id) return t("alst.list.who.ackedByYou");
+      return acker?.name
+        ? t("alt2.list.who.acked", { name: acker.name })
+        : t("alt2.list.who.ackedNoName");
     }
     const esc = escOf.get(a.id);
     if (!esc) return t("alt2.list.who.nobody");
     if (esc.status !== "pending") return t("alt2.list.who.escalationEnded");
     const names = pagedBy.get(esc.id) ?? [];
-    return names.length
-      ? t("alt2.list.who.paging", { name: names.join(", ") })
-      : t("alt2.list.who.pagingSoon");
+    if (names.length) return t("alt2.list.who.paging", { name: names.join(", ") });
+    // Nobody notified yet and a tick ahead: the path is waiting — working
+    // hours, a delay — and says until when.
+    if (esc.nextTickAt && esc.nextTickAt.getTime() > now.getTime())
+      return t("alst.list.who.waits", { when: whenCompact(t, esc.nextTickAt, now) });
+    return t("alt2.list.who.pagingSoon");
   };
 
   const tabs: Array<{ id: Tab; label: string; count: number }> = [
@@ -154,7 +206,11 @@ export default async function AlertsPage({
     nextUrl: new URL(`http://${h.get("host") ?? "localhost"}/`),
   });
   const curl = data.sample
-    ? curlSnippet(`${origin}/api/ingest/alerts/${data.sample.id}`, data.sample.kind)
+    ? `curl -X POST ${origin}/api/ingest/alerts/${data.sample.id} -H "x-oi-secret: <secret>" -d '${
+        data.sample.kind === "http"
+          ? `{"title":"hello","priority":"P3"}`
+          : JSON.stringify(sourceKindMeta(data.sample.kind).sample("hello", "1"))
+      }'`
     : null;
 
   return (
@@ -196,7 +252,8 @@ export default async function AlertsPage({
               <Link
                 key={x.id}
                 aria-current={on ? "page" : undefined}
-                href={`/app/alerts?view=${x.id}`}
+                href={`/app/alerts?tab=${x.id}`}
+                data-testid={`alerts-tab-${x.id}`}
                 style={{
                   height: 28,
                   padding: "0 12px",
@@ -224,6 +281,7 @@ export default async function AlertsPage({
         <Link
           href="/app/alerts/sources"
           className="oi-hover"
+          data-testid="alerts-sources"
           style={{
             height: 32,
             padding: "0 13px",
@@ -274,6 +332,7 @@ export default async function AlertsPage({
       >
         {data.rows.map((a) => {
           const chip = priorityChip(a.priorityRank);
+          const hot = paging(a);
           return (
             <Link
               key={a.id}
@@ -295,9 +354,7 @@ export default async function AlertsPage({
             >
               <span
                 aria-hidden
-                className={
-                  a.status === "firing" && !a.acked && !a.testMode ? "oi-pulse" : undefined
-                }
+                className={hot ? "oi-pulse" : undefined}
                 style={{
                   width: 8,
                   height: 8,
@@ -351,6 +408,7 @@ export default async function AlertsPage({
                       {t("alt2.list.test")}
                     </span>
                   )}
+                  <AtlasAlertBadge state={atlas.get(a.id)} />
                 </span>
                 <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
                   {a.sourceName} · {t("alt2.list.grouped", { count: a.groupCount })}
@@ -381,13 +439,14 @@ export default async function AlertsPage({
                   fontVariantNumeric: "tabular-nums",
                 }}
               >
-                {t.fmt.relativeCompact(a.lastAt)}
+                {whenCompact(t, a.lastAt, now)}
               </span>
             </Link>
           );
         })}
         {data.rows.length === 0 && (
           <div
+            data-testid="alerts-empty"
             style={{
               padding: 36,
               textAlign: "center",
@@ -416,9 +475,8 @@ export default async function AlertsPage({
                   background: "var(--sunk)",
                   borderRadius: 8,
                   padding: "8px 12px",
-                  textAlign: "left",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-all",
+                  maxWidth: "100%",
+                  overflowWrap: "anywhere",
                 }}
               >
                 {curl}
@@ -448,7 +506,9 @@ export default async function AlertsPage({
           </div>
         )}
       </div>
-      <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{t("alt2.list.footnote")}</div>
+      <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
+        {t("alst.list.footnote", { window: t.fmt.duration(data.windowMinutes) })}
+      </div>
     </div>
   );
 }

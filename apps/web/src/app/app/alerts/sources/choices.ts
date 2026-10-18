@@ -22,6 +22,7 @@ import {
   escalationPaths,
   members,
   schedules,
+  teamMembers,
   teams,
   type EscalationGraph,
   type EscalationRule,
@@ -51,7 +52,14 @@ export type SourceChoices = {
   own: boolean;
   page: PageChoice;
   incident: IncidentChoice;
+  /**
+   * With `incident: "urgent"`, the least important priority rank that opens
+   * one — "From P1". Null: whatever the workspace marked urgent decides.
+   */
+  fromRank: number | null;
   autoResolve: boolean;
+  /** The source is on trial: logged and routed, nobody paged. */
+  testMode: boolean;
 };
 
 const EMPTY_TEMPLATE: IncidentTemplate = {
@@ -162,7 +170,9 @@ export async function sourceChoices(
     .select({
       escalations: alertSources.escalations,
       incidentOpens: alertSources.incidentOpens,
+      incidentFromRank: alertSources.incidentFromRank,
       autoResolve: alertSources.autoResolve,
+      testMode: alertSources.testMode,
     })
     .from(alertSources)
     .where(and(eq(alertSources.tenantId, tenantId), eq(alertSources.id, sourceId)));
@@ -186,6 +196,8 @@ export async function sourceChoices(
       source?.escalations != null || source?.incidentOpens != null || source?.autoResolve != null,
     page: await readPage(tx, tenantId, source?.escalations ?? fallbackRules),
     incident: modeToChoice(source?.incidentOpens ?? (template ? template.mode : "never")),
+    fromRank: source?.incidentOpens === "conditional" ? (source.incidentFromRank ?? null) : null,
+    testMode: source?.testMode ?? false,
     autoResolve:
       source?.autoResolve ??
       (route ? route.resolveClosesEscalation && (template?.declineOnResolve ?? true) : true),
@@ -209,8 +221,29 @@ export async function urgentFrom(tx: Tx, tenantId: string): Promise<string | nul
   return rows.find((p) => p.urgency === "high")?.name ?? null;
 }
 
-/** The teams a source can hand its alerts to: the ones whose policy really pages. */
-export async function pageableTeams(tx: Tx, tenantId: string) {
+/** The workspace's alert severities, most important first — the "From P2" / "From P1" chips. */
+export async function priorityLevels(
+  tx: Tx,
+  tenantId: string,
+): Promise<Array<{ rank: number; name: string; urgent: boolean }>> {
+  const rows = await tx
+    .select({
+      rank: alertPriorities.rank,
+      name: alertPriorities.name,
+      urgency: alertPriorities.urgency,
+    })
+    .from(alertPriorities)
+    .where(eq(alertPriorities.tenantId, tenantId))
+    .orderBy(asc(alertPriorities.rank));
+  return rows.map((r) => ({ rank: r.rank, name: r.name, urgent: r.urgency === "high" }));
+}
+
+/**
+ * The teams a source can hand its alerts to: the ones whose policy really
+ * pages. The reader's own teams come first — the chip shows the first one,
+ * and "Platform ▾" is the likelier answer for somebody who is in Platform.
+ */
+export async function pageableTeams(tx: Tx, tenantId: string, readerId?: string) {
   const rows = await tx
     .select({
       id: teams.id,
@@ -222,8 +255,19 @@ export async function pageableTeams(tx: Tx, tenantId: string) {
     .leftJoin(escalationPaths, eq(escalationPaths.id, teams.policyPathId))
     .where(eq(teams.tenantId, tenantId))
     .orderBy(asc(teams.name));
+  const mine = readerId
+    ? new Set(
+        (
+          await tx
+            .select({ teamId: teamMembers.teamId })
+            .from(teamMembers)
+            .where(and(eq(teamMembers.tenantId, tenantId), eq(teamMembers.memberId, readerId)))
+        ).map((r) => r.teamId),
+      )
+    : new Set<string>();
   return rows
     .filter((r) => r.pathId && r.published)
+    .sort((a, b) => Number(mine.has(b.id)) - Number(mine.has(a.id)))
     .map((r) => ({ id: r.id, name: r.name, pathId: r.pathId! }));
 }
 

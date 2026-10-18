@@ -26,6 +26,8 @@ test.describe("Internal status page", () => {
     const anon = await request.newContext();
     expect((await anon.get(STATUS_BASE_URL)).status()).toBe(200);
 
+    // Visibility is a page setting, one click from the status screen.
+    await page.getByTestId("page-settings").click();
     await page.getByTestId("status-visibility").selectOption("internal");
     await page.locator('form[data-testid="brand-form"] button[type="submit"]').first().click();
     await page.waitForURL(/saved=1/);
@@ -33,6 +35,7 @@ test.describe("Internal status page", () => {
     expect((await anon.get(`${STATUS_BASE_URL}/rss.xml`)).status()).toBe(404);
 
     // The member's door: the admin link now goes through /open.
+    await page.goto("/app/status-pages");
     const door = page.locator('a[href$="/open"]').first();
     await expect(door).toBeVisible();
     const href = await door.getAttribute("href");
@@ -45,7 +48,7 @@ test.describe("Internal status page", () => {
       0,
     );
 
-    await page.goto("/app/status-pages");
+    await page.goto("/app/status-pages?tab=settings");
     await page.getByTestId("status-visibility").selectOption("public");
     await page.locator('form[data-testid="brand-form"] button[type="submit"]').first().click();
     await page.waitForURL(/saved=1/);
