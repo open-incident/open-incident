@@ -62,7 +62,7 @@ export function DeclareForm({
   types: TypeOpt[];
   severities: Array<{ id: string; name: string; description: string | null }>;
   /** The services the workspace has learned about — what an incident is about. */
-  services: Array<{ id: string; key: string }>;
+  services: Array<{ id: string; key: string; ownerTeamName?: string | null }>;
   fields: FieldOpt[];
   timeZone: string;
   initial?: {
@@ -82,6 +82,9 @@ export function DeclareForm({
   const [mode, setMode] = useState<"live" | "retrospective" | "test">("live");
   const [name, setName] = useState(initial?.name ?? "");
   const [summary, setSummary] = useState(initial?.summary ?? "");
+  const [serviceId, setServiceId] = useState(initial?.serviceId ?? "");
+  // The optional fields stay folded, as the design's three questions come first.
+  const [details, setDetails] = useState(Boolean(initial?.summary));
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -101,6 +104,9 @@ export function DeclareForm({
       ),
     [fields, typeId, form],
   );
+  const optional =
+    typeFields.filter((f) => !req(f.key)).length + (shows("summary") && !req("summary") ? 1 : 0);
+  const service = services.find((x) => x.id === serviceId);
 
   useEffect(() => {
     const q = name.trim();
@@ -238,7 +244,7 @@ export function DeclareForm({
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={t("incidents.declare.namePlaceholder")}
+              placeholder={t("incv2.decl.placeholder")}
               className="oi-field"
               style={{ ...control, fontSize: 14 }}
             />
@@ -300,7 +306,7 @@ export function DeclareForm({
                   required={req("severity")}
                   defaultValue={severities[2]?.id ?? severities[0]?.id}
                   className="oi-field"
-                  style={control}
+                  style={{ ...control, padding: "0 9px" }}
                 >
                   {severities.map((sv) => (
                     <option key={sv.id} value={sv.id}>
@@ -317,9 +323,10 @@ export function DeclareForm({
                 <select
                   name="serviceId"
                   required={req("service")}
-                  defaultValue=""
+                  value={serviceId}
+                  onChange={(e) => setServiceId(e.target.value)}
                   className="oi-field"
-                  style={{ ...control, fontFamily: "var(--mono)", fontSize: 12.5 }}
+                  style={{ ...control, padding: "0 9px" }}
                 >
                   <option value="">{t("inc2.decl.serviceNone")}</option>
                   {services.map((s) => (
@@ -337,27 +344,9 @@ export function DeclareForm({
             )}
           </div>
 
-          {types.length > 1 && (
-            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <span style={label}>{t("incidents.declare.type")}</span>
-              <select
-                name="typeId"
-                value={typeId}
-                onChange={(e) => setTypeId(e.target.value)}
-                className="oi-field"
-                style={control}
-              >
-                {types.map((ty) => (
-                  <option key={ty.id} value={ty.id}>
-                    {ty.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
           {types.length <= 1 && <input type="hidden" name="typeId" value={typeId} />}
 
-          {shows("summary") && (
+          {shows("summary") && (req("summary") || details) && (
             <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <span style={{ ...label, display: "flex", alignItems: "center", gap: 6 }}>
                 <span>{t("incidents.declare.summary")}</span>
@@ -425,51 +414,53 @@ export function DeclareForm({
             </label>
           )}
 
-          {typeFields.map((f) => (
-            <label key={f.id} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <span style={label}>
-                {f.label}
-                {!req(f.key) && (
-                  <span style={{ fontWeight: 400, textTransform: "none" }}>
-                    {" "}
-                    — {t("common.optional")}
-                  </span>
+          {typeFields
+            .filter((f) => req(f.key) || details)
+            .map((f) => (
+              <label key={f.id} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <span style={label}>
+                  {f.label}
+                  {!req(f.key) && (
+                    <span style={{ fontWeight: 400, textTransform: "none" }}>
+                      {" "}
+                      — {t("common.optional")}
+                    </span>
+                  )}
+                </span>
+                {f.type === "select" ? (
+                  <select
+                    name={`field.${f.key}`}
+                    required={req(f.key)}
+                    defaultValue=""
+                    className="oi-field"
+                    style={control}
+                  >
+                    <option value="">—</option>
+                    {f.options.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                ) : f.type === "long_text" ? (
+                  <textarea
+                    name={`field.${f.key}`}
+                    required={req(f.key)}
+                    rows={3}
+                    className="oi-field"
+                    style={{ ...control, height: "auto", padding: "10px 12px", resize: "vertical" }}
+                  />
+                ) : (
+                  <input
+                    name={`field.${f.key}`}
+                    required={req(f.key)}
+                    type={f.type === "number" ? "number" : f.type === "link" ? "url" : "text"}
+                    className="oi-field"
+                    style={control}
+                  />
                 )}
-              </span>
-              {f.type === "select" ? (
-                <select
-                  name={`field.${f.key}`}
-                  required={req(f.key)}
-                  defaultValue=""
-                  className="oi-field"
-                  style={control}
-                >
-                  <option value="">—</option>
-                  {f.options.map((o) => (
-                    <option key={o} value={o}>
-                      {o}
-                    </option>
-                  ))}
-                </select>
-              ) : f.type === "long_text" ? (
-                <textarea
-                  name={`field.${f.key}`}
-                  required={req(f.key)}
-                  rows={3}
-                  className="oi-field"
-                  style={{ ...control, height: "auto", padding: "10px 12px", resize: "vertical" }}
-                />
-              ) : (
-                <input
-                  name={`field.${f.key}`}
-                  required={req(f.key)}
-                  type={f.type === "number" ? "number" : f.type === "link" ? "url" : "text"}
-                  className="oi-field"
-                  style={control}
-                />
-              )}
-            </label>
-          ))}
+              </label>
+            ))}
 
           {mode === "retrospective" && (
             <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -485,8 +476,42 @@ export function DeclareForm({
           )}
 
           <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
-            {t("inc2.decl.line", { type: type?.name ?? "—" })}
-            {type?.privateByDefault ? ` ${t("incidents.declare.privateNote")}` : ""}
+            {t("incv2.decl.type")}{" "}
+            {types.length > 1 ? (
+              <select
+                name="typeId"
+                value={typeId}
+                onChange={(e) => setTypeId(e.target.value)}
+                aria-label={t("incidents.declare.type")}
+                data-testid="declare-type"
+                style={{
+                  appearance: "none",
+                  WebkitAppearance: "none",
+                  border: 0,
+                  borderBottom: "1px dashed var(--line)",
+                  background: "transparent",
+                  font: "inherit",
+                  color: "var(--ink-2)",
+                  fontWeight: 600,
+                  padding: 0,
+                  cursor: "pointer",
+                }}
+              >
+                {types.map((ty) => (
+                  <option key={ty.id} value={ty.id}>
+                    {ty.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              (type?.name ?? "—")
+            )}
+            {" · "}
+            {t("incv2.decl.lead")}
+            {service?.ownerTeamName
+              ? ` · ${t("incv2.decl.owner", { service: service.key, team: service.ownerTeamName })}`
+              : ""}
+            .{type?.privateByDefault ? ` ${t("incidents.declare.privateNote")}` : ""}
           </div>
 
           {error && (
@@ -516,6 +541,25 @@ export function DeclareForm({
             background: "var(--sunk)",
           }}
         >
+          {optional > 0 && !details ? (
+            <button
+              type="button"
+              data-testid="declare-details"
+              onClick={() => setDetails(true)}
+              style={{
+                background: "none",
+                border: 0,
+                padding: 0,
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--ink-3)",
+                cursor: "pointer",
+              }}
+              className="oi-link"
+            >
+              + {t("incv2.decl.details", { count: optional })}
+            </button>
+          ) : null}
           <span style={{ flex: 1 }} />
           <button
             type="button"

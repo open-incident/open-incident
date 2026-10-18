@@ -10,8 +10,9 @@ import {
   type IncidentRow,
 } from "@/lib/incidents";
 import { listServices } from "@/lib/services";
-import { liveAnnouncements } from "@/lib/announcements";
 import { aiAllowance } from "@/lib/ai-capabilities";
+import { reviewCount } from "@/lib/atlas/queries";
+import { AtlasReviewTab } from "@/components/atlas/review-tab";
 import { connectedTrackers } from "@/lib/trackers";
 import { avatarTone, initials } from "@/lib/avatar";
 import { FollowUpRowView } from "./follow-up-row";
@@ -19,19 +20,21 @@ import { DeclareForm } from "./new/declare-form";
 import { servicesOfIncidents } from "./services-of";
 import { severityTone, statusInk } from "./tone";
 
-const TABS = ["open", "triage", "post", "all"] as const;
+const TABS = ["atlas", "open", "triage", "post", "all"] as const;
 type Tab = (typeof TABS)[number];
 
 /**
- * IN-01 — the incidents list of the V2 design: the title, the four views as a
- * segmented control with their counts, the declare button, then one 7-column
- * row per incident inside a single card — number, severity, title, status,
- * service, lead, last activity.
+ * IN-01 — the incidents list of the V2 design: the title, the five views as a
+ * segmented control with their counts — first the autonomous resolutions
+ * Atlas asks a person to read (`?tab=atlas`), then open, triage,
+ * post-incident and all — the declare button, then one 7-column row per
+ * incident inside a single card: number, severity, title, status, service,
+ * lead, last activity.
  *
  * The declaration modal opens over this list (`?declare=1`, what the rail and
  * the palette push), and the cross-incident follow-ups list stays reachable at
  * `?view=follow-ups` — it is a different object than an incident, so the
- * design's four tabs do not carry it.
+ * design's tabs do not carry it.
  */
 export default async function IncidentsPage({
   searchParams,
@@ -66,10 +69,6 @@ export default async function IncidentsPage({
         tenant.id,
         rows.map((r) => r.id),
       ),
-      // The banner the announcement rules publish. It belongs above the list
-      // the reader already opens, and the rules are configurable in Settings:
-      // dropping it would leave a feature with nowhere to appear.
-      announcements: followUpsView ? [] : await liveAnnouncements(tx, tenant.id),
       followUps: followUpsView ? await listFollowUps(tx, tenant.id) : [],
       policy: followUpsView ? await followUpPolicy(tx, tenant.id) : null,
       trackers: followUpsView ? await connectedTrackers(tx, tenant.id) : [],
@@ -83,8 +82,9 @@ export default async function IncidentsPage({
       }))
     : null;
   const declareAi = declaring ? (await aiAllowance(tenant.id, "declare_suggest")).ok : false;
+  const toReview = await reviewCount(tenant.id);
 
-  const groups: Record<Tab, IncidentRow[]> = {
+  const groups: Record<Exclude<Tab, "atlas">, IncidentRow[]> = {
     open: data.rows.filter((r) => r.phase === "active"),
     triage: data.rows.filter((r) => r.phase === "triage"),
     post: data.rows.filter((r) => r.phase === "post_incident"),
@@ -94,7 +94,14 @@ export default async function IncidentsPage({
     q.length === 0 ||
     r.name.toLowerCase().includes(q.toLowerCase()) ||
     String(r.number).includes(q);
-  const rows = groups[tab].filter(matches);
+  const rows = tab === "atlas" ? [] : groups[tab].filter(matches);
+  const counts: Record<Tab, number> = {
+    atlas: toReview,
+    open: groups.open.length,
+    triage: groups.triage.length,
+    post: groups.post.length,
+    all: groups.all.length,
+  };
 
   const href = (x: Tab) =>
     `/app/incidents${x === "open" ? "" : `?tab=${x}`}${q ? `${x === "open" ? "?" : "&"}q=${encodeURIComponent(q)}` : ""}`;
@@ -134,10 +141,11 @@ export default async function IncidentsPage({
         >
           {(
             [
-              ["open", t("inc2.tab.open"), groups.open.length],
-              ["triage", t("inc2.tab.triage"), groups.triage.length],
-              ["post", t("inc2.tab.post"), groups.post.length],
-              ["all", t("inc2.tab.all"), groups.all.length],
+              ["atlas", t("incv2.tab.atlas"), counts.atlas],
+              ["open", t("inc2.tab.open"), counts.open],
+              ["triage", t("inc2.tab.triage"), counts.triage],
+              ["post", t("inc2.tab.post"), counts.post],
+              ["all", t("inc2.tab.all"), counts.all],
             ] as Array<[Tab, string, number]>
           ).map(([id, label, count]) => {
             const on = id === tab && !followUpsView;
@@ -193,72 +201,7 @@ export default async function IncidentsPage({
         )}
       </div>
 
-      {data.announcements.length > 0 && (
-        <section
-          aria-label={t("incidents.announcementsLabel")}
-          style={{ display: "flex", flexDirection: "column", gap: 6 }}
-        >
-          {data.announcements.map((a) => (
-            <Link
-              key={a.id}
-              href={`/app/incidents/${a.incidentNumber}`}
-              data-testid="announcement"
-              className="oi-hover-edge"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                background: "var(--brand-t)",
-                border: "1px solid var(--brand-b)",
-                borderRadius: "var(--radius-card)",
-                padding: "10px 14px",
-                fontSize: 13,
-                color: "inherit",
-                textDecoration: "none",
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  letterSpacing: ".08em",
-                  color: "var(--brand)",
-                  background: "var(--panel)",
-                  borderRadius: 6,
-                  padding: "2px 7px",
-                  flex: "none",
-                }}
-              >
-                {t("incidents.announcementTag")}
-              </span>
-              <span
-                style={{
-                  fontFamily: "var(--mono)",
-                  fontSize: 11.5,
-                  color: "var(--ink-3)",
-                  flex: "none",
-                }}
-              >
-                INC-{a.incidentNumber}
-                {a.severity ? ` · ${a.severity}` : ""}
-              </span>
-              <span
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {a.body}
-              </span>
-            </Link>
-          ))}
-        </section>
-      )}
-
-      {q.length > 0 && !followUpsView && (
+      {q.length > 0 && !followUpsView && tab !== "atlas" && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5 }}>
           <span style={{ color: "var(--ink-2)" }}>{t("inc2.searchResults", { q })}</span>
           <Link href={href(tab)} className="oi-link" style={{ fontWeight: 600 }}>
@@ -267,7 +210,9 @@ export default async function IncidentsPage({
         </div>
       )}
 
-      {followUpsView ? (
+      {tab === "atlas" && !followUpsView ? (
+        <AtlasReviewTab tenantId={tenant.id} memberId={member.id} />
+      ) : followUpsView ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {data.policy?.p1Days && (
             <div
@@ -409,7 +354,7 @@ export default async function IncidentsPage({
                   style={{
                     fontSize: 11.5,
                     fontWeight: 600,
-                    color: statusInk(r.phase, r.statusName),
+                    color: statusInk(r.phase, r.status),
                   }}
                 >
                   {r.phase === "active"
@@ -459,7 +404,7 @@ export default async function IncidentsPage({
                   </span>
                 </span>
                 <span style={{ fontSize: 11.5, color: "var(--ink-3)", textAlign: "right" }}>
-                  {t.fmt.relative(r.lastActivityAt)}
+                  {lastActivity(r.lastActivityAt, t)}
                 </span>
               </Link>
             );
@@ -483,7 +428,11 @@ export default async function IncidentsPage({
               privateByDefault: ty.privateByDefault,
             }))}
           severities={declare.options.severities}
-          services={declare.services.map((s) => ({ id: s.id, key: s.key }))}
+          services={declare.services.map((s) => ({
+            id: s.id,
+            key: s.key,
+            ownerTeamName: s.ownerTeamName,
+          }))}
           fields={declare.options.fields.map((f) => ({
             id: f.id,
             key: f.key,
@@ -499,6 +448,18 @@ export default async function IncidentsPage({
       )}
     </div>
   );
+}
+
+/**
+ * The last-activity column, 80 px wide in the design: "8 min" within the
+ * hour, the time of day today, the day itself before that.
+ */
+function lastActivity(at: Date, t: Awaited<ReturnType<typeof getT>>): string {
+  const diff = Date.now() - at.getTime();
+  if (diff < 3_600_000) return `${t.fmt.number(Math.max(0, Math.floor(diff / 60_000)))} min`;
+  const day = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: t.timeZone });
+  if (day(at) === day(new Date())) return t.fmt.time(at, t.timeZone);
+  return t.fmt.dateCompact(at);
 }
 
 function Empty({ label }: { label: string }) {

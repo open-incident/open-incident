@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  incidentChannels,
   incidentEvents,
   incidentParticipants,
   incidentRoles,
@@ -11,6 +12,7 @@ import {
   members,
   postIncidentTasks,
   roleAssignments,
+  severities,
   withTenant,
   type Tx,
   statusPages,
@@ -63,6 +65,13 @@ export async function postUpdate(formData: FormData): Promise<{ error: string } 
   if (!parsed.success) return { error: t("incident.update.invalid") };
   const input = parsed.data;
   const tenantId = current.tenant.id;
+  // "Send to": each destination its own switch. A form that does not carry
+  // one (the API, an older client) sends everywhere, as before.
+  const on = (name: string) => formData.get(name) !== "off";
+  const toStatusPage = formData.get("statusPage") === "on";
+  const toSlack = formData.has("slack") ? on("slack") : on("chat");
+  const toTeams = formData.has("teams") ? on("teams") : on("chat");
+  const toSubscribers = on("subscribers");
 
   const outcome = await withTenant(tenantId, async (tx) => {
     const [inc] = await tx
@@ -70,6 +79,28 @@ export async function postUpdate(formData: FormData): Promise<{ error: string } 
       .from(incidents)
       .where(and(eq(incidents.tenantId, tenantId), eq(incidents.number, input.number)));
     if (!inc) return null;
+    const [page] = toStatusPage
+      ? await tx
+          .select({ id: statusPages.id, name: statusPages.name })
+          .from(statusPages)
+          .where(eq(statusPages.tenantId, tenantId))
+          .limit(1)
+      : [];
+    const channels = await tx
+      .select({ kind: incidentChannels.kind })
+      .from(incidentChannels)
+      .where(eq(incidentChannels.incidentId, inc.id));
+    const [audience] = toSubscribers
+      ? await tx
+          .select({ n: sql<number>`count(*)`.mapWith(Number) })
+          .from(incidentParticipants)
+          .where(
+            and(
+              eq(incidentParticipants.incidentId, inc.id),
+              ne(incidentParticipants.memberId, current.member.id),
+            ),
+          )
+      : [];
     const result = await postUpdateCore(
       tx,
       tenantId,
@@ -81,9 +112,15 @@ export async function postUpdate(formData: FormData): Promise<{ error: string } 
         severityId: input.severityId || null,
         nextUpdateMinutes: input.nextUpdateMinutes ? Number(input.nextUpdateMinutes) : null,
         resolvedLabel: t("incident.update.resolved"),
+        sentTo: {
+          subscribers: audience?.n ?? 0,
+          statusPage: page?.name ?? null,
+          slack: toSlack && channels.some((c) => c.kind === "slack"),
+          teams: toTeams && channels.some((c) => c.kind === "teams"),
+        },
       },
     );
-    return result ? { id: inc.id, result } : null;
+    return result ? { id: inc.id, result, pageId: page?.id ?? null } : null;
   });
   if (outcome) {
     const events: WebhookEvent[] = ["incident.update_published"];
@@ -95,26 +132,77 @@ export async function postUpdate(formData: FormData): Promise<{ error: string } 
       outcome.id,
       events,
       { message: input.message, by: current.member.name },
-      { chat: formData.get("chat") !== "off", actorMemberId: current.member.id },
+      {
+        chat: { slack: toSlack, teams: toTeams },
+        bell: toSubscribers,
+        actorMemberId: current.member.id,
+      },
     );
-    if (formData.get("statusPage") === "on") {
-      const [page] = await withTenant(tenantId, (tx) =>
-        tx
-          .select({ id: statusPages.id })
-          .from(statusPages)
-          .where(eq(statusPages.tenantId, tenantId))
-          .limit(1),
-      );
-      if (page) {
-        await publishIncidentUpdate(tenantId, outcome.id, {
-          pageId: page.id,
-          body: input.message,
-          actor: { memberId: current.member.id, name: current.member.name },
-        }).catch((err) => console.error("[status] publish failed:", err));
-      }
+    if (outcome.pageId) {
+      await publishIncidentUpdate(tenantId, outcome.id, {
+        pageId: outcome.pageId,
+        body: input.message,
+        actor: { memberId: current.member.id, name: current.member.name },
+      }).catch((err) => console.error("[status] publish failed:", err));
     }
   }
   revalidatePath(`/app/incidents/${input.number}`);
+  revalidatePath("/app/incidents");
+}
+
+/**
+ * The severity, changed from the facts card without an update: the incident
+ * row, a `severity_changed` line in the timeline, and the same follow-up as
+ * any change (chat header, webhooks, the bell).
+ */
+export async function setSeverity(formData: FormData) {
+  const current = await requireResponder();
+  const number = numberSchema.parse(formData.get("number"));
+  const severityId = z.string().uuid().parse(formData.get("severityId"));
+  const tenantId = current.tenant.id;
+  const changed = await withTenant(tenantId, async (tx) => {
+    const [inc] = await tx
+      .select()
+      .from(incidents)
+      .where(and(eq(incidents.tenantId, tenantId), eq(incidents.number, number)));
+    if (!inc || inc.phase === "closed" || inc.severityId === severityId) return null;
+    const [next] = await tx
+      .select({ id: severities.id, name: severities.name })
+      .from(severities)
+      .where(and(eq(severities.tenantId, tenantId), eq(severities.id, severityId)));
+    if (!next) return null;
+    const [prev] = inc.severityId
+      ? await tx
+          .select({ name: severities.name })
+          .from(severities)
+          .where(eq(severities.id, inc.severityId))
+      : [];
+    const now = new Date();
+    await tx.update(incidents).set({ severityId: next.id }).where(eq(incidents.id, inc.id));
+    await tx.insert(incidentEvents).values({
+      tenantId,
+      incidentId: inc.id,
+      kind: "severity_changed",
+      actorKind: "member",
+      actorMemberId: current.member.id,
+      actorName: current.member.name,
+      payload: { from: prev?.name ?? null, to: next.name },
+      occurredAt: now,
+    });
+    await touch(tx, current, inc.id, now);
+    return inc.id;
+  });
+  if (changed)
+    await afterIncidentChange(
+      tenantId,
+      changed,
+      ["incident.updated"],
+      {},
+      {
+        actorMemberId: current.member.id,
+      },
+    );
+  revalidatePath(`/app/incidents/${number}`);
   revalidatePath("/app/incidents");
 }
 

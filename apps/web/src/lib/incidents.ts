@@ -33,6 +33,8 @@ export type IncidentRow = {
   name: string;
   phase: "triage" | "active" | "post_incident" | "closed";
   statusName: string | null;
+  /** Where the status sits in its type's lifecycle — what its colour is read from. */
+  status: { rank: number | null; last: boolean } | null;
   severityName: string | null;
   severityRank: number | null;
   serviceName: string | null;
@@ -73,6 +75,8 @@ async function baseRows(
       lastActivityAt: incidents.lastActivityAt,
       customFields: incidents.customFields,
       statusName: incidentStatuses.name,
+      statusRank: incidentStatuses.rank,
+      statusLast: sql<boolean>`${incidentStatuses.rank} = (select max(s2.rank) from app.incident_statuses s2 where s2.type_id = ${incidents.typeId})`,
       severityName: severities.name,
       severityRank: severities.rank,
       serviceName: services.key,
@@ -103,8 +107,9 @@ async function baseRows(
         )
     : [];
   const leadBy = new Map(leads.map((l) => [l.incidentId, l.name]));
-  return rows.map((r) => ({
+  return rows.map(({ statusRank, statusLast, ...r }) => ({
     ...r,
+    status: statusRank === null ? null : { rank: statusRank, last: Boolean(statusLast) },
     leadName: leadBy.get(r.id) ?? null,
     region: typeof r.customFields?.region === "string" ? (r.customFields.region as string) : null,
   }));
@@ -282,7 +287,7 @@ export type IncidentDetail = {
   typeName: string;
   severityDescription: string | null;
   statuses: Array<{ id: string; name: string; rank: number }>;
-  severities: Array<{ id: string; name: string; rank: number }>;
+  severities: Array<{ id: string; name: string; rank: number; description: string | null }>;
   roles: Array<{
     roleId: string;
     roleName: string;
@@ -437,7 +442,12 @@ export async function getIncident(
     typeName: type?.name ?? "",
     severityDescription: sevs.find((s) => s.id === full.severityId)?.description ?? null,
     statuses,
-    severities: sevs.map((s) => ({ id: s.id, name: s.name, rank: s.rank })),
+    severities: sevs.map((s) => ({
+      id: s.id,
+      name: s.name,
+      rank: s.rank,
+      description: s.description,
+    })),
     roles: roleRows.map((r) => {
       const a = assigned.find((x) => x.roleId === r.roleId);
       return {

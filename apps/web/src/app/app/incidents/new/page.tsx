@@ -63,7 +63,7 @@ export default async function DeclarePage({
       initial={initial}
       aiSuggest={(await aiAllowance(tenant.id, "declare_suggest")).ok}
       severities={options.severities}
-      services={services.map((s) => ({ id: s.id, key: s.key }))}
+      services={services.map((s) => ({ id: s.id, key: s.key, ownerTeamName: s.ownerTeamName }))}
       fields={options.fields.map((f) => ({
         id: f.id,
         key: f.key,

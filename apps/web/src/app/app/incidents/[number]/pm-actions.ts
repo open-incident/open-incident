@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
+  incidentEvents,
   incidents,
   postMortemComments,
   postMortemRevisions,
@@ -111,10 +112,8 @@ export async function addPostMortemSection(formData: FormData) {
     sections: [
       ...pm.sections,
       {
-        key: keyFor(
-          title,
-          pm.sections.map((s) => s.key),
-        ),
+        // The document's own blocks keep their keys for the comments left on them.
+        key: keyFor(title, [...pm.sections.map((s) => s.key), "decisions", "atlas", "follow_ups"]),
         title,
         body: "",
       },
@@ -268,4 +267,43 @@ export async function restorePostMortemRevision(formData: FormData) {
     sections: rev.sections,
     title: rev.title,
   }));
+}
+
+/**
+ * "+ Add a decision" — a decision taken during the incident, recorded where
+ * every fact of the incident is: a timeline line (a note of kind decision,
+ * tagged "Decision"), which the document's Decisions block reads back.
+ */
+export async function addDecision(formData: FormData) {
+  const current = await requireResponder();
+  const number = numberSchema.parse(formData.get("number"));
+  const title = z.string().trim().min(1).max(300).parse(formData.get("title"));
+  const why = z
+    .string()
+    .trim()
+    .max(1000)
+    .parse(formData.get("why") ?? "");
+  await withTenant(current.tenant.id, async (tx) => {
+    const [inc] = await tx
+      .select({ id: incidents.id })
+      .from(incidents)
+      .where(and(eq(incidents.tenantId, current.tenant.id), eq(incidents.number, number)));
+    if (!inc) return;
+    const now = new Date();
+    await tx.insert(incidentEvents).values({
+      tenantId: current.tenant.id,
+      incidentId: inc.id,
+      kind: "note",
+      actorKind: "member",
+      actorMemberId: current.member.id,
+      actorName: current.member.name,
+      payload: { system: "decision", title: title.replace(/\.+$/, ""), why },
+      occurredAt: now,
+    });
+    await tx
+      .update(incidents)
+      .set({ lastActivityAt: now, updatedAt: now })
+      .where(eq(incidents.id, inc.id));
+  });
+  revalidatePath(`/app/incidents/${number}`);
 }

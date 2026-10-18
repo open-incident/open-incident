@@ -33,7 +33,9 @@ import {
   ensureIncidentChannels,
   getBridgeTemplate,
   postIncidentNoteAll,
+  postIncidentUpdate,
   postIncidentUpdateAll,
+  postIncidentUpdateTeams,
   refreshIncidentHeaders,
 } from "@openincident/chat";
 import { tenantOrigin } from "@openincident/oncall";
@@ -244,6 +246,12 @@ export type UpdateInput = {
   nextUpdateMinutes?: number | null;
   /** The word for "Resolved" in the workspace's language, for the timeline. */
   resolvedLabel: string;
+  /**
+   * Where the author sent it — kept on the timeline line ("→ 12 subscribers ·
+   * Skylark Status · Slack · Teams"). Absent from the API path, which sends
+   * everywhere.
+   */
+  sentTo?: { subscribers: number; statusPage: string | null; slack: boolean; teams: boolean };
 };
 
 export type UpdateResult = {
@@ -321,6 +329,7 @@ export async function postUpdateCore(
       message: input.message,
       nextUpdateMinutes: nextMinutes,
       severity: severityChanged ? sev!.name : null,
+      ...(input.sentTo ? { sentTo: input.sentTo } : {}),
     },
     occurredAt: now,
   });
@@ -553,7 +562,13 @@ export async function afterIncidentChange(
   incidentId: string,
   events: WebhookEvent[],
   extra: Record<string, unknown> = {},
-  options: { chat?: boolean; actorMemberId?: string | null } = {},
+  options: {
+    /** false: no chat at all; or one switch per tool ("Send to" of the update drawer). */
+    chat?: boolean | { slack: boolean; teams: boolean };
+    /** false: the people on the incident are not told in the bell (unticked "Internal subscribers"). */
+    bell?: boolean;
+    actorMemberId?: string | null;
+  } = {},
 ): Promise<void> {
   try {
     await syncChat(tenantId, incidentId, events, extra, options);
@@ -563,7 +578,7 @@ export async function afterIncidentChange(
   // The bell: the people on this incident find out it moved. One line each,
   // collapsing on the incident, and never a line for the person who did it.
   // It sends nothing — paging stays the escalation policy's job.
-  const what = bellWhat(events);
+  const what = options.bell === false ? null : bellWhat(events);
   if (what) {
     const { inboxIncidentChanged } = await import("./inbox");
     await inboxIncidentChanged(tenantId, incidentId, what, options.actorMemberId ?? null);
@@ -614,7 +629,7 @@ async function syncChat(
   incidentId: string,
   events: WebhookEvent[],
   extra: Record<string, unknown>,
-  options: { chat?: boolean },
+  options: { chat?: boolean | { slack: boolean; teams: boolean } },
 ): Promise<void> {
   const tenant = await getTenantById(tenantId);
   if (!tenant) return;
@@ -642,11 +657,24 @@ async function syncChat(
     if (inc && inc.mode !== "test") await ensureIncidentChannels(tenantId, incidentId, origin);
   }
   if (events.includes("incident.update_published") && options.chat !== false) {
-    await postIncidentUpdateAll(tenantId, incidentId, origin, {
+    const update = {
       by: typeof extra.by === "string" ? extra.by : "—",
       message: typeof extra.message === "string" ? extra.message : "",
       resolved: events.includes("incident.resolved"),
-    });
+    };
+    if (typeof options.chat === "object") {
+      // One tool ticked, the other not: each provider is asked on its own.
+      const quiet = (p: Promise<unknown>, label: string) =>
+        p.catch((err) => console.error(`[chat] ${label} failed:`, err));
+      await Promise.all([
+        options.chat.slack
+          ? quiet(postIncidentUpdate(tenantId, incidentId, origin, update), "slack update")
+          : null,
+        options.chat.teams
+          ? quiet(postIncidentUpdateTeams(tenantId, incidentId, origin, update), "teams update")
+          : null,
+      ]);
+    } else await postIncidentUpdateAll(tenantId, incidentId, origin, update);
   }
   if (
     events.includes("follow_up.created") &&

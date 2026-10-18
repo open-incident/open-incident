@@ -24,7 +24,51 @@ export type TimelineItem = {
   isUpdate: boolean;
   /** An external link the item opens (a pinned Slack message). */
   href?: string;
+  /**
+   * What Atlas did — an action from its journal, or a person undoing or
+   * redoing one. The row carries the "✦ Atlas" mark and, on a reversible
+   * action, the inline Undo / Redo.
+   */
+  atlas?: { actionId: string; reversible: boolean; kind: "action" | "undo" | "redo" };
+  /** A decision taken during the incident, recorded for the post-mortem. */
+  decision?: { title: string; why: string; by: string };
 };
+
+/**
+ * The design reads a timeline at a glance: an update, a note, what Atlas did
+ * carry their text under the line in bold; the moves of the incident itself —
+ * an alert attached, a page, an acknowledgement, a resolution — are one line,
+ * their details on hover.
+ */
+const ONE_LINE = new Set([
+  "declared",
+  "created_from_alert",
+  "alert_attached",
+  "escalation_triggered",
+  "escalation_acknowledged",
+  "accepted",
+  "role_assigned",
+  "role_unassigned",
+  "status_changed",
+  "severity_changed",
+  "resolved",
+  "post_incident_started",
+  "visibility_changed",
+]);
+
+/** Whether the line carries its detail underneath (otherwise as a hover title). */
+export function showsDetail(ev: {
+  kind: string;
+  payload: Record<string, unknown> | null;
+}): boolean {
+  if (ONE_LINE.has(ev.kind)) return false;
+  return !(ev.kind === "note" && ev.payload?.system === "decision");
+}
+
+/** Bold lines: updates, notes, and Atlas. */
+export function isKeyEvent(item: TimelineItem): boolean {
+  return item.isUpdate || Boolean(item.atlas) || item.bg === "var(--note)" || item.pinned;
+}
 
 const s = (v: unknown, fallback = ""): string =>
   typeof v === "string" ? v : typeof v === "number" ? String(v) : fallback;
@@ -56,7 +100,6 @@ export function renderEvent(ev: Ev, t: T): TimelineItem {
         ...base,
         dot: "var(--wait)",
         card: true,
-        tag: sourceTag(s(p.source, "—")),
         title: t("timeline.alertAttached", { source: s(p.source, "—") }),
         description: `${s(p.title)}${p.grouped ? ` · ${t("timeline.grouped", { count: Number(p.grouped) })}` : ""} · ${t("timeline.createdInTriage")}`,
       };
@@ -65,7 +108,6 @@ export function renderEvent(ev: Ev, t: T): TimelineItem {
         ...base,
         dot: "var(--wait)",
         card: true,
-        tag: sourceTag(s(p.source, "—")),
         title: t("timeline.alertAttached", { source: s(p.source, "—") }),
         description: s(p.title),
       };
@@ -73,7 +115,7 @@ export function renderEvent(ev: Ev, t: T): TimelineItem {
       return {
         ...base,
         dot: "var(--dang)",
-        title: t("timeline.escalationTriggered", { path: s(p.path, "—") }),
+        title: t("incv2.tl.paging", { path: s(p.path, "—") }),
         description: [
           t("timeline.level", { level: Number(p.level ?? 1) }),
           p.urgency === "high" ? t("timeline.urgencyHigh") : t("timeline.urgencyLow"),
@@ -104,11 +146,11 @@ export function renderEvent(ev: Ev, t: T): TimelineItem {
       return {
         ...base,
         dot: "var(--brand)",
-        title: t("timeline.accepted", { actor }),
-        description: t("timeline.acceptedDesc", {
+        title: t("incv2.tl.accepted", {
           severity: s(p.severity, "—"),
           status: s(p.status, "—"),
         }),
+        description: t("timeline.byActor", { actor }),
       };
     case "declined":
       return {
@@ -139,16 +181,32 @@ export function renderEvent(ev: Ev, t: T): TimelineItem {
         title: t("timeline.roleUnassigned", { member: s(p.member), role: s(p.roleName) }),
         description: t("timeline.byActor", { actor }),
       };
-    case "update_posted":
+    case "update_posted": {
+      // Where it went, when the update recorded it: "→ 12 subscribers · Skylark Status · Slack · Teams".
+      const sent = (p.sentTo ?? null) as {
+        subscribers?: number;
+        statusPage?: string | null;
+        slack?: boolean;
+        teams?: boolean;
+      } | null;
+      const where = sent
+        ? [
+            sent.subscribers ? t("incv2.tl.subscribers", { count: Number(sent.subscribers) }) : "",
+            s(sent.statusPage),
+            sent.slack ? "Slack" : "",
+            sent.teams ? "Teams" : "",
+          ].filter(Boolean)
+        : [];
       return {
         ...base,
-        dot: "var(--open)",
+        dot: "var(--viol)",
         card: true,
         isUpdate: true,
-        tag: { label: t("timeline.updateTag"), bg: "var(--open-t)", ink: "var(--open)" },
+        tag: { label: t("timeline.updateTag"), bg: "var(--viol-t)", ink: "var(--viol)" },
         title: t("timeline.update", { status: s(p.status, "—") }),
-        description: `« ${s(p.message)} »${p.nextUpdateMinutes ? ` · ${t("timeline.nextUpdateIn", { count: Number(p.nextUpdateMinutes) })}` : ""}${p.severity ? ` · ${t("timeline.severitySet", { severity: s(p.severity) })}` : ""}`,
+        description: `« ${s(p.message)} »${where.length ? ` → ${where.join(" · ")}` : p.nextUpdateMinutes ? ` · ${t("timeline.nextUpdateIn", { count: Number(p.nextUpdateMinutes) })}` : ""}${p.severity ? ` · ${t("timeline.severitySet", { severity: s(p.severity) })}` : ""}`,
       };
+    }
     case "status_changed":
       return {
         ...base,
@@ -210,13 +268,25 @@ export function renderEvent(ev: Ev, t: T): TimelineItem {
           description: p.lead ? t("timeline.updateOverdueDesc", { lead: s(p.lead) }) : "",
         };
       }
+      if (p.system === "decision") {
+        return {
+          ...base,
+          dot: "var(--ink-2)",
+          tag: { label: t("incv2.tl.decisionTag"), bg: "var(--sunk)", ink: "var(--ink-2)" },
+          title: t("incv2.tl.decision", { title: s(p.title) }),
+          description: [s(p.why), t("incv2.tl.decisionRecorded", { actor })]
+            .filter(Boolean)
+            .join(" · "),
+          decision: { title: s(p.title), why: s(p.why), by: actor },
+        };
+      }
       return {
         ...base,
         dot: "var(--wait)",
         card: true,
-        bg: "var(--note)",
+        bg: ev.pinned ? "var(--note)" : undefined,
         border: "var(--note-b)",
-        title: t("timeline.note", { actor }),
+        title: ev.pinned ? t("incv2.tl.notePinned", { actor }) : t("incv2.tl.note", { actor }),
         description: s(p.message),
       };
     case "link_added":
@@ -401,6 +471,40 @@ export function renderEvent(ev: Ev, t: T): TimelineItem {
             ? t(`ai.investigation.confidence.${conf as "likely"}`)
             : "—",
         }),
+      };
+    }
+    case "atlas_action": {
+      const actionId = s(p.actionId);
+      return {
+        ...base,
+        dot: "var(--viol)",
+        card: true,
+        title: s(p.title, "—"),
+        description: s(p.detail),
+        // A proposal is not done yet: only the line of what was executed undoes.
+        atlas: actionId
+          ? {
+              actionId,
+              reversible: p.reversible === true && p.phase !== "proposed",
+              kind: "action",
+            }
+          : undefined,
+      };
+    }
+    case "atlas_undo":
+    case "atlas_redo": {
+      const actionId = s(p.actionId);
+      const undo = ev.kind === "atlas_undo";
+      return {
+        ...base,
+        dot: undo ? "var(--ink-3)" : "var(--viol)",
+        card: true,
+        title: t(undo ? "incv2.tl.atlasUndone" : "incv2.tl.atlasRedone", {
+          actor,
+          title: s(p.title, "—"),
+        }),
+        description: s(p.detail),
+        atlas: actionId ? { actionId, reversible: false, kind: undo ? "undo" : "redo" } : undefined,
       };
     }
     default:

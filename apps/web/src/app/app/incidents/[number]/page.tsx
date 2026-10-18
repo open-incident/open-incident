@@ -1,9 +1,11 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   alerts,
   incidentChannels,
+  incidentParticipants,
   incidents,
   statusPageIncidents,
   statusPages,
@@ -18,7 +20,8 @@ import { investigationAccess } from "@/lib/investigations";
 import { templateFor } from "@/lib/post-mortem";
 import { connectedDocs } from "@/lib/docs";
 import { connectedTrackers } from "@/lib/trackers";
-import { severityTone, statusInk } from "../tone";
+import { getTeamsInstall } from "@openincident/chat";
+import { severityTone, statusTone } from "../tone";
 import { servicesOfIncidents } from "../services-of";
 import { acceptTriage, declineTriage } from "../triage-actions";
 import { Timeline } from "./timeline";
@@ -27,7 +30,7 @@ import { IncidentEscalations } from "./incident-alerts";
 import { IncidentChat } from "./incident-chat";
 import { IncidentStatusPage } from "./incident-status-page";
 import { EscalateDialog } from "./escalate-dialog";
-import { UpdateDialog } from "./update-dialog";
+import { UpdateButton, UpdateDialog } from "./update-dialog";
 import { AtlasTab } from "./atlas";
 import { Investigation } from "./investigation";
 import { ContextTab } from "./context";
@@ -50,6 +53,7 @@ export default async function IncidentPage({
   searchParams: Promise<{
     tab?: string;
     update?: string;
+    status?: string;
     publish?: string;
     use?: string;
     exportError?: string;
@@ -58,7 +62,7 @@ export default async function IncidentPage({
   const { tenant, member, workspace } = await requireMember();
   const t = await getT();
   const { number: raw } = await params;
-  const { tab: rawTab, update, publish, use, exportError } = await searchParams;
+  const { tab: rawTab, update, status, publish, use, exportError } = await searchParams;
   const number = Number(raw);
   if (!Number.isInteger(number) || number <= 0) notFound();
   // The first design's tab names still arrive from links and bookmarks.
@@ -93,10 +97,22 @@ export default async function IncidentPage({
       .select({ n: sql<number>`count(*)`.mapWith(Number) })
       .from(alerts)
       .where(and(eq(alerts.tenantId, tenant.id), eq(alerts.incidentId, inc.row.id)));
-    const [chat] = await tx
-      .select({ name: incidentChannels.channelName })
+    const chats = await tx
+      .select({ kind: incidentChannels.kind, name: incidentChannels.channelName })
       .from(incidentChannels)
-      .where(and(eq(incidentChannels.incidentId, inc.row.id), eq(incidentChannels.kind, "slack")));
+      .where(eq(incidentChannels.incidentId, inc.row.id));
+    const chat = chats.find((c) => c.kind === "slack");
+    const teams = chats.find((c) => c.kind === "teams");
+    const teamsInstall = teams ? await getTeamsInstall(tx, tenant.id) : null;
+    const [audience] = await tx
+      .select({ n: sql<number>`count(*)`.mapWith(Number) })
+      .from(incidentParticipants)
+      .where(
+        and(
+          eq(incidentParticipants.incidentId, inc.row.id),
+          ne(incidentParticipants.memberId, member.id),
+        ),
+      );
     const [groups] = await tx
       .select({ n: sql<number>`count(*)`.mapWith(Number) })
       .from(alerts)
@@ -115,6 +131,8 @@ export default async function IncidentPage({
       alerts: alertCount?.n ?? 0,
       alertGroups: groups?.n ?? 0,
       chatChannel: chat?.name ?? null,
+      teamsChannel: teams ? `Teams › ${teamsInstall?.teamName ?? teams.name}` : null,
+      subscribers: audience?.n ?? 0,
       paths: await listPaths(tx, tenant.id),
     };
   });
@@ -146,16 +164,18 @@ export default async function IncidentPage({
       : "";
 
   const end = inc.row.resolvedAt;
+  const start = t.fmt.dateTime(inc.row.declaredAt, t.timeZone);
   const window = end
     ? t("inc2.window", {
-        start: `${t.fmt.dateShort(inc.row.declaredAt)} · ${t.fmt.time(inc.row.declaredAt, t.timeZone)}`,
+        start,
         end: t.fmt.time(end, t.timeZone),
         duration: t.fmt.duration((end.getTime() - inc.row.declaredAt.getTime()) / 60_000),
       })
     : t("inc2.ongoing", {
-        start: `${t.fmt.dateShort(inc.row.declaredAt)} · ${t.fmt.time(inc.row.declaredAt, t.timeZone)}`,
+        start,
         duration: t.fmt.duration((Date.now() - inc.row.declaredAt.getTime()) / 60_000),
       });
+  const stTone = statusTone(inc.row.phase, inc.row.status);
 
   const tabs: Array<[Tab, string, boolean]> = [
     ["timeline", t("inc2.dtab.timeline"), false],
@@ -228,8 +248,8 @@ export default async function IncidentPage({
                 fontWeight: 600,
                 borderRadius: 999,
                 padding: "2px 9px",
-                background: "var(--sunk)",
-                color: statusInk(inc.row.phase, inc.row.statusName),
+                background: stTone.bg,
+                color: stTone.ink,
               }}
             >
               {inc.row.phase === "active"
@@ -362,21 +382,11 @@ export default async function IncidentPage({
             </>
           )}
           {acts && inc.row.phase !== "triage" && (
-            <UpdateDialog
-              number={number}
-              statuses={inc.statuses}
-              severities={inc.severities}
-              currentStatusId={inc.statuses.find((s) => s.name === inc.row.statusName)?.id ?? null}
-              currentSeverityName={inc.row.severityName}
-              openInitially={update === "1"}
-              initialMessage={summaryForUpdate}
-              resolved={Boolean(inc.row.resolvedAt)}
-              slackChannel={data.chatChannel}
-              statusPage={statusPageOpt}
-              aiDraft={aiUpdate}
-            />
+            <UpdateButton mode="update" testid="update-open">
+              {t("incv2.shareUpdate")}
+            </UpdateButton>
           )}
-          {acts && inc.row.phase === "active" && (
+          {acts && inc.row.phase !== "triage" && (
             <EscalateDialog
               number={number}
               paths={data.paths
@@ -388,9 +398,10 @@ export default async function IncidentPage({
                 }))}
             />
           )}
-          {statusPageOpt && !statusPageOpt.published && acts && (
+          {statusPageOpt && acts && inc.row.phase !== "triage" && (
             <Link
               href={`/app/incidents/${number}?update=1&publish=1`}
+              data-testid="publish-open"
               className="oi-hover-edge-fill"
               style={{
                 height: 34,
@@ -408,6 +419,26 @@ export default async function IncidentPage({
             >
               {t("inc2.publish")}
             </Link>
+          )}
+          {acts && inc.row.phase === "active" && !inc.row.resolvedAt && (
+            <UpdateButton mode="resolve" testid="resolve-open">
+              {t("inc2.resolve")}
+            </UpdateButton>
+          )}
+          {acts && inc.row.phase !== "triage" && (
+            <UpdateDialog
+              number={number}
+              statuses={inc.statuses}
+              currentStatusId={inc.statuses.find((s) => s.name === inc.row.statusName)?.id ?? null}
+              openInitially={update === "1"}
+              initialStatus={status === "resolve" && !inc.row.resolvedAt ? "resolve" : undefined}
+              initialMessage={summaryForUpdate}
+              subscribers={data.subscribers}
+              slackChannel={data.chatChannel ? `#${data.chatChannel}` : null}
+              teamsChannel={data.teamsChannel}
+              statusPage={statusPageOpt}
+              aiDraft={aiUpdate}
+            />
           )}
         </div>
       </div>
@@ -465,6 +496,12 @@ export default async function IncidentPage({
             canAct={acts}
             tenantId={tenant.id}
             services={data.services}
+            paged={<IncidentEscalations incidentId={inc.row.id} />}
+            channels={
+              <Suspense fallback={null}>
+                <IncidentChat incidentId={inc.row.id} number={number} canAct={acts} />
+              </Suspense>
+            }
             statusPage={
               <IncidentStatusPage
                 incidentId={inc.row.id}
@@ -473,12 +510,6 @@ export default async function IncidentPage({
                 phase={inc.row.phase}
                 canAct={acts}
               />
-            }
-            extra={
-              <>
-                <IncidentEscalations incidentId={inc.row.id} />
-                <IncidentChat incidentId={inc.row.id} number={number} canAct={acts} />
-              </>
             }
           />
         </div>
@@ -519,13 +550,13 @@ export default async function IncidentPage({
           number={number}
           canAct={canRespond(member)}
           tenantId={tenant.id}
+          me={{ id: member.id, name: member.name }}
           postMortemTerm={workspace.postMortemTerm}
           template={templateFor(workspace, t)}
           aiAllowed={aiPostMortem}
           docs={await withTenant(tenant.id, (tx) => connectedDocs(tx, tenant.id))}
           trackers={await withTenant(tenant.id, (tx) => connectedTrackers(tx, tenant.id))}
           exportError={exportError ?? null}
-          slackChannel={data.chatChannel}
         />
       )}
     </div>

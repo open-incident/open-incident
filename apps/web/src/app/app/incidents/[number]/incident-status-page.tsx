@@ -11,7 +11,11 @@ import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
 import { card, eyebrow } from "./side-panel";
 
-/** The side card that says what the public page carries — or that nothing is published. */
+/**
+ * STATUS PAGE — one line of what the public page carries ("Skylark Status —
+ * « Degraded checkout performance » · 4 public updates", opening the page), or
+ * the way to publish it, or why it is not for this incident.
+ */
 export async function IncidentStatusPage({
   incidentId,
   number,
@@ -72,30 +76,22 @@ export async function IncidentStatusPage({
               color: data.pub.status === "resolved" ? "var(--ok)" : "var(--wait)",
             }}
           >
-            {t("incident.statusPagePublished", {
-              status: t(`statusPages.publicStatus.${data.pub.status}`),
+            {t("incv2.sp.published", {
+              status: t(`statusPages.publicStatus.${data.pub.status}`).toLowerCase(),
             })}
           </span>
         )}
       </div>
       {data.pub ? (
-        <>
-          <div style={{ fontSize: 12.5, lineHeight: 1.45 }}>
-            {data.page.name} — « {data.pub.title} »
-          </div>
-          <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-            {t("incident.statusPageStats", { count: data.updates, notified: data.notified })}
-          </div>
-          <a
-            href={statusPageUrl(data.page)}
-            target="_blank"
-            rel="noreferrer"
-            className="oi-link"
-            style={{ fontSize: 11.5, fontWeight: 600 }}
-          >
-            {t("statusPages.viewPublic")}
-          </a>
-        </>
+        <a
+          href={statusPageUrl(data.page)}
+          target="_blank"
+          rel="noreferrer"
+          title={t("incident.statusPageStats", { count: data.updates, notified: data.notified })}
+          style={{ fontSize: 12.5, lineHeight: 1.45, color: "inherit", textDecoration: "none" }}
+        >
+          {data.page.name} — « {data.pub.title} » · {t("incv2.sp.updates", { count: data.updates })}
+        </a>
       ) : eligible && canAct && phase !== "closed" && phase !== "triage" ? (
         <>
           <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>

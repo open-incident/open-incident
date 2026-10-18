@@ -1,14 +1,22 @@
 import type { incidentEvents } from "@openincident/db";
 import { getT } from "@/i18n/server";
-import { renderEvent } from "@/lib/timeline";
+import { isKeyEvent, renderEvent, showsDetail } from "@/lib/timeline";
+import { AtlasTimelineMark, AtlasUndoLink } from "@/components/atlas/timeline";
 import { LiveTimeline } from "./live-timeline";
 import { TimelineFilterClient } from "./timeline-filter";
-import { addNote, togglePin } from "./actions";
+import { NoteField } from "./note-field";
+import { togglePin } from "./actions";
 
 /**
  * The timeline card of the V2 design: a 44 px mono minute column, an 8 px dot
  * on a hairline rail, the line itself, and the note field at the bottom. The
- * filters count what they filter; the live dot is the real SSE stream.
+ * filters — all, what Atlas did, the updates, the pinned lines — count what
+ * they filter; the live dot is the real SSE stream.
+ *
+ * What Atlas does is in the same table as everything else (events of kind
+ * `atlas_action`, and `atlas_undo` / `atlas_redo` when a person reverses
+ * one): the row is drawn here, the "✦ Atlas" mark and the inline Undo / Redo
+ * come from the Atlas components.
  */
 export async function Timeline({
   incidentId,
@@ -24,8 +32,13 @@ export async function Timeline({
   declaredAt: Date;
 }) {
   const t = await getT();
-  const items = events.map((ev) => renderEvent(ev, t));
+  const items = events.map((ev) => ({ it: renderEvent(ev, t), detail: showsDetail(ev) }));
   const lastId = events[events.length - 1]?.id ?? "";
+  // An action undone and not redone since reads "— undone" on its own line.
+  const undone = new Map<string, boolean>();
+  for (const { it } of items)
+    if (it.atlas && it.atlas.kind !== "action")
+      undone.set(it.atlas.actionId, it.atlas.kind === "undo");
   // The minute column reads "02:47" on the incident's day and "27/08" past it.
   const day = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: t.timeZone });
   const declaredDay = day(declaredAt);
@@ -42,6 +55,7 @@ export async function Timeline({
         flex: "10 1 420px",
       }}
     >
+      <style>{`.oi-tl-row .oi-tl-pin{opacity:0;transition:opacity .12s}.oi-tl-row:hover .oi-tl-pin,.oi-tl-row .oi-tl-pin:focus-visible{opacity:1}`}</style>
       <div
         style={{
           display: "flex",
@@ -58,13 +72,15 @@ export async function Timeline({
         <TimelineFilterClient
           labels={{
             all: t("incident.filter.all"),
+            atlas: t("incv2.tl.byAtlas"),
             updates: t("incident.filter.updates"),
             pinned: t("incident.filter.pinned"),
           }}
           counts={{
             all: items.length,
-            updates: items.filter((i) => i.isUpdate).length,
-            pinned: items.filter((i) => i.pinned).length,
+            atlas: items.filter(({ it }) => it.atlas).length,
+            updates: items.filter(({ it }) => it.isUpdate).length,
+            pinned: items.filter(({ it }) => it.pinned).length,
           }}
         />
       </div>
@@ -79,13 +95,17 @@ export async function Timeline({
             flexDirection: "column",
           }}
         >
-          {items.map((it) => {
-            const key = it.isUpdate || it.pinned || it.card;
+          {items.map(({ it, detail }) => {
+            const key = isKeyEvent(it);
+            const isUndone = it.atlas?.kind === "action" && undone.get(it.atlas.actionId) === true;
             return (
               <li
                 key={it.id}
                 data-testid="timeline-event"
                 data-kind={it.isUpdate ? "update" : it.pinned ? "pinned" : "event"}
+                data-atlas={it.atlas ? "1" : undefined}
+                className="oi-tl-row"
+                title={!detail && it.description ? it.description : undefined}
                 style={{
                   display: "grid",
                   gridTemplateColumns: "44px 16px minmax(0,1fr)",
@@ -132,25 +152,32 @@ export async function Timeline({
                       ) : (
                         it.title
                       )}
+                      {isUndone ? ` — ${t("incv2.tl.undone")}` : ""}
                     </span>
-                    {it.tag && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          borderRadius: 5,
-                          padding: "1px 6px",
-                          background: it.tag.bg,
-                          color: it.tag.ink,
-                        }}
-                      >
-                        {it.tag.label}
-                      </span>
+                    {it.atlas ? (
+                      <AtlasTimelineMark />
+                    ) : (
+                      it.tag && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            borderRadius: 5,
+                            padding: "1px 6px",
+                            background: it.tag.bg,
+                            color: it.tag.ink,
+                          }}
+                        >
+                          {it.tag.label}
+                        </span>
+                      )
                     )}
-                    {it.pinned && (
-                      <span style={{ fontSize: 10, fontWeight: 700, color: "var(--note-ink)" }}>
-                        {t("incident.pinned")}
-                      </span>
+                    {it.atlas?.kind === "action" && it.atlas.reversible && (
+                      <AtlasUndoLink
+                        incidentNumber={number}
+                        actionId={it.atlas.actionId}
+                        reversible={it.atlas.reversible}
+                      />
                     )}
                     <span style={{ flex: 1 }} />
                     {canAct && (
@@ -162,7 +189,7 @@ export async function Timeline({
                       />
                     )}
                   </span>
-                  {it.description && (
+                  {detail && it.description && (
                     <span
                       style={{
                         display: "block",
@@ -185,49 +212,7 @@ export async function Timeline({
             {t("inc2.tl.empty")}
           </div>
         )}
-        {canAct && (
-          <form
-            action={addNote}
-            data-testid="timeline-note"
-            style={{ display: "flex", gap: 8, marginTop: 8, paddingLeft: 68 }}
-          >
-            <input type="hidden" name="number" value={number} />
-            <input
-              name="message"
-              required
-              maxLength={2000}
-              placeholder={t("inc2.tl.notePlaceholder")}
-              className="oi-field"
-              style={{
-                flex: 1,
-                height: 34,
-                border: "1px solid var(--line)",
-                borderRadius: 9,
-                padding: "0 11px",
-                fontSize: 13,
-                outline: "none",
-                background: "var(--panel)",
-              }}
-            />
-            <button
-              type="submit"
-              className="oi-hover-brand-2"
-              style={{
-                height: 34,
-                padding: "0 13px",
-                borderRadius: 9,
-                border: 0,
-                background: "var(--brand)",
-                color: "var(--on-brand)",
-                fontSize: 12.5,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              {t("inc2.tl.notePost")}
-            </button>
-          </form>
-        )}
+        {canAct && <NoteField number={number} placeholder={t("incv2.tl.notePlaceholder")} />}
       </div>
     </div>
   );
@@ -253,7 +238,7 @@ function PinButton({
         aria-pressed={pinned}
         title={label}
         aria-label={label}
-        className="oi-hover"
+        className="oi-hover oi-tl-pin"
         style={{
           width: 20,
           height: 20,
@@ -267,7 +252,7 @@ function PinButton({
           lineHeight: 1,
         }}
       >
-        ★
+        📌
       </button>
     </form>
   );

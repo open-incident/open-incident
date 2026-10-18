@@ -118,23 +118,41 @@ test.describe("On-call & alerting", () => {
     await expect(
       page.getByTestId("oncall-now").filter({ hasText: "Platform primary" }).first(),
     ).toBeVisible();
-    const cells = page.getByTestId("shift-cell");
-    await expect(cells.first()).toBeVisible();
-    // Pick a filled cell of the day rotation (the first row), reassign it to someone else.
-    await cells.nth(2).click();
+    const grid = page.getByTestId("oncall-grid");
+    await expect(grid).toBeVisible();
+    // A cell two days ahead: a slot that has not started, whatever the hour.
+    const target = grid.getByTestId("shift-cell").nth(2);
+    const day = await target.getAttribute("data-day");
+    const rotation = await target.getAttribute("data-rotation");
+    const cell = page.locator(
+      `[data-testid="shift-cell"][data-day="${day}"][data-rotation="${rotation}"]`,
+    );
+    const hadOverride = (await cell.getAttribute("data-override")) === "1";
+    await cell.click();
     await expect(page.getByTestId("reassign")).toBeVisible();
     await page.getByTestId("reassign-to").first().click();
-    // The cell carries an "override" tag now rather than a sentence.
-    await expect(
-      page
-        .getByTestId("shift-cell")
-        .filter({ hasText: /override|remplacement|Ersetzung/i })
-        .first(),
-    ).toBeVisible();
-    // Removing means reopening the same cell: the picker closes when the
-    // override is created, and the remove button lives inside it.
-    await cells.nth(2).click();
-    await page.getByTestId("override-remove").first().click();
+    // The band closes; the cell carries the OVERRIDE tag.
+    await expect(page.getByTestId("reassign")).toHaveCount(0);
+    await expect(cell).toHaveAttribute("data-override", "1");
+    await expect(cell).toContainText(/override|remplacement|Ersetzung/i);
+    // Taking it back is the same cell: the band lists the override to remove.
+    await cell.click();
+    await page.getByTestId("override-remove").last().click();
+    await expect(page.getByTestId("reassign")).toHaveCount(0);
+    if (!hadOverride) await expect(cell).not.toHaveAttribute("data-override", "1");
+
+    // The month view: the week-ends of the next two months, two cells each.
+    await page.getByTestId("grid-view-month").click();
+    await expect(page).toHaveURL(/view=month/);
+    const rows = await page.getByTestId("rotation-people-toggle").count();
+    await expect(page.getByTestId("shift-cell")).toHaveCount(rows * 16);
+    for (const d of await page
+      .getByTestId("shift-cell")
+      .evaluateAll((els) => els.slice(0, 16).map((e) => e.getAttribute("data-day") ?? ""))) {
+      const w = new Date(`${d}T12:00:00Z`).getUTCDay();
+      expect([0, 6]).toContain(w);
+    }
+
     // iCal really answers. The subscription link lives with the schedules.
     await page.goto("/app/on-call?tab=schedules");
     const ical = await page.request.get(
@@ -142,6 +160,44 @@ test.describe("On-call & alerting", () => {
     );
     expect(ical.status()).toBe(200);
     expect(await ical.text()).toContain("BEGIN:VCALENDAR");
+    await signOut(page);
+  });
+
+  test("the people of a rotation change at the next handover, the shift under way is kept", async ({
+    page,
+  }) => {
+    await signIn(page, MEMBERS.owner);
+    await page.goto("/app/on-call?tab=now");
+    await page.getByTestId("rotation-people-toggle").first().click();
+    const panel = page.getByTestId("rotation-people");
+    await expect(panel).toBeVisible();
+    const order = async () =>
+      panel
+        .getByTestId("people-row")
+        .evaluateAll((els) => els.map((e) => e.getAttribute("data-member") ?? ""));
+    const before = await order();
+    expect(before.length).toBeGreaterThanOrEqual(3);
+    const today = page.locator('[data-testid="shift-cell"]').first();
+    const holderToday = (await today.textContent()) ?? "";
+
+    // Move the person due at the next handover one turn later.
+    await panel.getByTestId("people-row").nth(1).getByTestId("people-down").click();
+    await expect.poll(order).toEqual([before[0], before[2], before[1], ...before.slice(3)]);
+    // The person on the current turn is still first, the panel says from when
+    // the new order runs, and today's cell has not moved.
+    await expect(panel.getByTestId("people-applies")).toContainText(
+      /next handover|prochaine relève|nächsten Übergabe/,
+    );
+    await expect(page.locator('[data-testid="shift-cell"]').first()).toHaveText(holderToday);
+
+    // Put it back: the waiting order is replaced, not stacked.
+    await panel.getByTestId("people-row").nth(2).getByTestId("people-up").click();
+    await expect.poll(order).toEqual(before);
+
+    // Members on the Schedules tab opens the same list.
+    await page.goto("/app/on-call?tab=schedules");
+    await page.getByTestId("schedule-members").first().click();
+    await expect(page.getByTestId("rotation-people").first()).toBeVisible();
     await signOut(page);
   });
 
@@ -160,7 +216,7 @@ test.describe("On-call & alerting", () => {
     await expect(
       page
         .getByTestId("timeline-event")
-        .filter({ hasText: /Escalade|Escalation|Eskalation/ })
+        .filter({ hasText: /Escalade|Escalation|Eskalation|Paging|Appel de|Alarmierung/ })
         .first(),
     ).toBeVisible();
     await signOut(page);
@@ -172,9 +228,14 @@ test.describe("On-call & alerting", () => {
     const since = Date.now();
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/on-call?tab=notifications");
+    // Every channel the instance cannot use says so, dashed, with the reason.
+    for (const row of await page.getByTestId("contact-unavailable").all())
+      await expect(row).toContainText(
+        /Unavailable|Indisponible|nicht verfügbar|Turned off|Désactivé|ausgeschaltet/,
+      );
     await page.getByTestId("notif-test").click();
     await page.waitForURL(/test=1/);
-    await expect(page.getByTestId("delivery-row").first()).toBeVisible();
+    await expect(page.getByTestId("notif-test-queued")).toBeVisible();
     await expect(async () => {
       const res = await fetch(`${MAILPIT_URL}/api/v1/messages?limit=20`);
       const { messages } = (await res.json()) as {
@@ -188,25 +249,27 @@ test.describe("On-call & alerting", () => {
       );
       expect(hit).toBeTruthy();
     }).toPass({ timeout: 60_000 });
+    // The email row's status is the real one of that delivery.
     await page.reload();
     await expect(
-      page
-        .getByTestId("delivery-row")
-        .first()
-        .getByText(/envoy|sent|gesendet/i),
-    ).toBeVisible();
-    // A step can be added to the low-urgency rule and removed.
-    // Ten steps at most: when a previous run filled the rule, remove one before adding.
-    if (!(await page.getByTestId("rule-add-low").isVisible())) {
-      await page
-        .getByTestId("rule-low")
-        .getByRole("button", { name: /Supprimer|Delete|Löschen/ })
-        .last()
-        .click();
-      await expect(page.getByTestId("rule-add-low")).toBeVisible();
+      page.locator('[data-testid="contact-row"][data-kind="email"]').getByTestId("contact-status"),
+    ).toHaveText(/sent|delivered|envoy|remis|gesendet|zugestellt/i);
+
+    // A step can be added to the low-urgency rule and taken out again.
+    const low = page.getByTestId("rule-low");
+    const steps = low.getByTestId("rule-step");
+    if (await page.getByTestId("rule-open-low").isVisible()) {
+      const count = await steps.count();
+      await page.getByTestId("rule-open-low").click();
+      await page.locator('[data-testid="rule-low"] select[name="kind"]').selectOption("email");
+      await page.locator('[data-testid="rule-low"] select[name="delayMinutes"]').selectOption("30");
+      await page.getByTestId("rule-add-low").click();
+      await expect(steps).toHaveCount(count + 1);
+      const added = steps.filter({ hasText: /30/ });
+      await added.hover();
+      await added.getByTestId("rule-step-remove").click();
+      await expect(steps).toHaveCount(count);
     }
-    await page.getByTestId("rule-add-low").click();
-    await expect(page.getByTestId("rule-low").getByText(/^3$/)).toBeVisible();
     await signOut(page);
   });
 
@@ -216,6 +279,13 @@ test.describe("On-call & alerting", () => {
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/on-call?tab=policies");
     await expect(page.getByTestId("path-level").first()).toBeVisible();
+    // Every policy starts with Atlas: the side note says what each level does.
+    await expect(page.getByTestId("policy-atlas-note")).toContainText(/Atlas/);
+    // Teams have no tab of their own; the policies lead to them.
+    await page.getByTestId("policy-teams-link").click();
+    await expect(page).toHaveURL(/tab=teams/);
+    await expect(page.getByTestId("oncall-tab-policies")).toHaveAttribute("aria-current", "page");
+    await page.goto("/app/on-call?tab=policies");
     // One dry run per policy card now, so the first is the one to drive.
     await page.getByTestId("path-test").first().click();
     await expect(page.getByTestId("path-test-result").first()).toBeVisible();

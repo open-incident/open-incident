@@ -50,7 +50,7 @@ test.describe("Issue trackers", () => {
     const addForm = page.getByTestId("follow-up-form");
     await addForm.locator('input[name="title"]').fill(title);
     await addForm.locator("button[type=submit]").click();
-    const row = page.locator(".oi-card").filter({ hasText: title });
+    const row = page.getByTestId("pm-follow-up").filter({ hasText: title });
     await expect(row).toBeVisible();
     await row.getByTestId("follow-up-export").click();
     await row.getByTestId("follow-up-export-github").click();
@@ -71,7 +71,10 @@ test.describe("Issue trackers", () => {
     await expect(page.getByRole("status")).toContainText(/1/);
     await page.goto("/app/incidents/217?tab=follow-ups");
     await expect(
-      page.locator(".oi-card").filter({ hasText: title }).getByRole("button", { pressed: true }),
+      page
+        .getByTestId("pm-follow-up")
+        .filter({ hasText: title })
+        .getByRole("button", { pressed: true }),
     ).toBeVisible();
   });
 

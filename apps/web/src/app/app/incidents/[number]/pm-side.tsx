@@ -6,8 +6,9 @@ import { useT } from "@/i18n/client";
 /**
  * The two controls of the post-incident strip that live in the browser: the
  * share button, which copies the document's address, and the comments panel —
- * a drawer over the document, holding the team's notes and the document's
- * history. Both are rendered on the server; this only opens and closes them.
+ * fixed on the right over the document, every comment of the team with the
+ * section it is on, and the document's history folded at the bottom. Both are
+ * rendered on the server; this only opens and closes them.
  */
 export function PmSide({ count, children }: { count: number; children: React.ReactNode }) {
   const t = useT();
@@ -35,7 +36,9 @@ export function PmSide({ count, children }: { count: number; children: React.Rea
         style={btn}
         onClick={async () => {
           try {
-            await navigator.clipboard.writeText(window.location.href);
+            const url = new URL(window.location.href);
+            url.searchParams.set("tab", "post-incident");
+            await navigator.clipboard.writeText(url.toString());
             setCopied(true);
             setTimeout(() => setCopied(false), 2500);
           } catch {
@@ -98,6 +101,7 @@ export function PmSide({ count, children }: { count: number; children: React.Rea
             <button
               type="button"
               onClick={() => setOpen(false)}
+              data-testid="pm-drawer-close"
               aria-label={t("common.close")}
               className="oi-hover"
               style={{
@@ -116,7 +120,7 @@ export function PmSide({ count, children }: { count: number; children: React.Rea
           <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
             {children}
             <div style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
-              {t("inc2.pi.commentsNote")}
+              {t("incv2.pi.commentsNote")}
             </div>
           </div>
         </div>

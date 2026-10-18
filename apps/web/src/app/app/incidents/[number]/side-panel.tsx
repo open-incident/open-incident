@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { alertSources, alerts, withTenant } from "@openincident/db";
+import { alertPriorities, alertSources, alerts, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import type { IncidentDetail } from "@/lib/incidents";
 import { avatarTone, initials } from "@/lib/avatar";
 import { priorityTone } from "@/lib/tones";
-import { severityTone } from "../tone";
+import { severityTone, statusTone } from "../tone";
 import type { IncidentService } from "../services-of";
 import { AssignRole } from "./assign-role";
+import { SeverityPicker } from "./severity-picker";
 
 export const card: React.CSSProperties = {
   background: "var(--panel)",
@@ -28,10 +29,10 @@ export const eyebrow: React.CSSProperties = {
 };
 
 /**
- * The right column of the timeline tab: the incident's facts, its roles, the
- * services it is about with their owner, the alerts behind it, what the status
- * page says and the follow-ups it has produced. One card each, in the design's
- * order; the sections a workspace has connected (chat, escalations) follow.
+ * The right column of the timeline tab, in the design's order: the incident's
+ * facts, its roles (and who the page reached), the services it is about with
+ * their owner, the alerts behind it, the chat channels it runs in, what the
+ * status page says and the follow-ups it has produced.
  */
 export async function SidePanel({
   inc,
@@ -39,17 +40,21 @@ export async function SidePanel({
   canAct,
   tenantId,
   services,
+  paged,
+  channels,
   statusPage,
-  extra,
 }: {
   inc: IncidentDetail;
   number: number;
   canAct: boolean;
   tenantId: string;
   services: IncidentService[];
+  /** Who the escalation reached — rows of the roles card. */
+  paged?: React.ReactNode;
+  /** The CHANNELS card. */
+  channels?: React.ReactNode;
   /** The status page card, rendered by the page so it can stay one query. */
   statusPage?: React.ReactNode;
-  extra?: React.ReactNode;
 }) {
   const t = await getT();
   const sev = severityTone(inc.row.severityRank);
@@ -61,9 +66,11 @@ export async function SidePanel({
         status: alerts.status,
         groupCount: alerts.groupCount,
         sourceName: alertSources.name,
+        severityName: alertPriorities.name,
       })
       .from(alerts)
       .innerJoin(alertSources, eq(alertSources.id, alerts.sourceId))
+      .leftJoin(alertPriorities, eq(alertPriorities.id, alerts.priorityId))
       .where(
         and(
           eq(alerts.tenantId, tenantId),
@@ -81,15 +88,36 @@ export async function SidePanel({
   const ttr =
     inc.row.resolvedAt &&
     t.fmt.duration((inc.row.resolvedAt.getTime() - inc.row.declaredAt.getTime()) / 60_000);
+  const first = attached[0];
+  const detectedBy =
+    inc.row.source === "alert" && first
+      ? [first.sourceName, first.severityName].filter(Boolean).join(" · ")
+      : inc.row.source === "api"
+        ? t("timeline.source.api")
+        : inc.row.creatorName
+          ? t("incv2.meta.declaredBy", { name: inc.row.creatorName })
+          : t("timeline.source.web");
+  const sevLabel = (name: string, description: string | null) =>
+    `${name}${description ? ` — ${description.split(" — ")[0]?.toLowerCase()}` : ""}`;
 
   const meta: Array<[string, React.ReactNode, string]> = [
     [
       t("incident.field.severity"),
-      `${inc.row.severityName ?? "—"}${
-        inc.severityDescription
-          ? ` — ${inc.severityDescription.split(" — ")[0]?.toLowerCase()}`
-          : ""
-      }`,
+      canAct ? (
+        <SeverityPicker
+          number={number}
+          current={inc.severities.find((s) => s.name === inc.row.severityName)?.id ?? ""}
+          options={inc.severities.map((s) => ({
+            id: s.id,
+            label: sevLabel(s.name, s.description),
+          }))}
+          none={t("incident.update.noSeverity")}
+          label={t("incident.field.severity")}
+          color={sev.ink}
+        />
+      ) : (
+        sevLabel(inc.row.severityName ?? "—", inc.severityDescription)
+      ),
       sev.ink,
     ],
     [
@@ -97,21 +125,26 @@ export async function SidePanel({
       inc.row.phase === "active"
         ? (inc.row.statusName ?? t("incident.phase.active"))
         : t(`incident.phase.${inc.row.phase}`),
-      "var(--ink)",
+      statusTone(inc.row.phase, inc.row.status).ink,
     ],
     [t("incident.field.type"), inc.typeName, "var(--ink)"],
-    [t("incident.field.mode"), t(`incident.mode.${inc.row.mode}`), "var(--ink)"],
-    [
-      t("inc2.meta.detectedBy"),
-      t(
-        `timeline.source.${inc.row.source === "api" ? "api" : inc.row.source === "alert" ? "alert" : "web"}`,
-      ),
-      "var(--ink)",
-    ],
-    [t("inc2.meta.declared"), t.fmt.dateTime(inc.row.declaredAt, t.timeZone), "var(--ink)"],
+    ...(inc.row.mode !== "live"
+      ? ([[t("incident.field.mode"), t(`incident.mode.${inc.row.mode}`), "var(--viol)"]] as Array<
+          [string, string, string]
+        >)
+      : []),
+    [t("inc2.meta.detectedBy"), detectedBy, "var(--ink)"],
     ...(tta ? ([[t("inc2.meta.tta"), tta, "var(--ink)"]] as Array<[string, string, string]>) : []),
     ...(ttr ? ([[t("inc2.meta.ttr"), ttr, "var(--ink)"]] as Array<[string, string, string]>) : []),
-    ...inc.customFields.map((f) => [f.label, f.value, "var(--ink-2)"] as [string, string, string]),
+    ...(inc.customFields.length > 0
+      ? ([
+          [
+            t("incv2.meta.labels"),
+            inc.customFields.map((f) => `${f.key}:${f.value}`).join(" · "),
+            "var(--ink-2)",
+          ],
+        ] as Array<[string, string, string]>)
+      : []),
   ];
 
   return (
@@ -126,7 +159,7 @@ export async function SidePanel({
         minWidth: 240,
       }}
     >
-      <div style={card}>
+      <div style={card} data-testid="incident-facts">
         {meta.map(([k, v, ink], i) => (
           <div
             key={`${k}-${i}`}
@@ -146,50 +179,17 @@ export async function SidePanel({
           <span style={{ flex: 1 }} />
           {canAct && <AssignRole number={number} roles={inc.roles} />}
         </div>
-        {inc.roles.map((r) => {
-          const tone = r.memberName
-            ? avatarTone(r.memberName)
-            : { bg: "var(--sunk)", ink: "var(--ink-3)" };
-          return (
-            <div key={r.roleId} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span
-                aria-hidden
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: "50%",
-                  background: tone.bg,
-                  color: tone.ink,
-                  display: "grid",
-                  placeItems: "center",
-                  fontSize: 9,
-                  fontWeight: 700,
-                  flex: "none",
-                }}
-              >
-                {r.memberName ? initials(r.memberName) : "?"}
-              </span>
-              <div style={{ lineHeight: 1.2, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: 12.5,
-                    fontWeight: 600,
-                    color: r.memberName ? "var(--ink)" : "var(--ink-3)",
-                  }}
-                >
-                  {r.memberName ?? t("incident.roleUnassigned")}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--ink-3)" }}>{r.roleName}</div>
-              </div>
-            </div>
-          );
-        })}
-        {(inc.participants.participants > 0 || inc.participants.observers > 0) && (
-          <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-            {t("incident.participants", { count: inc.participants.participants })} ·{" "}
-            {t("incident.observers", { count: inc.participants.observers })}
-          </div>
-        )}
+        {inc.roles
+          .filter((r) => r.memberName || r.isLead)
+          .map((r) => (
+            <Person
+              key={r.roleId}
+              name={r.memberName}
+              sub={r.roleName}
+              fallback={t("incident.roleUnassigned")}
+            />
+          ))}
+        {paged}
       </div>
 
       <div style={card}>
@@ -267,11 +267,13 @@ export async function SidePanel({
             {a.title}{" "}
             <span style={{ color: "var(--ink-3)" }}>
               · {a.sourceName}
-              {a.groupCount > 1 ? ` · ${t("timeline.grouped", { count: a.groupCount })}` : ""}
+              {a.groupCount > 1 ? ` · ${t("incv2.alerts.grouped", { count: a.groupCount })}` : ""}
             </span>
           </Link>
         ))}
       </div>
+
+      {channels}
 
       {statusPage}
 
@@ -343,7 +345,56 @@ export async function SidePanel({
           );
         })}
       </div>
-      {extra}
     </aside>
+  );
+}
+
+/** A person of the roles card: the avatar, the name, what they are to this incident. */
+export function Person({
+  name,
+  sub,
+  fallback,
+  subInk = "var(--ink-3)",
+  testid,
+}: {
+  name: string | null;
+  sub: string;
+  fallback?: string;
+  subInk?: string;
+  testid?: string;
+}) {
+  const tone = name ? avatarTone(name) : { bg: "var(--sunk)", ink: "var(--ink-3)" };
+  return (
+    <div data-testid={testid} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span
+        aria-hidden
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: "50%",
+          background: tone.bg,
+          color: tone.ink,
+          display: "grid",
+          placeItems: "center",
+          fontSize: 9,
+          fontWeight: 700,
+          flex: "none",
+        }}
+      >
+        {name ? initials(name) : "?"}
+      </span>
+      <div style={{ lineHeight: 1.2, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: name ? "var(--ink)" : "var(--ink-3)",
+          }}
+        >
+          {name ?? fallback}
+        </div>
+        <div style={{ fontSize: 11, color: subInk }}>{sub}</div>
+      </div>
+    </div>
   );
 }

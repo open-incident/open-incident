@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { createContext, useContext, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useT } from "@/i18n/client";
 import { renderMarkdown } from "@/lib/markdown";
+import { avatarTone, initials } from "@/lib/avatar";
 import { draftPostMortemAction } from "./ai-actions";
 import {
   addPostMortemComment,
@@ -33,7 +35,7 @@ const small: React.CSSProperties = {
   fontSize: 11.5,
   fontWeight: 600,
   cursor: "pointer",
-  color: "var(--brand)",
+  color: "var(--ink-3)",
 };
 const menuItem: React.CSSProperties = {
   display: "block",
@@ -56,15 +58,318 @@ const menu: React.CSSProperties = {
   background: "var(--panel)",
   border: "1px solid var(--line)",
   borderRadius: 10,
-  boxShadow: "var(--shadow-card)",
+  boxShadow: "var(--shadow-pop)",
   padding: 4,
 };
+const chip: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 600,
+  color: "var(--viol)",
+  background: "var(--viol-t)",
+  borderRadius: 5,
+  padding: "1px 6px",
+  whiteSpace: "nowrap",
+};
+
+function Avatar({ name, size = 22 }: { name: string; size?: number }) {
+  const tone = avatarTone(name);
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: tone.bg,
+        color: tone.ink,
+        display: "grid",
+        placeItems: "center",
+        fontSize: size <= 20 ? 8 : 8.5,
+        fontWeight: 700,
+        flex: "none",
+      }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
+/** "＋ Comment" with the count of open comments — the one control every section shows. */
+function CommentButton({ count, onClick }: { count: number; onClick: () => void }) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid="pm-comment-toggle"
+      className="oi-pm-comment"
+      style={{
+        ...small,
+        padding: 0,
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+        whiteSpace: "nowrap",
+      }}
+    >
+      ＋ {t("incv2.pm.comment")}
+      {count > 0 && (
+        <span
+          style={{
+            fontFamily: "var(--mono)",
+            fontSize: 10.5,
+            background: "var(--brand-t)",
+            color: "var(--brand)",
+            borderRadius: 999,
+            padding: "0 6px",
+          }}
+        >
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
 
 /**
- * One section of the document: rendered as prose, edited as markdown with a
- * toolbar and a live preview, reworked by the assistant one section at a time
- * (regenerate, tighten, enrich, rewrite — a person pays for what they ask),
- * commented, moved, renamed or removed. The person's words always win.
+ * The team's notes on a section, as the design draws them under it — yellow
+ * cards with who and when — and the composer the "＋ Comment" opens. Open
+ * comments only: a resolved one stays in the Comments panel, with its mark.
+ */
+function SectionNotes({
+  number,
+  sectionKey,
+  comments,
+  canAct,
+  composing,
+  me,
+  onPosted,
+}: {
+  number: number;
+  sectionKey: string;
+  comments: SectionComment[];
+  canAct: boolean;
+  composing: boolean;
+  me: string;
+  onPosted: () => void;
+}) {
+  const t = useT();
+  const form = useRef<HTMLFormElement>(null);
+  const open = comments.filter((c) => !c.resolvedAt);
+  if (open.length === 0 && !composing) return null;
+  return (
+    <div data-testid="pm-comments" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {open.map((c) => (
+        <div
+          key={c.id}
+          className="oi-pm-note"
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "flex-start",
+            background: "var(--note)",
+            border: "1px solid var(--note-b)",
+            borderRadius: 10,
+            padding: "9px 12px",
+            marginTop: 2,
+          }}
+        >
+          <Avatar name={c.memberName} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>{c.memberName}</span>
+              <span style={{ fontSize: 11, color: "var(--note-ink)" }}>
+                {t.fmt.messageTime(new Date(c.createdAt))}
+              </span>
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.5, marginTop: 1, whiteSpace: "pre-wrap" }}>
+              {c.body}
+            </div>
+          </div>
+          {canAct && (
+            <form action={resolvePostMortemComment} className="oi-pm-resolve">
+              <input type="hidden" name="number" value={number} />
+              <input type="hidden" name="id" value={c.id} />
+              <button type="submit" style={{ ...small, color: "var(--ok)" }}>
+                {t("postMortem.comments.resolve")}
+              </button>
+            </form>
+          )}
+        </div>
+      ))}
+      {canAct && composing && (
+        <form
+          ref={form}
+          action={async (fd) => {
+            await addPostMortemComment(fd);
+            form.current?.reset();
+            onPosted();
+          }}
+          className="oi-rise-fast"
+          data-testid="pm-comment-form"
+          style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 2 }}
+        >
+          <input type="hidden" name="number" value={number} />
+          <input type="hidden" name="section" value={sectionKey} />
+          <span style={{ marginTop: 6 }}>
+            <Avatar name={me} />
+          </span>
+          <textarea
+            name="body"
+            required
+            rows={2}
+            maxLength={4000}
+            autoFocus
+            placeholder={t("incv2.pm.commentPlaceholder")}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter")
+                e.currentTarget.form?.requestSubmit();
+            }}
+            style={{
+              flex: 1,
+              border: "1px solid var(--brand)",
+              borderRadius: 10,
+              padding: "8px 11px",
+              fontSize: 13,
+              lineHeight: 1.5,
+              outline: "none",
+              resize: "vertical",
+              boxShadow: "var(--focus-ring)",
+              background: "var(--panel)",
+              color: "var(--ink)",
+              fontFamily: "inherit",
+            }}
+          />
+          <button
+            type="submit"
+            className="oi-hover-brand-2"
+            style={{
+              height: 34,
+              padding: "0 12px",
+              borderRadius: 9,
+              border: 0,
+              background: "var(--brand)",
+              color: "var(--on-brand)",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              marginTop: 1,
+            }}
+          >
+            {t("incv2.pm.post")}
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+const Scope = createContext<{ composing: boolean; toggle: () => void; close: () => void } | null>(
+  null,
+);
+
+/**
+ * For a block whose heading is drawn by someone else (Atlas's "What Atlas
+ * did"): the "＋ Comment" goes in as that heading's aside, the notes after it,
+ * and this shares the composer's state between the two.
+ */
+export function CommentScope({ children }: { children: React.ReactNode }) {
+  const [composing, setComposing] = useState(false);
+  return (
+    <Scope.Provider
+      value={{
+        composing,
+        toggle: () => setComposing((v) => !v),
+        close: () => setComposing(false),
+      }}
+    >
+      {children}
+    </Scope.Provider>
+  );
+}
+
+export function ScopeCommentButton({ count }: { count: number }) {
+  const scope = useContext(Scope);
+  return <CommentButton count={count} onClick={() => scope?.toggle()} />;
+}
+
+export function ScopeNotes(props: {
+  number: number;
+  sectionKey: string;
+  comments: SectionComment[];
+  canAct: boolean;
+  me: string;
+}) {
+  const scope = useContext(Scope);
+  return (
+    <SectionNotes
+      {...props}
+      composing={scope?.composing ?? false}
+      onPosted={() => scope?.close()}
+    />
+  );
+}
+
+/**
+ * A block of the document that is not typed but read off the incident — the
+ * decisions, what Atlas did, the follow-ups. Same heading as a section, the
+ * same "＋ Comment" and team notes; the content comes from the server.
+ */
+export function PmBlock({
+  number,
+  sectionKey,
+  title,
+  canAct,
+  comments,
+  me,
+  children,
+  testid,
+}: {
+  number: number;
+  sectionKey: string;
+  title: string;
+  canAct: boolean;
+  comments: SectionComment[];
+  me: string;
+  children: React.ReactNode;
+  testid?: string;
+}) {
+  const [composing, setComposing] = useState(false);
+  const open = comments.filter((c) => !c.resolvedAt).length;
+  return (
+    <section
+      id={`pm-${sectionKey}`}
+      data-testid={testid ?? `pm-block-${sectionKey}`}
+      className="oi-pm-sec"
+      style={{ display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 80 }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, letterSpacing: "-.01em" }}>
+          {title}
+        </h3>
+        <span style={{ flex: 1 }} />
+        {canAct && <CommentButton count={open} onClick={() => setComposing((v) => !v)} />}
+      </div>
+      {children}
+      <SectionNotes
+        number={number}
+        sectionKey={sectionKey}
+        comments={comments}
+        canAct={canAct}
+        composing={composing}
+        me={me}
+        onPosted={() => setComposing(false)}
+      />
+    </section>
+  );
+}
+
+/**
+ * One section of the document: read as prose at the design's reading size,
+ * edited as markdown with a toolbar and a live preview, reworked by Atlas one
+ * section at a time, commented, moved, renamed or removed. Only "＋ Comment"
+ * is always on show; the editing tools appear when the pointer is on the
+ * section. The person's words always win.
  */
 export function SectionEditor({
   number,
@@ -79,6 +384,9 @@ export function SectionEditor({
   blocks,
   review,
   comments,
+  draft = false,
+  fromRca = false,
+  me,
 }: {
   number: number;
   section: { key: string; title: string; body: string };
@@ -92,16 +400,24 @@ export function SectionEditor({
   blocks: EditorBlocks;
   review: SectionReview;
   comments: SectionComment[];
+  /** Written by Atlas and not touched by a person since — "draft · Atlas". */
+  draft?: boolean;
+  /** The root cause, as Atlas's analysis wrote it: the violet rule and the way back to the analysis. */
+  fromRca?: boolean;
+  me: string;
 }) {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [preview, setPreview] = useState(false);
-  const [draft, setDraft] = useState(section.body);
-  const [commenting, setCommenting] = useState(false);
+  const [draftBody, setDraftBody] = useState(section.body);
+  const [composing, setComposing] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
   const html = useMemo(() => renderMarkdown(section.body), [section.body]);
-  const previewHtml = useMemo(() => (preview ? renderMarkdown(draft) : ""), [preview, draft]);
+  const previewHtml = useMemo(
+    () => (preview ? renderMarkdown(draftBody) : ""),
+    [preview, draftBody],
+  );
   const open = comments.filter((c) => !c.resolvedAt);
 
   /** Wraps the selection (or inserts at the cursor) and keeps focus in the textarea. */
@@ -113,7 +429,7 @@ export function SectionEditor({
     const lineStart = block && s > 0 && value[s - 1] !== "\n" ? "\n" : "";
     const insert = `${lineStart}${before}${selected}${after}`;
     const next = value.slice(0, s) + insert + value.slice(e);
-    setDraft(next);
+    setDraftBody(next);
     requestAnimationFrame(() => {
       el.focus();
       const pos = s + lineStart.length + before.length + selected.length;
@@ -123,10 +439,10 @@ export function SectionEditor({
   const insertBlock = (text: string) => {
     if (!text) return;
     const el = area.current;
-    const s = el?.selectionStart ?? draft.length;
-    const pad = s > 0 && draft[s - 1] !== "\n" ? "\n\n" : "";
-    const next = draft.slice(0, s) + pad + text + "\n" + draft.slice(s);
-    setDraft(next);
+    const s = el?.selectionStart ?? draftBody.length;
+    const pad = s > 0 && draftBody[s - 1] !== "\n" ? "\n\n" : "";
+    const next = draftBody.slice(0, s) + pad + text + "\n" + draftBody.slice(s);
+    setDraftBody(next);
     requestAnimationFrame(() => el?.focus());
   };
 
@@ -161,11 +477,27 @@ export function SectionEditor({
         ? { bg: "var(--wait-t)", ink: "var(--wait)" }
         : { bg: "var(--ok-t)", ink: "var(--ok)" };
 
+  const fromRcaLine = t("incv2.pm.fromRca", { tab: "\u0000" }).split("\u0000");
+  const prose = (
+    <div
+      className="oi-prose oi-pm-body"
+      style={{ fontSize: 15, lineHeight: 1.7, maxWidth: "none", textWrap: "pretty" }}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+
   return (
     <section
       id={`pm-${section.key}`}
       data-testid={`pm-section-${section.key}`}
-      style={{ display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 80 }}
+      className="oi-pm-sec"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        scrollMarginTop: 80,
+        position: "relative",
+      }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         {renaming ? (
@@ -196,14 +528,10 @@ export function SectionEditor({
                 flex: 1,
               }}
             />
-            <button type="submit" style={{ ...small }}>
+            <button type="submit" style={{ ...small, color: "var(--brand)" }}>
               {t("common.save")}
             </button>
-            <button
-              type="button"
-              style={{ ...small, color: "var(--ink-3)" }}
-              onClick={() => setRenaming(false)}
-            >
+            <button type="button" style={small} onClick={() => setRenaming(false)}>
               {t("common.cancel")}
             </button>
           </form>
@@ -215,6 +543,7 @@ export function SectionEditor({
             {title}
           </h3>
         )}
+        {draft && !renaming && <span style={chip}>{t("incv2.pm.draftAtlas")}</span>}
         {review && review.verdict !== "supported" && (
           <span
             data-testid="pm-review-note"
@@ -234,15 +563,16 @@ export function SectionEditor({
         )}
         <span style={{ flex: 1 }} />
         {canAct && !editing && !renaming && (
-          <>
+          <span className="oi-pm-tools" style={{ display: "flex", alignItems: "center", gap: 2 }}>
             <button
               type="button"
               onClick={() => {
-                setDraft(section.body);
+                setDraftBody(section.body);
                 setPreview(false);
                 setEditing(true);
               }}
               style={small}
+              className="oi-hover"
             >
               {t("common.edit")}
             </button>
@@ -251,8 +581,9 @@ export function SectionEditor({
                 <summary
                   style={{ ...small, color: "var(--viol)", listStyle: "none" }}
                   title={t("postMortem.aiMenu")}
+                  aria-label={t("postMortem.aiMenu")}
                 >
-                  ✦ {t("postMortem.aiMenu")}
+                  ✦
                 </summary>
                 <div style={menu}>
                   <form action={draftPostMortemAction}>
@@ -286,20 +617,11 @@ export function SectionEditor({
                 </div>
               </details>
             )}
-            <button
-              type="button"
-              onClick={() => setCommenting((v) => !v)}
-              style={{ ...small, color: open.length ? "var(--brand)" : "var(--ink-3)" }}
-              data-testid="pm-comment-toggle"
-            >
-              {open.length
-                ? t("postMortem.comments.count", { count: open.length })
-                : t("postMortem.comments.add")}
-            </button>
             <details style={{ position: "relative" }}>
               <summary
-                style={{ ...small, color: "var(--ink-3)", listStyle: "none" }}
+                style={{ ...small, listStyle: "none" }}
                 aria-label={t("postMortem.more")}
+                title={t("postMortem.more")}
               >
                 ···
               </summary>
@@ -358,14 +680,15 @@ export function SectionEditor({
                 )}
               </div>
             </details>
-          </>
+          </span>
         )}
+        {canAct && <CommentButton count={open.length} onClick={() => setComposing((v) => !v)} />}
       </div>
 
       {review && review.verdict !== "supported" && review.note && (
         <div
           style={{
-            margin: "0 0 8px",
+            margin: "0 0 4px",
             padding: "7px 11px",
             borderRadius: 8,
             background: verdictTone.bg,
@@ -451,13 +774,13 @@ export function SectionEditor({
             <textarea
               ref={area}
               name="body"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              value={draftBody}
+              onChange={(e) => setDraftBody(e.target.value)}
               onKeyDown={(e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter")
                   e.currentTarget.form?.requestSubmit();
               }}
-              rows={Math.min(28, Math.max(6, draft.split("\n").length + 2))}
+              rows={Math.min(28, Math.max(6, draftBody.split("\n").length + 2))}
               autoFocus
               placeholder={hint}
               className="oi-field"
@@ -474,7 +797,7 @@ export function SectionEditor({
               }}
             />
           )}
-          {preview && <input type="hidden" name="body" value={draft} />}
+          {preview && <input type="hidden" name="body" value={draftBody} />}
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button
               type="submit"
@@ -483,7 +806,7 @@ export function SectionEditor({
                 padding: "0 12px",
                 borderRadius: 8,
                 background: "var(--brand)",
-                color: "#fff",
+                color: "var(--on-brand)",
                 border: 0,
                 fontSize: 12.5,
                 fontWeight: 600,
@@ -503,129 +826,56 @@ export function SectionEditor({
                 background: "var(--panel)",
                 fontSize: 12.5,
                 cursor: "pointer",
+                color: "inherit",
               }}
             >
               {t("common.cancel")}
             </button>
             <span style={{ flex: 1 }} />
             <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
-              {t("postMortem.tool.markdownHint")} · {draft.length}
+              {t("postMortem.tool.markdownHint")} · {draftBody.length}
             </span>
           </div>
         </form>
       ) : section.body.trim() === "" ? (
-        <p style={{ margin: "0 0 4px", fontSize: 13, color: "var(--ink-3)", fontStyle: "italic" }}>
+        <p style={{ margin: 0, fontSize: 14, color: "var(--ink-3)", fontStyle: "italic" }}>
           {hint || t("postMortem.emptySection")}
         </p>
-      ) : (
+      ) : fromRca ? (
         <div
-          className="oi-prose"
-          style={{ fontSize: 14 }}
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      )}
-
-      {(commenting || open.length > 0) && (
-        <div
-          data-testid="pm-comments"
           style={{
-            marginTop: 8,
-            padding: "8px 12px",
-            borderLeft: "3px solid var(--line)",
+            borderLeft: "3px solid var(--viol)",
+            padding: "4px 0 4px 16px",
             display: "flex",
             flexDirection: "column",
-            gap: 6,
+            gap: 8,
           }}
         >
-          {comments
-            .filter((c) => commenting || !c.resolvedAt)
-            .map((c) => (
-              <div
-                key={c.id}
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "flex-start",
-                  fontSize: 12.5,
-                  opacity: c.resolvedAt ? 0.6 : 1,
-                }}
-              >
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ fontWeight: 600 }}>{c.memberName}</span>
-                  <span style={{ color: "var(--ink-3)" }}>
-                    {" "}
-                    · {t.fmt.relative(new Date(c.createdAt))}
-                  </span>
-                  {c.resolvedAt && (
-                    <span style={{ color: "var(--ok)" }}>
-                      {" "}
-                      · {t("postMortem.comments.resolvedBy", { name: c.resolvedByName ?? "" })}
-                    </span>
-                  )}
-                  <span style={{ display: "block", color: "var(--ink-2)", whiteSpace: "pre-wrap" }}>
-                    {c.body}
-                  </span>
-                </span>
-                {canAct && (
-                  <form action={resolvePostMortemComment}>
-                    <input type="hidden" name="number" value={number} />
-                    <input type="hidden" name="id" value={c.id} />
-                    {c.resolvedAt && <input type="hidden" name="reopen" value="1" />}
-                    <button
-                      type="submit"
-                      style={{ ...small, color: c.resolvedAt ? "var(--ink-3)" : "var(--ok)" }}
-                    >
-                      {c.resolvedAt
-                        ? t("postMortem.comments.reopen")
-                        : t("postMortem.comments.resolve")}
-                    </button>
-                  </form>
-                )}
-              </div>
-            ))}
-          {canAct && commenting && (
-            <form
-              action={async (fd) => {
-                await addPostMortemComment(fd);
-              }}
-              style={{ display: "flex", gap: 6, alignItems: "flex-start" }}
-              data-testid="pm-comment-form"
+          {prose}
+          <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
+            {fromRcaLine[0]}
+            <Link
+              href={`/app/incidents/${number}?tab=rca`}
+              style={{ color: "var(--brand)", fontWeight: 600, textDecoration: "none" }}
             >
-              <input type="hidden" name="number" value={number} />
-              <input type="hidden" name="section" value={section.key} />
-              <textarea
-                name="body"
-                required
-                rows={2}
-                maxLength={4000}
-                placeholder={t("postMortem.comments.placeholder")}
-                className="oi-field"
-                style={{
-                  flex: 1,
-                  border: "1px solid var(--line)",
-                  borderRadius: 8,
-                  padding: "6px 9px",
-                  fontSize: 12.5,
-                  background: "var(--panel)",
-                  resize: "vertical",
-                  fontFamily: "inherit",
-                }}
-              />
-              <button
-                type="submit"
-                style={{
-                  ...small,
-                  height: 30,
-                  border: "1px solid var(--line)",
-                  background: "var(--panel)",
-                }}
-              >
-                {t("postMortem.comments.send")}
-              </button>
-            </form>
-          )}
+              {t("inc2.dtab.rca")}
+            </Link>
+            {fromRcaLine[1]}
+          </div>
         </div>
+      ) : (
+        prose
       )}
+
+      <SectionNotes
+        number={number}
+        sectionKey={section.key}
+        comments={comments}
+        canAct={canAct}
+        composing={composing}
+        me={me}
+        onPosted={() => setComposing(false)}
+      />
     </section>
   );
 }

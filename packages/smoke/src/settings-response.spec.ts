@@ -23,6 +23,8 @@ test.describe("Settings — Response", () => {
     await expect(page.getByTestId("field-row").filter({ hasText: key })).toBeVisible();
 
     await page.goto("/app/incidents/new");
+    // Optional fields are folded under "+ N more fields", after the design's three questions.
+    await page.getByTestId("declare-details").click();
     await expect(page.locator(`[name="field.${key}"]`)).toBeVisible();
 
     await page.goto("/app/settings/fields");
@@ -63,14 +65,8 @@ test.describe("Settings — Response", () => {
     page,
   }) => {
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/incidents");
-    await expect(
-      page
-        .getByTestId("announcement")
-        .filter({ hasText: "INC-220" })
-        .or(page.getByTestId("announcement").first()),
-    ).toBeVisible();
-
+    // The V2 list has no banner above the rows: the announcement goes to the
+    // chat channels the rule names, and the rule itself is what is checked here.
     await page.goto("/app/settings/announcements");
     await expect(page.getByTestId("template-row").first()).toBeVisible();
     await expect(page.getByTestId("rule-row").first()).toBeVisible();

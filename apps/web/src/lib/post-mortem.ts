@@ -283,6 +283,20 @@ export function documentMarkdown(
     "",
     ...pm.sections.flatMap((s) => [`## ${sectionTitle(s, t)}`, "", s.body.trim() || "_—_", ""]),
   ];
+  // The decisions taken during the incident, as the timeline recorded them.
+  const decisions = inc.events.filter(
+    (e) => e.kind === "note" && (e.payload as { system?: string })?.system === "decision",
+  );
+  if (decisions.length > 0)
+    parts.push(
+      `## ${t("incv2.pm.decisions")}`,
+      "",
+      ...decisions.map((d) => {
+        const p = d.payload as { title?: string; why?: string };
+        return `- **${t.fmt.time(d.occurredAt, t.timeZone)}** — ${p.title ?? ""}. ${d.actorName ?? "—"}${p.why ? ` — ${p.why}` : ""}`;
+      }),
+      "",
+    );
   if (inc.followUps.length > 0)
     parts.push(`## ${t("incident.tab.followUps")}`, "", followUpsMarkdown(inc, t), "");
   if (pm.aiDrafted) parts.push(`_${t("postMortem.aiDraftNote")}_`, "");

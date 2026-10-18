@@ -19,22 +19,22 @@ export function PmTitle({
   const t = useT();
   const [editing, setEditing] = useState(false);
   const style: React.CSSProperties = {
-    fontFamily: "var(--font-title)",
-    fontSize: 24,
+    fontFamily: "var(--title)",
+    fontSize: 28,
     fontWeight: 600,
     letterSpacing: "-.02em",
-    lineHeight: 1.2,
+    lineHeight: 1.15,
   };
   if (!editing)
     return (
-      <h1
+      <h2
         style={{ ...style, margin: 0, cursor: canAct ? "text" : "default" }}
         onClick={() => canAct && setEditing(true)}
         title={canAct ? t("postMortem.titleHint") : undefined}
         data-testid="pm-title"
       >
         {title?.trim() || fallback}
-      </h1>
+      </h2>
     );
   return (
     <form

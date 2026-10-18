@@ -2,18 +2,21 @@
 
 import { useEffect, useState } from "react";
 
+type Mode = "all" | "atlas" | "updates" | "pinned";
+
 /**
- * All · Updates · Pinned — three pills that filter the rendered list in place
- * by the `data-kind` each event carries; nothing is refetched.
+ * All · ✦ By Atlas · Updates · Pinned — pills that filter the rendered list in
+ * place by what each event carries (`data-atlas`, `data-kind`, its pin);
+ * nothing is refetched, and a live refresh keeps the chosen filter.
  */
 export function TimelineFilterClient({
   labels,
   counts,
 }: {
-  labels: { all: string; updates: string; pinned: string };
-  counts: { all: number; updates: number; pinned: number };
+  labels: Record<Mode, string>;
+  counts: Record<Mode, number>;
 }) {
-  const [mode, setMode] = useState<"all" | "updates" | "pinned">("all");
+  const [mode, setMode] = useState<Mode>("all");
   useEffect(() => {
     const list = document.querySelector<HTMLElement>('[data-testid="timeline"]');
     if (!list) return;
@@ -22,12 +25,14 @@ export function TimelineFilterClient({
       li.hidden =
         mode === "all"
           ? false
-          : mode === "updates"
-            ? kind !== "update"
-            : kind !== "pinned" && li.querySelector("[aria-pressed='true']") === null;
+          : mode === "atlas"
+            ? li.dataset.atlas !== "1"
+            : mode === "updates"
+              ? kind !== "update"
+              : kind !== "pinned" && li.querySelector("[aria-pressed='true']") === null;
     }
-  }, [mode]);
-  const pill = (id: typeof mode, label: string, count: number) => {
+  }, [mode, counts]);
+  const pill = (id: Mode) => {
     const on = mode === id;
     return (
       <button
@@ -35,6 +40,7 @@ export function TimelineFilterClient({
         type="button"
         onClick={() => setMode(id)}
         aria-pressed={on}
+        data-testid={`timeline-filter-${id}`}
         style={{
           height: 24,
           padding: "0 10px",
@@ -49,18 +55,19 @@ export function TimelineFilterClient({
           cursor: "pointer",
         }}
       >
-        {label}
+        {labels[id]}
         <span style={{ fontFamily: "var(--mono)", fontSize: 10, marginLeft: 5, opacity: 0.7 }}>
-          {count}
+          {counts[id]}
         </span>
       </button>
     );
   };
   return (
     <div role="group" style={{ display: "flex", gap: 2 }}>
-      {pill("all", labels.all, counts.all)}
-      {pill("updates", labels.updates, counts.updates)}
-      {pill("pinned", labels.pinned, counts.pinned)}
+      {pill("all")}
+      {pill("atlas")}
+      {pill("updates")}
+      {pill("pinned")}
     </div>
   );
 }
