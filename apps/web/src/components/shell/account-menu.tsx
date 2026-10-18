@@ -6,25 +6,25 @@ import { useRouter } from "next/navigation";
 import { useT } from "@/i18n/client";
 import { authClient } from "@/lib/auth-client";
 
-/**
- * The reader's own corner of the header: who they are, the way to their
- * account, and the way out.
- *
- * The product had no way out at all — the dictionary carried "Sign out" and
- * nothing rendered it. A member signed in through single sign-on, who has no
- * password to fall back on, could only close the tab. Signing out ends the
- * session server-side (the cookie alone is not the session), then lands on
- * the sign-in page.
- */
-export function AccountMenu({
-  name,
-  roleLabel,
-  initials,
-}: {
+export type RailMember = {
   name: string;
+  /** "Owner", "Responder"… — already in the reader's language. */
   roleLabel: string;
+  /** The first team they belong to, when they belong to one. */
+  teamName: string | null;
   initials: string;
-}) {
+};
+
+/**
+ * The reader, at the very foot of the rail: initials, name, role and team —
+ * and, on a click, their account and the way out.
+ *
+ * Signing out ends the session server-side (the cookie alone is not the
+ * session), then lands on the sign-in page. A member signed in through single
+ * sign-on has no password to fall back on, so this is their only way out.
+ * The menu opens upwards: below the foot of the rail there is nothing.
+ */
+export function AccountMenu({ member }: { member: RailMember }) {
   const t = useT();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -63,7 +63,7 @@ export function AccountMenu({
     display: "block",
     width: "100%",
     textAlign: "left",
-    padding: "8px 12px",
+    padding: "8px 10px",
     fontSize: 13,
     color: "var(--ink)",
     background: "transparent",
@@ -73,6 +73,8 @@ export function AccountMenu({
     textDecoration: "none",
   };
 
+  const sub = member.teamName ? `${member.roleLabel} · ${member.teamName}` : member.roleLabel;
+
   return (
     <div ref={root} style={{ position: "relative", flex: "none" }}>
       <button
@@ -80,52 +82,89 @@ export function AccountMenu({
         data-testid="account-chip"
         aria-haspopup="menu"
         aria-expanded={open}
-        title={`${name} · ${roleLabel}`}
         onClick={() => setOpen((v) => !v)}
         style={{
-          display: "grid",
-          placeItems: "center",
-          width: 30,
-          height: 30,
-          borderRadius: "50%",
-          background: "var(--brand-t)",
-          color: "var(--brand)",
-          fontSize: 11,
-          fontWeight: 700,
-          border: `1px solid ${open ? "var(--brand)" : "transparent"}`,
+          display: "flex",
+          alignItems: "center",
+          gap: 9,
+          width: "100%",
+          padding: "10px 8px 2px",
+          background: "transparent",
+          border: 0,
+          color: "inherit",
+          textAlign: "left",
           cursor: "pointer",
         }}
       >
-        {initials}
+        <span
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: "50%",
+            background: "var(--brand-t)",
+            color: "var(--brand)",
+            display: "grid",
+            placeItems: "center",
+            fontSize: 10.5,
+            fontWeight: 700,
+            flex: "none",
+            boxShadow: open ? "0 0 0 1px var(--brand)" : undefined,
+          }}
+        >
+          {member.initials}
+        </span>
+        <span style={{ lineHeight: 1.2, minWidth: 0 }}>
+          <span
+            style={{
+              display: "block",
+              fontSize: 12.5,
+              fontWeight: 600,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {member.name}
+          </span>
+          <span
+            style={{
+              display: "block",
+              fontSize: 11,
+              color: "var(--ink-3)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {sub}
+          </span>
+        </span>
       </button>
       {open && (
         <div
           role="menu"
           data-testid="account-menu"
+          className="oi-rise-fast"
           style={{
             position: "absolute",
+            left: 0,
             right: 0,
-            top: 38,
-            minWidth: 220,
+            bottom: "calc(100% + 6px)",
             padding: 6,
             background: "var(--panel)",
             border: "1px solid var(--line)",
             borderRadius: 12,
-            boxShadow: "var(--shadow-card-hover)",
+            boxShadow: "var(--shadow-pop)",
             zIndex: 40,
           }}
         >
-          <div style={{ padding: "8px 12px 10px", borderBottom: "1px solid var(--line-2)" }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{name}</div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{roleLabel}</div>
-          </div>
           <Link
             href="/app/account"
             role="menuitem"
             className="oi-hover"
             data-testid="account-menu-account"
             onClick={() => setOpen(false)}
-            style={{ ...item, marginTop: 6 }}
+            style={item}
           >
             {t("nav.account")}
           </Link>

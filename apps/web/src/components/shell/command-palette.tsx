@@ -1,11 +1,16 @@
 "use client";
 
 /**
- * ⌘K — go anywhere, do the two things worth a shortcut, or ask Atlas.
+ * ⌘K — go anywhere, do the two things worth a shortcut, or ask.
  *
- * The Atlas card appears once the query is long enough to be a question. It
- * says what would happen and does not answer here: the answer belongs on a
- * screen that can cite its sources, so pressing ↵ opens it there.
+ * Every row is reachable from the keyboard, as the footer promises: ↑↓ move
+ * the highlight, ↵ runs it, esc closes. Typing narrows "Go to" to the sections
+ * whose name matches; a query that matches none keeps the whole list.
+ *
+ * The Atlas card appears once the query is long enough to be a question. Atlas
+ * does not answer free questions yet, and the card says so rather than
+ * promising an answer: ↵ on it runs the search the box does today — the
+ * incidents whose title or reference matches.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -13,6 +18,8 @@ import { useRouter } from "next/navigation";
 import { useT } from "@/i18n/client";
 import { NavIcon } from "./nav-icons";
 import type { SidebarSection } from "./sidebar";
+
+type Row = { key: string; run: () => void };
 
 export function CommandPalette({
   sections,
@@ -38,12 +45,56 @@ export function CommandPalette({
     inputRef.current?.focus();
   }, []);
 
-  const asking = q.trim().length > 2;
-  const shown = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return sections;
-    return sections.filter((s) => t(s.labelKey).toLowerCase().includes(needle));
-  }, [q, sections, t]);
+  const needle = q.trim();
+  const asking = needle.length > 2;
+  const matches = useMemo(() => {
+    const n = needle.toLowerCase();
+    if (!n) return sections;
+    return sections.filter((s) => t(s.labelKey).toLowerCase().includes(n));
+  }, [needle, sections, t]);
+  const shown = matches.length > 0 ? matches : sections;
+
+  const actions: Row[] = [
+    ...(canDeclare ? [{ key: "declare", run: onDeclare }] : []),
+    ...(canPageSelf ? [{ key: "pageMe", run: onPageMe }] : []),
+  ];
+  const goTo: Row[] = shown.map((s) => ({
+    key: s.href,
+    run: () => {
+      onClose();
+      router.push(s.href);
+    },
+  }));
+  const rows = [...actions, ...goTo];
+  const search = () => {
+    onClose();
+    router.push(`/app/incidents?q=${encodeURIComponent(needle)}`);
+  };
+
+  // Nothing is highlighted until the keyboard or the mouse asks for it: the
+  // palette opens as the design draws it. -1 is the Atlas card.
+  const [active, setActive] = useState<number | null>(null);
+  useEffect(() => setActive(null), [needle]);
+
+  const move = (delta: number) => {
+    const min = asking ? -1 : 0;
+    const max = rows.length - 1;
+    setActive((a) => {
+      if (a === null) return delta > 0 ? (asking && matches.length === 0 ? -1 : 0) : max;
+      return Math.min(max, Math.max(min, a + delta));
+    });
+  };
+
+  const enter = () => {
+    if (active === -1) return search();
+    if (active !== null) return rows[active]?.run();
+    // ↵ with nothing highlighted: the section the query names, else the search.
+    if (needle && matches.length > 0) return goTo[0]?.run();
+    if (asking) search();
+  };
+
+  const hl = (i: number): React.CSSProperties =>
+    i === active ? { background: "var(--sunk)" } : {};
 
   return (
     <div
@@ -51,7 +102,7 @@ export function CommandPalette({
       style={{
         position: "fixed",
         inset: 0,
-        background: "var(--scrim)",
+        background: "var(--scrim-palette)",
         display: "flex",
         alignItems: "flex-start",
         justifyContent: "center",
@@ -65,6 +116,7 @@ export function CommandPalette({
         role="dialog"
         aria-modal="true"
         aria-label={t("palette.open")}
+        data-testid="palette"
         style={{
           width: 580,
           maxWidth: "calc(100vw - 32px)",
@@ -97,11 +149,18 @@ export function CommandPalette({
           <input
             ref={inputRef}
             value={q}
+            data-testid="palette-input"
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && asking) {
-                onClose();
-                router.push(`/app/incidents?q=${encodeURIComponent(q.trim())}`);
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                move(1);
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                move(-1);
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                enter();
               }
             }}
             placeholder={t("palette.askPlaceholder")}
@@ -117,6 +176,11 @@ export function CommandPalette({
         <div style={{ padding: 8, display: "flex", flexDirection: "column" }}>
           {asking && (
             <div
+              role="button"
+              tabIndex={-1}
+              data-testid="palette-atlas"
+              onClick={search}
+              onMouseEnter={() => setActive(-1)}
               style={{
                 margin: "4px 4px 8px",
                 border: "1px solid var(--viol)",
@@ -126,6 +190,8 @@ export function CommandPalette({
                 display: "flex",
                 flexDirection: "column",
                 gap: 6,
+                cursor: "pointer",
+                boxShadow: active === -1 ? "0 0 0 3px var(--viol-t)" : undefined,
               }}
             >
               <div
@@ -147,31 +213,26 @@ export function CommandPalette({
                     padding: "1px 6px",
                   }}
                 >
-                  {t("atlas.draftLabel")}
+                  {t("sh.k.atlasNotYet")}
                 </span>
               </div>
               <div style={{ fontSize: 13, lineHeight: 1.5 }}>
-                {t("palette.askBody", { q: q.trim() })}
+                {t("sh.k.atlasSearch", { q: needle })}
               </div>
             </div>
           )}
 
-          {(canDeclare || canPageSelf) && (
+          {actions.length > 0 && (
             <>
-              <div
-                style={{
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  letterSpacing: ".1em",
-                  textTransform: "uppercase",
-                  color: "var(--ink-3)",
-                  padding: "8px 12px 4px",
-                }}
-              >
-                {t("palette.actions")}
-              </div>
+              <div style={GROUP}>{t("palette.actions")}</div>
               {canDeclare && (
-                <button type="button" onClick={onDeclare} className="oi-hover" style={ACTION}>
+                <button
+                  type="button"
+                  onClick={onDeclare}
+                  onMouseEnter={() => setActive(0)}
+                  className="oi-hover"
+                  style={{ ...ACTION, ...hl(0) }}
+                >
                   <span style={{ ...DOT, background: "var(--dang)" }} />
                   {t("palette.declare")}
                   <span style={{ flex: 1 }} />
@@ -181,7 +242,13 @@ export function CommandPalette({
                 </button>
               )}
               {canPageSelf && (
-                <button type="button" onClick={onPageMe} className="oi-hover" style={ACTION}>
+                <button
+                  type="button"
+                  onClick={onPageMe}
+                  onMouseEnter={() => setActive(canDeclare ? 1 : 0)}
+                  className="oi-hover"
+                  style={{ ...ACTION, ...hl(canDeclare ? 1 : 0) }}
+                >
                   <span style={{ ...DOT, background: "var(--brand)" }} />
                   {t("palette.pageMeTest")}
                 </button>
@@ -189,63 +256,49 @@ export function CommandPalette({
             </>
           )}
 
-          <div
-            style={{
-              fontSize: 10.5,
-              fontWeight: 700,
-              letterSpacing: ".1em",
-              textTransform: "uppercase",
-              color: "var(--ink-3)",
-              padding: "10px 12px 4px",
-            }}
-          >
-            {t("palette.goTo")}
-          </div>
+          <div style={{ ...GROUP, padding: "10px 12px 4px" }}>{t("palette.goTo")}</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 }}>
-            {shown.map((s) => (
-              <button
-                key={s.href}
-                type="button"
-                onClick={() => {
-                  onClose();
-                  router.push(s.href);
-                }}
-                className="oi-hover"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 9,
-                  padding: "8px 12px",
-                  borderRadius: 9,
-                  fontSize: 13,
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  background: "transparent",
-                  border: 0,
-                  color: "inherit",
-                  textAlign: "left",
-                }}
-              >
-                <span
+            {shown.map((s, i) => {
+              const at = actions.length + i;
+              return (
+                <button
+                  key={s.href}
+                  type="button"
+                  onClick={goTo[i]!.run}
+                  onMouseEnter={() => setActive(at)}
+                  className="oi-hover"
                   style={{
-                    width: 14,
-                    height: 14,
-                    display: "grid",
-                    placeItems: "center",
-                    color: "var(--ink-3)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                    padding: "8px 12px",
+                    borderRadius: 9,
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    background: "transparent",
+                    border: 0,
+                    color: "inherit",
+                    textAlign: "left",
+                    ...hl(at),
                   }}
                 >
-                  <NavIcon id={s.id} size={14} />
-                </span>
-                {t(s.labelKey)}
-              </button>
-            ))}
+                  <span
+                    style={{
+                      width: 14,
+                      height: 14,
+                      display: "grid",
+                      placeItems: "center",
+                      color: "var(--ink-3)",
+                    }}
+                  >
+                    <NavIcon id={s.id} size={14} />
+                  </span>
+                  {t(s.labelKey)}
+                </button>
+              );
+            })}
           </div>
-          {shown.length === 0 && !asking && (
-            <div style={{ padding: "10px 12px", fontSize: 13, color: "var(--ink-3)" }}>
-              {t("palette.empty")}
-            </div>
-          )}
 
           <div
             style={{
@@ -268,6 +321,15 @@ export function CommandPalette({
     </div>
   );
 }
+
+const GROUP: React.CSSProperties = {
+  fontSize: 10.5,
+  fontWeight: 700,
+  letterSpacing: ".1em",
+  textTransform: "uppercase",
+  color: "var(--ink-3)",
+  padding: "8px 12px 4px",
+};
 
 const ACTION: React.CSSProperties = {
   display: "flex",

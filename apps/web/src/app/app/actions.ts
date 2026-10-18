@@ -13,12 +13,14 @@
 
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { withTenant } from "@openincident/db";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { notificationMethods, withTenant } from "@openincident/db";
 import { availableChannels, notifyMember } from "@openincident/oncall";
 import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
 import { requestOrigin } from "@/lib/tenant";
 import { markInboxRead } from "@/lib/inbox";
+import { maskEmail, maskPhone } from "./page-me-mask";
 
 export async function pageMeFromShell(): Promise<{ ok: boolean; message: string }> {
   const current = await requireMember();
@@ -29,13 +31,14 @@ export async function pageMeFromShell(): Promise<{ ok: boolean; message: string 
     nextUrl: new URL(`http://${h.get("host") ?? "localhost"}/`),
   });
 
-  // Said rather than attempted: an instance with no voice operator cannot ring
-  // a phone, and pretending otherwise is the one thing this button must not do.
+  // Said rather than attempted: an instance with no channel at all cannot
+  // reach anybody, and pretending otherwise is the one thing this button must
+  // not do.
   const channels = availableChannels();
   if (channels.length === 0) return { ok: false, message: t("shell.pageMeUnavailable") };
 
-  await withTenant(current.tenant.id, (tx) =>
-    notifyMember(
+  const { sent, phone } = await withTenant(current.tenant.id, async (tx) => {
+    const sent = await notifyMember(
       tx,
       current.tenant.id,
       { id: current.member.id, name: current.member.name, email: current.member.email },
@@ -47,9 +50,58 @@ export async function pageMeFromShell(): Promise<{ ok: boolean; message: string 
         url: `${base}/app`,
         origin: base,
       },
-    ),
-  );
-  return { ok: true, message: t("shell.pageMeSent") };
+    );
+    const [method] = await tx
+      .select({ value: notificationMethods.value })
+      .from(notificationMethods)
+      .where(
+        and(
+          eq(notificationMethods.tenantId, current.tenant.id),
+          eq(notificationMethods.memberId, current.member.id),
+          inArray(notificationMethods.kind, ["voice", "sms"]),
+          isNotNull(notificationMethods.verifiedAt),
+        ),
+      )
+      .limit(1);
+    return { sent, phone: method?.value ?? null };
+  });
+  // No revalidation here: the frame refreshes the screen it is on once the
+  // toast is up, which is what brings the bell's new line in.
+  return { ok: true, message: pageMeSentence(t, sent, phone, current.member.email) };
+}
+
+/**
+ * What the toast says: the call when the rule rings a phone — "calling
+ * +33 6 •• •• 78" — and otherwise the channels the page really left by, with
+ * their masked address. Never a channel that was not used.
+ */
+function pageMeSentence(
+  t: Awaited<ReturnType<typeof getT>>,
+  sent: Array<{ channel: string; delayMinutes: number }>,
+  phone: string | null,
+  email: string,
+): string {
+  if (phone && sent.some((d) => d.channel === "voice"))
+    return t("sh.pageMeCalling", { phone: maskPhone(phone) });
+  const now = sent.filter((d) => d.delayMinutes === 0);
+  const names = (now.length > 0 ? now : sent).map((d) => {
+    switch (d.channel) {
+      case "email":
+        return t("sh.ch.email", { target: maskEmail(email) });
+      case "sms":
+        return t("sh.ch.sms", { target: phone ? maskPhone(phone) : "" });
+      case "webpush":
+        return t("sh.ch.push");
+      case "slack":
+        return t("sh.ch.slack");
+      case "teams":
+        return t("sh.ch.teams");
+      default:
+        return d.channel;
+    }
+  });
+  const list = new Intl.ListFormat(t.locale.tag, { type: "conjunction" }).format(names);
+  return t("sh.pageMeBy", { channels: list });
 }
 
 /**

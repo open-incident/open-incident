@@ -69,6 +69,8 @@
   /* Scrims — the design's modal and palette veil. */
   --scrim: rgba(8, 12, 14, 0.45);
   --scrim-dialog: rgba(13, 18, 19, 0.52);
+  /* The ⌘K palette's veil — lighter than a dialog's: it is a glance, not a stop. */
+  --scrim-palette: rgba(13, 22, 28, 0.4);
 }
 
 /* ---------- Product — dark (ours: not designed, never unvalued) ---------- */
@@ -105,4 +107,5 @@
   --shadow-pop: 0 2px 4px rgba(0, 0, 0, 0.4), 0 22px 48px -18px rgba(0, 0, 0, 0.7);
   --scrim: rgba(0, 0, 0, 0.6);
   --scrim-dialog: rgba(0, 0, 0, 0.65);
+  --scrim-palette: rgba(0, 0, 0, 0.55);
 }

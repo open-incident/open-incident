@@ -2,27 +2,36 @@
 
 /**
  * The frame every responder screen renders inside: the rail on the left, a
- * 50 px header above the scroll area, the command palette over everything.
+ * 50 px header that holds only the search and the bell, the scroll area, and
+ * the command palette over everything.
  *
  * It owns the three pieces of state that belong to the frame rather than to a
  * screen — whether the palette is open, whether a test page is in flight, and
  * the toast that says so. Screens own their own state and know nothing of it.
+ *
+ * It is rendered by the /app layout, which Next keeps mounted from one screen
+ * to the next: a click in the rail swaps the content of `<main>` and nothing
+ * else. Nothing here may key itself on the path — that is what used to replay
+ * the whole frame on every click.
  */
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "@/i18n/client";
-import Link from "next/link";
-import { Sidebar, type OnCallNow, type SidebarSection } from "./sidebar";
+import {
+  Sidebar,
+  type OnCallNow,
+  type RailMember,
+  type RailWorkspace,
+  type SidebarSection,
+} from "./sidebar";
 import { NavIcon } from "./nav-icons";
 import { CommandPalette } from "./command-palette";
 import { NotificationBell, type BellRow } from "./notification-bell";
-import { AccountMenu } from "./account-menu";
 
 export type AppFrameProps = {
-  workspaceName: string;
-  workspaceAccent: string;
-  member: { name: string; roleLabel: string; initials: string };
+  workspace: RailWorkspace;
+  member: RailMember;
   sections: SidebarSection[];
   onCall: OnCallNow;
   canDeclare: boolean;
@@ -34,9 +43,16 @@ export type AppFrameProps = {
   children: React.ReactNode;
 };
 
+/** Whether a key press belongs to a field the reader is typing in. */
+function typing(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+}
+
 export function AppFrame({
-  workspaceName,
-  workspaceAccent,
+  workspace,
   member,
   sections,
   onCall,
@@ -52,40 +68,60 @@ export function AppFrame({
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(false);
-  const [, startTransition] = useTransition();
+  const [paging, startPaging] = useTransition();
 
   useEffect(() => {
     if (!toast) return;
-    const id = setTimeout(() => setToast(null), 5000);
+    const id = setTimeout(() => setToast(null), 3200);
     return () => clearTimeout(id);
   }, [toast]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setPaletteOpen((v) => !v);
-      }
-      if (e.key === "Escape") setPaletteOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
 
   const declare = useCallback(() => {
     setPaletteOpen(false);
     router.push("/app/incidents?declare=1");
   }, [router]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+        return;
+      }
+      if (e.key === "Escape") {
+        setPaletteOpen(false);
+        return;
+      }
+      // "D" declares, as the palette says — never while somebody is typing,
+      // and never with a modifier (⌘D is the browser's bookmark).
+      if (
+        canDeclare &&
+        !paletteOpen &&
+        (e.key === "d" || e.key === "D") &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !typing(e.target) &&
+        !document.querySelector("[role=dialog]")
+      ) {
+        e.preventDefault();
+        declare();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canDeclare, paletteOpen, declare]);
+
   const pageMe = useCallback(() => {
     setPaletteOpen(false);
     setTestMode(true);
-    startTransition(async () => {
+    startPaging(async () => {
       const res = await pageMeAction();
       setToast(res.message);
       // The badge stays up while the page is plausibly still ringing, then
       // clears: it marks the run, it is not a permanent mode.
       setTimeout(() => setTestMode(false), 6000);
+      if (!res.ok) setTestMode(false);
       router.refresh();
     });
   }, [pageMeAction, router]);
@@ -101,11 +137,15 @@ export function AppFrame({
       }}
     >
       <Sidebar
-        workspaceName={workspaceName}
-        workspaceAccent={workspaceAccent}
+        workspace={workspace}
+        member={member}
         sections={sections}
+        onCall={onCall}
         canDeclare={canDeclare}
         onDeclare={declare}
+        canPageSelf={canPageSelf}
+        paging={paging}
+        onPageMe={pageMe}
       />
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <header
@@ -122,8 +162,8 @@ export function AppFrame({
         >
           <button
             type="button"
+            data-testid="search-open"
             onClick={() => setPaletteOpen(true)}
-            className="oi-hover-edge"
             style={{
               flex: 1,
               minWidth: 0,
@@ -164,6 +204,7 @@ export function AppFrame({
           <span style={{ flex: 1 }} />
           {testMode && (
             <span
+              data-testid="test-mode"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -182,99 +223,11 @@ export function AppFrame({
               {t("shell.testMode")}
             </span>
           )}
-          {/*
-            Who carries the pager, in the header rather than at the foot of the
-            rail. It is live state, not navigation, and it belongs beside the
-            bell — the corner a reader already watches. Compact on purpose: the
-            schedule and the hour are on the chip's title, because a header is
-            50 px tall and the name is what somebody needs at a glance.
-          */}
-          <Link
-            href="/app/on-call"
-            data-testid="oncall-chip"
-            className="oi-hover-edge"
-            title={
-              onCall
-                ? t("nav.onCallUntil", { schedule: onCall.scheduleName, until: onCall.until })
-                : t("nav.onCallNobodyHint")
-            }
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-              height: 30,
-              padding: "0 10px",
-              borderRadius: 9,
-              border: "1px solid var(--line)",
-              background: "var(--sunk)",
-              textDecoration: "none",
-              color: "inherit",
-              fontSize: 12.5,
-              maxWidth: 260,
-            }}
-          >
-            <span
-              className={onCall ? "oi-pulse" : undefined}
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                background: onCall ? "var(--dang)" : "var(--ink-3)",
-                flex: "none",
-              }}
-            />
-            <span
-              style={{
-                fontWeight: 600,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {onCall ? onCall.name : t("nav.onCallNobody")}
-            </span>
-            {onCall && (
-              <span
-                style={{
-                  fontSize: 11.5,
-                  color: "var(--ink-3)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {onCall.until}
-              </span>
-            )}
-          </Link>
-          {canPageSelf && (
-            <button
-              type="button"
-              onClick={pageMe}
-              className="oi-hover-edge"
-              style={{
-                height: 30,
-                padding: "0 10px",
-                border: "1px solid var(--line)",
-                borderRadius: 9,
-                background: "var(--panel)",
-                color: "inherit",
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {t("nav.pageMe")}
-            </button>
-          )}
           <NotificationBell
             rows={bell.rows}
             unread={bell.unread}
             markReadAction={markBellReadAction}
           />
-          {/* And the reader, where every application puts them — with the way out. */}
-          <AccountMenu name={member.name} roleLabel={member.roleLabel} initials={member.initials} />
         </header>
         <main style={{ flex: 1, minHeight: 0, position: "relative" }}>
           <div style={{ position: "absolute", inset: 0, overflow: "auto" }}>{children}</div>
@@ -293,37 +246,46 @@ export function AppFrame({
       )}
 
       {toast && (
+        // Centred by the outer box, risen by the inner one: an animation that
+        // moves `transform` would otherwise overwrite the centring.
         <div
-          className="oi-rise"
-          role="status"
           style={{
             position: "fixed",
             left: "50%",
             bottom: 22,
             transform: "translateX(-50%)",
-            background: "var(--ink)",
-            color: "var(--panel)",
-            borderRadius: 12,
-            padding: "10px 16px",
-            fontSize: 13,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
+            width: "max-content",
             maxWidth: "min(720px, calc(100vw - 40px))",
-            boxShadow: "var(--shadow-pop)",
             zIndex: 70,
           }}
         >
-          <span
+          <div
+            className="oi-rise"
+            role="status"
+            data-testid="toast"
             style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: "var(--viol)",
-              flex: "none",
+              background: "var(--ink)",
+              color: "var(--panel)",
+              borderRadius: 12,
+              padding: "10px 16px",
+              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              boxShadow: "var(--shadow-pop)",
             }}
-          />
-          {toast}
+          >
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: "var(--viol)",
+                flex: "none",
+              }}
+            />
+            {toast}
+          </div>
         </div>
       )}
     </div>

@@ -38,10 +38,11 @@ test.describe("User guide", () => {
     expect(chapterBox.x).toBeGreaterThanOrEqual(listBox.x + listBox.width - 1);
     expect(chapterBox.y).toBeLessThan(listBox.y + listBox.height);
 
-    // And the rail's own Guide entry opens a chapter rather than a page about
-    // the guide: the reader asked for the guide.
+    // The rail's Guide entry opens Getting started, which lists every chapter.
     await page.goto("/app/incidents");
-    await page.locator('aside a[href="/app/docs"]').first().click();
+    await page.locator('[data-testid=rail] a[href="/app/guide"]').click();
+    await page.waitForURL(/\/app\/guide$/);
+    await page.getByTestId("guide-chapters").locator("a[href^='/app/docs/']").first().click();
     await page.waitForURL(/\/app\/docs\/[a-z-]+$/);
     await expect(page.locator("article h1")).toBeVisible();
 

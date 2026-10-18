@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
-import { withTenant } from "@openincident/db";
+import { asc, eq, and } from "drizzle-orm";
+import { teamMembers, teams, withTenant } from "@openincident/db";
 import { getEdition } from "@openincident/config";
 import { canOpenSettings, canRespond, requireMember } from "@/lib/session";
 import { getWorkspace, requireTenant } from "@/lib/tenant";
@@ -28,9 +29,13 @@ const ROLE_LABEL = {
  * header, the screen filling the rest. Every screen under /app renders inside
  * it, under one I18nProvider.
  *
- * The rail's two badges and its on-call line are read here, once, rather than
- * by each screen: they belong to the frame and must say the same thing on every
- * page.
+ * The rail's two badges, its on-call card and its member block are read here,
+ * once, rather than by each screen: they belong to the frame and must say the
+ * same thing on every page.
+ *
+ * A layout, not a template: Next keeps it mounted across navigations, so a
+ * click in the rail replaces the screen and leaves the frame — its scroll, its
+ * open menus, its state — where it was.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Ahead of requireMember, which would send an invented subdomain to /login
@@ -104,13 +109,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const frame = await withTenant(tenant.id, async (tx) => {
-    const [views, alerts, onCall, inbox] = await Promise.all([
+    const [views, alerts, onCall, inbox, team] = await Promise.all([
       countViews(tx, tenant.id, member.id),
       alertCounts(tx, tenant.id),
       onCallNow(tx, tenant.id),
       inboxForShell(tx, tenant.id, member.id),
+      tx
+        .select({ name: teams.name })
+        .from(teamMembers)
+        .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+        .where(and(eq(teamMembers.tenantId, tenant.id), eq(teamMembers.memberId, member.id)))
+        .orderBy(asc(teams.name))
+        .limit(1),
     ]);
-    return { views, alerts, onCall, inbox };
+    return { views, alerts, onCall, inbox, teamName: team[0]?.name ?? null };
   });
 
   const sections: SidebarSection[] = [
@@ -133,25 +145,42 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // The first schedule that actually has someone is the one the rail names:
   // saying "nobody" while another schedule is covered would be a lie of omission.
   const covered = frame.onCall.find((s) => s.memberName) ?? null;
+  // "until 09:00" when the shift ends within the day; past that, the day too —
+  // a bare hour would read as tonight.
+  const until = (d: Date) =>
+    d.getTime() - Date.now() < 20 * 3600_000
+      ? t.fmt.time(d, t.timeZone)
+      : d.toLocaleString(t.locale.tag, {
+          weekday: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: t.timeZone,
+        });
+  const host = (await headers()).get("host") ?? "";
 
   return (
     <I18nProvider locale={t.locale} dict={t.dict} timeZone={t.timeZone}>
       <ThemeSync theme={member.theme ?? null} />
       <AppFrame
-        workspaceName={workspace?.name ?? tenant.slug}
-        workspaceAccent={workspace?.branding.accentColor ?? "var(--brand)"}
+        workspace={{
+          name: workspace?.name ?? tenant.slug,
+          accent: workspace?.branding.accentColor ?? "var(--brand)",
+          host,
+          settingsHref: canOpenSettings(member) ? "/app/settings" : null,
+        }}
         member={{
           name: member.name,
           roleLabel: t(ROLE_LABEL[member.role]),
+          teamName: frame.teamName,
           initials: initials(member.name),
         }}
         sections={sections}
         onCall={
           covered
             ? {
-                name: covered.memberName!,
+                firstName: covered.memberName!.split(" ")[0] || covered.memberName!,
                 scheduleName: covered.scheduleName,
-                until: t.fmt.time(covered.until, t.timeZone),
+                until: until(covered.until),
               }
             : null
         }

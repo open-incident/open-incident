@@ -97,6 +97,11 @@ button {
   box-shadow: var(--shadow-card-hover) !important;
 }
 
+/* Quiet text action ("Change"): the ink goes brand, nothing else moves. */
+.oi-hover-ink-brand:hover {
+  color: var(--brand) !important;
+}
+
 /* Danger ghost: tinted red on hover. */
 .oi-hover-dang:hover {
   background: var(--dang-t) !important;
@@ -152,17 +157,34 @@ button {
   }
 }
 
-/* Screen entrance (.18s), modal (.2s), palette (.16s) — the design's three durations. */
+/* The V2 design's name for the same rise — so a style copied from the design
+   (`animation: ohd-rise .2s ease backwards`) works as written. */
+@keyframes ohd-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Screen entrance (.18s), modal (.2s), palette (.16s) — the design's three durations.
+   `backwards`, never `both`: a fill that outlives the animation keeps the
+   element's `transform` live, which turns it into the containing block of
+   every `position: fixed` descendant — a chart's full-screen view, a dialog —
+   and pins them inside the screen instead of the window. */
 .oi-rise {
-  animation: oi-rise 0.18s ease both;
+  animation: oi-rise 0.18s ease backwards;
 }
 
 .oi-rise-modal {
-  animation: oi-rise 0.2s ease both;
+  animation: oi-rise 0.2s ease backwards;
 }
 
 .oi-rise-fast {
-  animation: oi-rise 0.16s ease both;
+  animation: oi-rise 0.16s ease backwards;
 }
 
 .oi-pulse {

@@ -29,7 +29,7 @@ The sign-in endpoint is rate limited: after a burst of attempts you are told to 
 
 ## My account
 
-Open the menu under your initials in the top bar and choose **My account**. **Sign out** is in the same menu: it ends the session on the server and returns to the sign-in page — the only way out for a member who signs in through single sign-on and has no password.
+Click your name at the foot of the rail and choose **My account**. **Sign out** is in the same menu: it ends the session on the server and returns to the sign-in page — the only way out for a member who signs in through single sign-on and has no password.
 
 ![My account](img/account.png "Profile, language, timezone, appearance, email, password, deletion.")
 
@@ -47,29 +47,35 @@ Open the menu under your initials in the top bar and choose **My account**. **Si
 
 **On-call → My notifications** is where you decide how the product reaches you when you are paged.
 
-![My notifications](img/oncall-notifications.png "Contact methods with their verification, the two urgency rules, shift reminders and the outbox.")
+![My notifications](img/oncall-notifications.png "How to reach me, the two urgency rules, what Atlas tells you, shift reminders.")
 
-### Contact methods
+### How to reach me
 
-- **Email** is always available: it reuses the instance's mail transport.
-- **SMS** and **Voice call** need a phone number in international format (`+33…`). A code is sent; enter it to verify. Each needs its own operator configured on the instance — they can be two different companies, and one can be available without the other; a channel without one is drawn as a dead row that says which is missing.
-- **Web push** is enabled per browser: click **Enable on this browser**, accept the browser's prompt. It wakes the screen even when the tab is closed. Needs VAPID keys on the instance.
-- **Slack DM** and **Teams DM** appear when the workspace connected Slack or Microsoft Teams: click **Link my Slack account** (the product finds your Slack user by email) and pages arrive as a direct message with an **Acknowledge** button.
+The card lists what can reach you, then — dashed, with the reason — what this instance cannot use. Each row carries the status of its last real delivery (_queued_, _sent_, _delivered_, _failed_), or _linked_ / _verified_ when nothing went out yet.
+
+- **Slack — direct message** and **Microsoft Teams — chat** appear when the workspace connected Slack or Teams and offers pages in chat (**Settings → Slack & Teams**): click **Link** (the product finds your account by email) and pages arrive as a direct message with an **Acknowledge** button that acknowledges the page.
+- **Push** is enabled per browser: click **Enable on this browser**, accept the browser's prompt. It wakes the screen even when the tab is closed. Needs VAPID keys on the instance.
+- **Voice call** and **SMS** need a phone number in international format (`+33…`). A code is sent; enter it to verify. Each needs its own operator configured on the instance — one can be available without the other.
+- **Email** is always there: your account address.
 
 ### Two rules, by urgency
 
-- **High urgency — wakes you**: the channels used, in order, when an alert or an escalation is urgent. Each step is _immediately_ or _after n minutes without acknowledgement_. When you link Slack or Teams, a step is added at the front of this rule.
-- **Low urgency — silent**: what happens for the rest. Email by default.
+- **When it wakes me (P1 · P2)**: the steps used, in order, for an urgent page. Steps that go out at the same moment share a line — by default _Slack message + Push_ immediately, then a _Voice call_ after one minute without acknowledgement, then a second call (_retry_) at four.
+- **When it can wait (P3 · P4)**: by default _Slack message + Push · silent_ immediately — the push lands without ringing — and the **Email digest** at 09:00 in your timezone: every low-urgency page of the night in one message.
 
-A channel the instance cannot send through is shown as _unavailable on this instance_; it is never silently skipped.
+**+ Add step** adds a channel at a delay; hovering a line shows its **✕**. A channel you cannot use yet is struck through; when nothing in a rule can reach you on this instance, the card says that your pages go to your email instead.
 
 ### Test it
 
-**Send a test** sends a real message through every channel of your high-urgency rule. The outbox below shows each delivery with its status — queued, sent, delivered, failed, handled. This is the same outbox every real page goes through.
+**Send a real test** sends a real message through every channel of your high-urgency rule; the banner names the channels on their way, and the statuses on the rows follow the deliveries.
+
+### When Atlas resolves on its own
+
+On services at level 4 nobody is paged when Atlas resolves an incident by itself. The card lets you choose how you hear about it: a silent push right away, a summary at 09:00, or nothing (review in **Incidents → Resolved by Atlas**). Level 3 still pages you when Atlas acts.
 
 ### Shift reminders
 
-Tick **1 h before my shift starts** and **At the end of my shift** to be told when a rotation puts you on or off call.
+Tick **Warn me before my shift starts** and **Warn me when my shift ends** to be told when a rotation puts you on or off call.
 
 ## Acknowledging a page
 

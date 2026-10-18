@@ -1,17 +1,16 @@
 "use client";
 
 /**
- * The 228 px rail: where you go, and nothing else.
+ * The 228 px rail, as the V2 design draws it: the product, the workspace,
+ * "Declare incident", the nine sections with their badges, Guide and Settings
+ * — and, pinned to its foot, who carries the pager right now with the
+ * "Page me" that proves the chain, then the reader themselves.
  *
- * It is a column rather than the 60 px strip of the first design because the
- * V2 nav carries nine sections and a badge on two of them — a strip would have
- * hidden both behind tooltips.
- *
- * Who is on call and who you are used to live at the bottom of it. They are
- * now in the header, on the right, with the bell: they are not navigation, and
- * a rail that mixes "where can I go" with "who is carrying the pager" makes
- * the reader scan the whole column to find either. The header is also where
- * every application puts an avatar, which is worth more than a house style.
+ * Who is on call sits in the rail rather than the header because it is read
+ * at the same glance as the badges above it: something is burning, and this
+ * is who is answering. `marginTop: auto` on the card is what keeps it at the
+ * foot of the column at any height, including the one where the sections
+ * already fill it.
  */
 
 import Link from "next/link";
@@ -19,7 +18,11 @@ import { usePathname } from "next/navigation";
 import { useT } from "@/i18n/client";
 import { ProductMark } from "./mark";
 import { NavIcon, type NavIconId } from "./nav-icons";
+import { WorkspaceMenu, type RailWorkspace } from "./workspace-menu";
+import { AccountMenu, type RailMember } from "./account-menu";
 import type { MessageKey } from "@/i18n/dictionaries/en";
+
+export type { RailWorkspace, RailMember };
 
 export type SidebarSection = {
   id: NavIconId;
@@ -31,14 +34,19 @@ export type SidebarSection = {
   tag?: MessageKey;
 };
 
-export type OnCallNow = { name: string; scheduleName: string; until: string } | null;
+/** The person the rail names, the schedule they cover and when their shift ends. */
+export type OnCallNow = { firstName: string; scheduleName: string; until: string } | null;
 
 export type SidebarProps = {
-  workspaceName: string;
-  workspaceAccent: string;
+  workspace: RailWorkspace;
+  member: RailMember;
   sections: SidebarSection[];
+  onCall: OnCallNow;
   canDeclare: boolean;
   onDeclare: () => void;
+  canPageSelf: boolean;
+  paging: boolean;
+  onPageMe: () => void;
 };
 
 const ROW: React.CSSProperties = {
@@ -60,17 +68,26 @@ function isCurrent(pathname: string, href: string): boolean {
 }
 
 export function Sidebar({
-  workspaceName,
-  workspaceAccent,
+  workspace,
+  member,
   sections,
+  onCall,
   canDeclare,
   onDeclare,
+  canPageSelf,
+  paging,
+  onPageMe,
 }: SidebarProps) {
   const t = useT();
   const pathname = usePathname() ?? "";
+  // The guide is one entry with two addresses: the getting-started page the
+  // rail opens, and the chapters it leads to.
+  const guideOn = isCurrent(pathname, "/app/guide") || isCurrent(pathname, "/app/docs");
+  const settingsOn = isCurrent(pathname, "/app/settings");
 
   return (
     <aside
+      data-testid="rail"
       style={{
         width: 228,
         flex: "none",
@@ -98,55 +115,17 @@ export function Sidebar({
         </span>
       </div>
 
-      <div
-        className="oi-hover"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "7px 9px",
-          marginBottom: 8,
-          border: "1px solid var(--line)",
-          borderRadius: 10,
-        }}
-      >
-        <span
-          style={{
-            width: 20,
-            height: 20,
-            borderRadius: 6,
-            background: workspaceAccent,
-            color: "#fff",
-            display: "grid",
-            placeItems: "center",
-            fontSize: 10.5,
-            fontWeight: 700,
-          }}
-        >
-          {workspaceName.slice(0, 1).toUpperCase()}
-        </span>
-        <span
-          style={{
-            fontSize: 13,
-            fontWeight: 600,
-            flex: 1,
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {workspaceName}
-        </span>
-      </div>
+      <WorkspaceMenu workspace={workspace} />
 
       {canDeclare && (
         <button
           type="button"
           onClick={onDeclare}
+          data-testid="rail-declare"
           className="oi-hover-brand-2"
           style={{
             height: 36,
+            flex: "none",
             borderRadius: 10,
             background: "var(--brand)",
             color: "var(--on-brand)",
@@ -202,6 +181,7 @@ export function Sidebar({
             <span style={{ flex: 1 }} />
             {s.badge !== undefined && s.badge > 0 && (
               <span
+                data-testid={`rail-badge-${s.id}`}
                 style={{
                   fontSize: 11,
                   fontWeight: 700,
@@ -232,47 +212,132 @@ export function Sidebar({
         );
       })}
 
-      {/*
-        The two that are not the work: the guide and the settings.
-        Pinned to the foot of the rail rather than trailing the nine sections —
-        a reader looking for "where do I go next" should stop at Telemetry, and
-        the two they open once a month should be where the eye goes when it has
-        run out of list. `marginTop: auto` is what puts them there at any
-        height, including the one where the sections already fill the column.
-      */}
-      <div style={{ marginTop: "auto" }} />
-      <div style={{ height: 1, background: "var(--line)", margin: "8px 6px" }} />
+      <div style={{ height: 1, flex: "none", background: "var(--line)", margin: "8px 6px" }} />
 
-      {(
-        [
-          // Straight into the guide. The splash that used to sit here said
-          // four things about the product and then offered a link to the
-          // chapters, which is a click charged for nothing.
-          { href: "/app/docs", id: "guide" as const, key: "nav.guide" as MessageKey },
-          { href: "/app/settings", id: "settings" as const, key: "nav.settings" as MessageKey },
-        ] satisfies { href: string; id: NavIconId; key: MessageKey }[]
-      ).map((x) => {
-        const on = isCurrent(pathname, x.href);
-        return (
-          <Link
-            key={x.href}
-            href={x.href}
-            className="oi-hover"
+      <Link
+        href="/app/guide"
+        className="oi-hover"
+        aria-current={guideOn ? "page" : undefined}
+        style={{
+          ...ROW,
+          fontWeight: 500,
+          color: "var(--ink-2)",
+          background: guideOn ? "var(--brand-t)" : "transparent",
+        }}
+      >
+        <span style={{ width: 18, height: 18, display: "grid", placeItems: "center" }}>
+          <NavIcon id="guide" />
+        </span>
+        {t("nav.guide")}
+      </Link>
+      <Link
+        href="/app/settings"
+        className="oi-hover"
+        aria-current={settingsOn ? "page" : undefined}
+        style={{
+          ...ROW,
+          fontWeight: 500,
+          color: "var(--ink-2)",
+          background: settingsOn ? "var(--brand-t)" : "transparent",
+        }}
+      >
+        <span style={{ width: 18, height: 18, display: "grid", placeItems: "center" }}>
+          <NavIcon id="settings" />
+        </span>
+        {t("nav.settings")}
+      </Link>
+
+      <div
+        data-testid="oncall-card"
+        style={{
+          marginTop: "auto",
+          flex: "none",
+          background: "var(--sunk)",
+          borderRadius: 12,
+          padding: "11px 12px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 3,
+        }}
+      >
+        <Link
+          href="/app/on-call"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 3,
+            color: "inherit",
+            textDecoration: "none",
+            minWidth: 0,
+          }}
+        >
+          <span
             style={{
-              ...ROW,
-              fontWeight: 500,
-              color: on ? "var(--brand)" : "var(--ink-2)",
-              background: on ? "var(--brand-t)" : "transparent",
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              fontSize: 12.5,
+              fontWeight: 600,
+              minWidth: 0,
             }}
-            aria-current={on ? "page" : undefined}
           >
-            <span style={{ width: 18, height: 18, display: "grid", placeItems: "center" }}>
-              <NavIcon id={x.id} />
+            <span
+              className={onCall ? "oi-pulse" : undefined}
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: "50%",
+                background: onCall ? "var(--dang)" : "var(--ink-3)",
+                flex: "none",
+              }}
+            />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {onCall ? t("nav.onCallNow", { name: onCall.firstName }) : t("nav.onCallNobody")}
             </span>
-            {t(x.key)}
-          </Link>
-        );
-      })}
+          </span>
+          <span
+            style={{
+              fontSize: 11.5,
+              color: "var(--ink-3)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {onCall
+              ? t("nav.onCallUntil", { schedule: onCall.scheduleName, until: onCall.until })
+              : t("nav.onCallNobodyHint")}
+          </span>
+        </Link>
+        {canPageSelf && (
+          <button
+            type="button"
+            onClick={onPageMe}
+            disabled={paging}
+            data-testid="page-me"
+            className="oi-hover-edge"
+            style={{
+              marginTop: 6,
+              height: 28,
+              border: "1px solid var(--line)",
+              borderRadius: 8,
+              background: "var(--panel)",
+              color: "inherit",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: paging ? "default" : "pointer",
+              opacity: paging ? 0.6 : 1,
+            }}
+          >
+            {t("nav.pageMe")}
+          </button>
+        )}
+      </div>
+
+      <AccountMenu member={member} />
     </aside>
   );
 }

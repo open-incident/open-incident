@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The bell in the header.
+ * The bell, at the right end of the header.
  *
  * A dot, and behind it the last twenty things that concerned the reader. It
  * never rings and never sends: what wakes someone up is the escalation policy,
@@ -111,7 +111,7 @@ export function NotificationBell({ rows, unread, markReadAction }: BellProps) {
           position: "relative",
           background: "transparent",
           border: "none",
-          color: "var(--ink-2)",
+          color: "inherit",
           cursor: "pointer",
         }}
       >
