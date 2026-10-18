@@ -42,6 +42,9 @@ export const QUEUE_NAMES = [
   "coverage-sweep",
   "runbook-sync",
   "investigation",
+  "migrate-opsgenie",
+  "atlas-sweep",
+  "atlas-backtest",
 ] as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[number];
@@ -140,6 +143,12 @@ export const QUEUE_SHAPES: Record<WorkQueue, Shape> = {
   housekeeping: { group: "bulk", concurrency: 1 },
   "tracker-sync": { group: "bulk", concurrency: 1 },
   "runbook-sync": { group: "bulk", concurrency: 1 },
+  // An Opsgenie inventory or history archive: minutes of paced reads, one run at a time.
+  "migrate-opsgenie": { group: "bulk", concurrency: 1 },
+  // Atlas: verification decides whether a fix stands or a person is paged — urgent,
+  // one sweep at a time. A backtest is minutes of model calls nobody waits on.
+  "atlas-sweep": { group: "urgent", concurrency: 1 },
+  "atlas-backtest": { group: "bulk", concurrency: 1 },
   // One suite at a time: the smoke suite's mocks bind fixed ports, and two
   // Playwright runs against the same instance would trip over each other.
   [QA_QUEUE]: { group: "bulk", concurrency: 1 },

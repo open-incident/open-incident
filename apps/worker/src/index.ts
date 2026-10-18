@@ -41,6 +41,8 @@ import { runInvestigation, type InvestigationJob } from "@openincident/investiga
 import { syncTrackerStatuses } from "@openincident/trackers";
 import { QA_QUEUE, type QaJob } from "@openincident/qa";
 import { runQaJob } from "@openincident/qa/runner";
+import { migrateSweep } from "./migrate-opsgenie";
+import { atlasBacktest, atlasSweep } from "./atlas";
 import {
   QA_QUEUE_NAME,
   WORK_QUEUES,
@@ -257,6 +259,9 @@ const processors: Record<QueueName, Processor> = {
         `[oncall-sweep] ${ticked} tick(s), ${replayed} replayed delivery(ies), ${reminded} shift reminder(s)`,
       );
   },
+  "migrate-opsgenie": migrateSweep,
+  "atlas-sweep": atlasSweep,
+  "atlas-backtest": atlasBacktest,
   "mail-send": sendMail("mail-send"),
   // Same work, its own queue and its own slots: see MailClass. The fan-out to a
   // status page's subscribers must not be able to sit in front of a reset link.
@@ -387,6 +392,8 @@ async function registerSchedulers() {
     ["pack-dashboards", 3_600_000],
     ["coverage-sweep", 6 * 3_600_000],
     ["runbook-sync", 6 * 3_600_000],
+    ["migrate-opsgenie", 15_000],
+    ["atlas-sweep", 60_000],
     ["housekeeping", DAY_MS],
   ];
   for (const [name, every] of schedules) {

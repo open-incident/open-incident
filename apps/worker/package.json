@@ -25,7 +25,8 @@
     "@openincident/investigations": "workspace:*",
     "@openincident/storage": "workspace:*",
     "@openincident/trackers": "workspace:*",
-    "@openincident/qa": "workspace:*"
+    "@openincident/qa": "workspace:*",
+    "@openincident/migrate-opsgenie": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

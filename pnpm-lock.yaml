@@ -173,6 +173,9 @@ importers:
       '@openincident/mail':
         specifier: workspace:*
         version: link:../../packages/mail
+      '@openincident/migrate-opsgenie':
+        specifier: workspace:*
+        version: link:../../packages/migrate-opsgenie
       '@openincident/oncall':
         specifier: workspace:*
         version: link:../../packages/oncall
@@ -270,6 +273,9 @@ importers:
       '@openincident/mail':
         specifier: workspace:*
         version: link:../../packages/mail
+      '@openincident/migrate-opsgenie':
+        specifier: workspace:*
+        version: link:../../packages/migrate-opsgenie
       '@openincident/oncall':
         specifier: workspace:*
         version: link:../../packages/oncall
@@ -600,6 +606,31 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.7
+        version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@7.2.0)(tsx@4.23.13)
+
+  packages/migrate-opsgenie:
+    dependencies:
+      '@openincident/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      '@openincident/db':
+        specifier: workspace:*
+        version: link:../db
+      '@openincident/oncall':
+        specifier: workspace:*
+        version: link:../oncall
+      drizzle-orm:
+        specifier: ^0.44.0
+        version: 0.44.7(kysely@0.29.5)(postgres@3.4.9)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
         version: 3.2.7(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(supports-color@7.2.0)(tsx@4.23.13)
 
   packages/notify:

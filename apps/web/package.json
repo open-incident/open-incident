@@ -25,6 +25,7 @@
     "@openincident/ee-web": "workspace:*",
     "@openincident/investigations": "workspace:*",
     "@openincident/mail": "workspace:*",
+    "@openincident/migrate-opsgenie": "workspace:*",
     "@openincident/oncall": "workspace:*",
     "@openincident/qa": "workspace:*",
     "@openincident/statuspages": "workspace:*",

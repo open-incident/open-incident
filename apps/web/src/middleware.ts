@@ -84,7 +84,9 @@ export function middleware(request: NextRequest) {
   // the signed OAuth state, the Teams conversation), never from the host.
   if (
     !res &&
-    BARE_DOMAIN_PATHS.has(request.nextUrl.pathname) &&
+    (BARE_DOMAIN_PATHS.has(request.nextUrl.pathname) ||
+      // Opsgenie's shadow-mode webhook: the token names its workspace.
+      request.nextUrl.pathname.startsWith("/in/opsgenie/")) &&
     host.toLowerCase() === BASE_DOMAIN
   ) {
     const headers = new Headers(request.headers);
