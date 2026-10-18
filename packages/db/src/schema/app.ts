@@ -1745,7 +1745,9 @@ export const notificationDeliveries = app.table(
     /** Masked address, for the log — never the push subscription. */
     target: text("target").notNull(),
     kind: text("kind")
-      .$type<"escalation" | "test" | "shift_reminder" | "cover_request" | "verification" | "atlas">()
+      .$type<
+        "escalation" | "test" | "shift_reminder" | "cover_request" | "verification" | "atlas"
+      >()
       .notNull(),
     urgency: alertUrgency("urgency"),
     escalationId: uuid("escalation_id").references(() => escalations.id, { onDelete: "set null" }),

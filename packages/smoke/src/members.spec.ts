@@ -73,7 +73,9 @@ test("filters, search, deep link and revoke", async ({ page }) => {
   await expect(page.locator('[data-filter="invited"]')).toHaveAttribute("aria-pressed", "true");
   const rows = page.locator("[data-member-email]");
   await expect(rows.first()).toBeVisible();
-  for (const status of await rows.evaluateAll((els) => els.map((e) => e.getAttribute("data-status"))))
+  for (const status of await rows.evaluateAll((els) =>
+    els.map((e) => e.getAttribute("data-status")),
+  ))
     expect(status).toBe("invited");
   const invitedCount = await rows.count();
   await expect(page.locator('[data-filter="invited"]')).toContainText(String(invitedCount));

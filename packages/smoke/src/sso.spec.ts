@@ -132,9 +132,9 @@ test.describe("Single sign-on", () => {
     await row.getByTestId("sso-remove").click();
     await expect(row).toHaveCount(0);
     await page.reload();
-    await expect(page.getByTestId("sso-row").filter({ hasText: /Smoke IdP|Mock SAML/ })).toHaveCount(
-      0,
-    );
+    await expect(
+      page.getByTestId("sso-row").filter({ hasText: /Smoke IdP|Mock SAML/ }),
+    ).toHaveCount(0);
   });
 });
 

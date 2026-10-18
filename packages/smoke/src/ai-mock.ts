@@ -108,7 +108,11 @@ export function startAiMock(
           content = JSON.stringify(
             /MOCK_CHALLENGE_DOUBT/.test(prompt)
               ? { verdict: "weakened", note: "Mock challenger: a doubt remains.", citations: [] }
-              : { verdict: "holds", note: "Mock challenger: nothing argues against it.", citations: [] },
+              : {
+                  verdict: "holds",
+                  note: "Mock challenger: nothing argues against it.",
+                  citations: [],
+                },
           );
         else if (/TASK: atlas_act\b/.test(prompt)) {
           // The first allowed action listed, on a plain target.

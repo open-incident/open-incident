@@ -32,9 +32,15 @@ test.describe("Slack app", () => {
   test.beforeAll(async () => {
     mock = await startSlackMock();
     api = await request.newContext({ baseURL: BASE_URL });
-    const probe = form({ team_id: "T_PROBE", user_id: "U_PROBE", command: "/incident", text: "help" });
+    const probe = form({
+      team_id: "T_PROBE",
+      user_id: "U_PROBE",
+      command: "/incident",
+      text: "help",
+    });
     slackReady =
-      (await api.post("/api/slack/commands", { headers: signed(probe), data: probe })).status() === 200;
+      (await api.post("/api/slack/commands", { headers: signed(probe), data: probe })).status() ===
+      200;
   });
   test.beforeEach(() => {
     test.skip(!slackReady, "Slack is not configured on this instance (SLACK_* unset)");
@@ -265,7 +271,9 @@ test.describe("Slack app", () => {
         text,
       });
       return (
-        (await (await api.post("/api/slack/commands", { headers: signed(body), data: body })).json()) as {
+        (await (
+          await api.post("/api/slack/commands", { headers: signed(body), data: body })
+        ).json()) as {
           text: string;
         }
       ).text;
@@ -361,7 +369,10 @@ test.describe("Slack app", () => {
     expect(r.status()).toBe(200);
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/settings/chat");
-    await expect(page.getByTestId("chat-card-slack")).not.toHaveAttribute("data-state", "connected");
+    await expect(page.getByTestId("chat-card-slack")).not.toHaveAttribute(
+      "data-state",
+      "connected",
+    );
     await page.goto("/app/settings/audit");
     await expect(page.getByText(/slack\.disconnected/).first()).toBeVisible();
     await signOut(page);

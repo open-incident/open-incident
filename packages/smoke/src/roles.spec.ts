@@ -23,8 +23,7 @@ test.describe("Custom roles", () => {
     const chip = page.locator('[data-testid="role-chip"][data-role="Alerting admin"]');
     await expect(chip).toHaveAttribute("aria-current", "true");
     await expect(chip.getByTestId("role-members")).toHaveText(/^0 /);
-    const box = (p: string) =>
-      page.locator(`[data-permission="${p}"] input[name="permissions"]`);
+    const box = (p: string) => page.locator(`[data-permission="${p}"] input[name="permissions"]`);
     await expect(box("incidents.respond")).toBeChecked();
     await expect(box("settings.alerting")).not.toBeChecked();
 

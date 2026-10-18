@@ -157,11 +157,17 @@ test.describe("Microsoft Teams", () => {
 
     // From the incident's channel: Atlas stopped here, and a message added to
     // the timeline with the app's message action.
-    const channelId = [...mock.channels.values()].find((c) => channelName.includes(c.displayName))!.id;
+    const channelId = [...mock.channels.values()].find((c) =>
+      channelName.includes(c.displayName),
+    )!.id;
     const inChannel = (extra: Record<string, unknown>) =>
       activity({
         ...extra,
-        conversation: { id: `${channelId};messageid=7`, conversationType: "channel", tenantId: AAD },
+        conversation: {
+          id: `${channelId};messageid=7`,
+          conversationType: "channel",
+          tenantId: AAD,
+        },
         channelData: {
           tenant: { id: AAD },
           team: { id: TEAM.id, aadGroupId: TEAM.id, name: TEAM.name },
