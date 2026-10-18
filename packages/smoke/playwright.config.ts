@@ -32,11 +32,14 @@ process.env.SMOKE_TENANT ??= `smoke-${Date.now().toString(36)}`;
 export const TENANT = process.env.SMOKE_TENANT;
 
 /** The app is served by subdomain: the workspace is part of the address. */
-export const BASE_URL = process.env.SMOKE_BASE_URL ?? `http://${TENANT}.${HOST}`;
+/** "https" when the instance sits behind TLS — the local stack does (oi.localhost). */
+const SCHEME = process.env.SMOKE_SCHEME ?? "http";
+const STATUS_HOST =
+  process.env.SMOKE_STATUS_HOST ?? `status.localhost:${process.env.SMOKE_STATUS_PORT ?? "3107"}`;
+export const BASE_URL = process.env.SMOKE_BASE_URL ?? `${SCHEME}://${TENANT}.${HOST}`;
 /** The public status page of the demo workspace, served by apps/status (port 3107). */
 export const STATUS_BASE_URL =
-  process.env.SMOKE_STATUS_BASE_URL ??
-  `http://${TENANT}.status.localhost:${process.env.SMOKE_STATUS_PORT ?? "3107"}`;
+  process.env.SMOKE_STATUS_BASE_URL ?? `${SCHEME}://${TENANT}.${STATUS_HOST}`;
 /** Mailpit's web interface — this is where the reset and invitation links arrive. */
 export const MAILPIT_URL = process.env.SMOKE_MAILPIT_URL ?? "http://localhost:8027";
 
