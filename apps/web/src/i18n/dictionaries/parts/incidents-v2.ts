@@ -105,7 +105,7 @@ const en = {
 
 type Part = Record<keyof typeof en, Message>;
 
-const fr: Part = {
+const fr = {
   "incv2.tab.atlas": "✦ Résolus par Atlas",
 
   "incv2.decl.placeholder": "Le paiement renvoie des 500 aux utilisateurs européens",
@@ -211,9 +211,9 @@ const fr: Part = {
     "Généré par Atlas à partir de la chronologie · chaque section reste modifiable · les commentaires sont visibles par l’équipe, pas sur la page publiée.",
   "incv2.pm.exportPdf": "Exporter en PDF",
   "incv2.pm.allFollowUps": "Tous les suivis de l’espace",
-};
+} satisfies Part;
 
-const de: Part = {
+const de = {
   "incv2.tab.atlas": "✦ Von Atlas gelöst",
 
   "incv2.decl.placeholder": "Checkout liefert 500 für Nutzer in der EU",
@@ -306,7 +306,7 @@ const de: Part = {
     "Von Atlas aus der Zeitleiste erstellt · jeder Abschnitt bleibt bearbeitbar · Kommentare sieht das Team, nicht die veröffentlichte Seite.",
   "incv2.pm.exportPdf": "Als PDF exportieren",
   "incv2.pm.allFollowUps": "Alle Folgeaufgaben des Arbeitsbereichs",
-};
+} satisfies Part;
 
 export const incidentsV2Part = {
   en,

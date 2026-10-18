@@ -104,7 +104,7 @@ const en = {
 
 type Part = Record<keyof typeof en, Message>;
 
-const fr: Part = {
+const fr = {
   "services.now": "à l'instant",
   "services.monitorKind": "moniteur {kind}",
   "services.traces": "traces",
@@ -201,9 +201,9 @@ const fr: Part = {
   "insights.payOpen": "Ouvrir →",
   "insights.backToPager": "‹ Charge d'astreinte",
   "insights.noMonitorsShort": "aucun moniteur",
-};
+} satisfies Part;
 
-const de: Part = {
+const de = {
   "services.now": "jetzt",
   "services.monitorKind": "{kind}-Monitor",
   "services.traces": "Traces",
@@ -298,7 +298,7 @@ const de: Part = {
   "insights.payOpen": "Öffnen →",
   "insights.backToPager": "‹ Bereitschaftslast",
   "insights.noMonitorsShort": "noch kein Monitor",
-};
+} satisfies Part;
 
 export const servicesInsightsPart = {
   en,

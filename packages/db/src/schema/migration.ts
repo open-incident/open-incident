@@ -64,6 +64,16 @@ export const migrationRuns = app.table(
     completedAt: timestamp("completed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** Background work (inventory, archive) holds this lease; an expired one is resumed. */
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    /** The shadow webhook token, encrypted: the URL is shown again to administrators. */
+    shadowTokenEncrypted: text("shadow_token_encrypted"),
+    shadowStartedAt: timestamp("shadow_started_at", { withTimezone: true }),
+    inventoryReadAt: timestamp("inventory_read_at", { withTimezone: true }),
+    /** Conversions confirmed side by side: delays, layers, p5, repeat. */
+    confirmations: jsonb("confirmations").$type<Record<string, boolean>>().notNull().default({}),
+    /** Account facts read with the key: name, oldest alert, P5 volume. */
+    meta: jsonb("meta").$type<Record<string, unknown>>().notNull().default({}),
   },
   (t) => [index("migration_runs_tenant").on(t.tenantId)],
 );
@@ -163,6 +173,10 @@ export const shadowDecisions = app.table(
       onDelete: "set null",
     }),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    /** Why they disagreed: override (read after the last inventory), rule, policy. */
+    cause: text("cause"),
+    /** The alert as read and the rule each side applied — enough to compare again. */
+    detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
   },
   (t) => [
     uniqueIndex("shadow_decisions_alert").on(t.runId, t.alertExternalId),

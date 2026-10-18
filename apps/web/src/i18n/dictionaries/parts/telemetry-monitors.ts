@@ -279,7 +279,7 @@ const en = {
 
 type Part = Record<keyof typeof en, Message>;
 
-const fr: Part = {
+const fr = {
   "chart.resetZoom": "↺ Réinitialiser le zoom",
   "chart.fullScreen": "Plein écran",
   "chart.exitFullScreen": "Quitter le plein écran (Échap)",
@@ -544,9 +544,9 @@ const fr: Part = {
   "tel2.installAdmin": "Un administrateur l’installe ; demandez au propriétaire de cette instance.",
   "tel2.readGuide": "Lire le guide",
   "tel2.installFoot": "Rétention de 15 jours par défaut · réglable par service.",
-};
+} satisfies Part;
 
-const de: Part = {
+const de = {
   "chart.resetZoom": "↺ Zoom zurücksetzen",
   "chart.fullScreen": "Vollbild",
   "chart.exitFullScreen": "Vollbild verlassen (Esc)",
@@ -813,6 +813,6 @@ const de: Part = {
     "Ein Administrator installiert es; fragen Sie den Eigentümer dieser Instanz.",
   "tel2.readGuide": "Leitfaden lesen",
   "tel2.installFoot": "Standardmäßig 15 Tage Aufbewahrung · pro Service einstellbar.",
-};
+} satisfies Part;
 
 export const telemetryMonitorsPart = { en, fr, de } satisfies { en: Part; fr: Part; de: Part };

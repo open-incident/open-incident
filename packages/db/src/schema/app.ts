@@ -840,6 +840,8 @@ export const auditEvents = app.table(
 /* ---------- API keys & webhooks ---------- */
 
 export type ApiScope = "read" | "write" | "incident:create";
+/** What part of the API a key may reach (settings-v2). */
+export type ApiResource = "incidents" | "monitors" | "services" | "status_pages";
 
 /**
  * `oi_live_[a-f0-9]{32}`, stored as its SHA-256 only — shown once, at
@@ -864,6 +866,13 @@ export const apiKeys = app.table(
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: createdAt(),
+    /** Past it, the key answers 401 `key_expired`. Null: never expires. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    /**
+     * The resources the key may reach — `incidents`, `monitors`, `services`,
+     * `status_pages`. Null: every resource (keys made before scopes existed).
+     */
+    resources: text("resources").array().$type<ApiResource[] | null>(),
   },
   (t) => [uniqueIndex("api_keys_hash").on(t.keyHash)],
 );
@@ -1156,6 +1165,14 @@ export const alertSources = app.table(
       onDelete: "set null",
     }),
     createdAt: createdAt(),
+    /**
+     * "Open an incident from P1": with `incidentOpens = conditional`, the
+     * least important priority rank that still opens one. Null keeps the
+     * older meaning — whatever the workspace marked urgent.
+     */
+    incidentFromRank: integer("incident_from_rank"),
+    /** A source on trial: its alerts are logged and routed, nobody is paged. */
+    testMode: boolean("test_mode").notNull().default(false),
   },
   (t) => [uniqueIndex("alert_sources_tenant_name").on(t.tenantId, t.name)],
 );
@@ -1444,6 +1461,15 @@ export const rotations = app.table(
     effectiveFrom: timestamp("effective_from", { withTimezone: true }).notNull().defaultNow(),
     position: integer("position").notNull().default(0),
     createdAt: createdAt(),
+    /**
+     * The orders in force before `memberIds`, oldest first, each until the
+     * next one's `effectiveFrom` (ISO). A change of people takes effect at
+     * the next handover; the turns before it keep the order they had.
+     */
+    previousOrders: jsonb("previous_orders")
+      .$type<Array<{ memberIds: string[]; effectiveFrom: string }>>()
+      .notNull()
+      .default([]),
   },
   (t) => [index("rotations_schedule").on(t.scheduleId)],
 );
@@ -1685,6 +1711,8 @@ export const notificationMethods = app.table(
 export type NotificationStep = {
   kind: "email" | "sms" | "voice" | "webpush" | "slack" | "teams";
   delayMinutes: number;
+  /** "HH:MM" in the member's zone: an email step that waits for that hour and goes out as one digest. */
+  at?: string;
 };
 
 /** Personal rule: the ordered steps for one urgency. */
@@ -1717,7 +1745,7 @@ export const notificationDeliveries = app.table(
     /** Masked address, for the log — never the push subscription. */
     target: text("target").notNull(),
     kind: text("kind")
-      .$type<"escalation" | "test" | "shift_reminder" | "cover_request" | "verification">()
+      .$type<"escalation" | "test" | "shift_reminder" | "cover_request" | "verification" | "atlas">()
       .notNull(),
     urgency: alertUrgency("urgency"),
     escalationId: uuid("escalation_id").references(() => escalations.id, { onDelete: "set null" }),
@@ -1729,7 +1757,7 @@ export const notificationDeliveries = app.table(
     ackToken: text("ack_token"),
     /** What is said — the alert's own words, kept so a lost job can be replayed. */
     message: jsonb("message")
-      .$type<{ subject: string; text: string; url?: string }>()
+      .$type<{ subject: string; text: string; url?: string; digest?: boolean }>()
       .notNull()
       .default({ subject: "", text: "" }),
     /** Not before — personal rules stagger the channels. */
@@ -2679,6 +2707,11 @@ export const services = app.table(
     retentionOverrideDays: integer("retention_override_days"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /**
+     * Set when this name was merged into another service: the row stays so a
+     * signal naming it is still recognised, and it counts for that service.
+     */
+    mergedIntoId: uuid("merged_into_id"),
   },
   (t) => [
     uniqueIndex("services_tenant_key").on(t.tenantId, t.key),

@@ -76,6 +76,12 @@ const resolveMember = cache(async (): Promise<Resolution> => {
     return { row, custom };
   });
   if (!resolved || resolved.row.status === "disabled") return { status: "not-member" };
+  // "Last active" (Settings › Members): written at most once every five minutes.
+  const seen = resolved.row.lastSeenAt?.getTime() ?? 0;
+  if (Date.now() - seen > 5 * 60_000)
+    void withTenant(tenant.id, (tx) =>
+      tx.update(members).set({ lastSeenAt: new Date() }).where(eq(members.id, resolved.row.id)),
+    ).catch(() => undefined);
   const member: ActingMember = {
     ...resolved.row,
     permissions: resolved.custom

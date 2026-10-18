@@ -3,3 +3,5 @@ export * from "./auth";
 export * from "./app";
 export * from "./atlas";
 export * from "./migration";
+export * from "./chat";
+export * from "./service-links";

@@ -68,6 +68,8 @@ export const serviceAutonomy = app.table(
     reason: text("reason"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** Right runs graded since the service last went down; null when it never did. */
+    rightSinceDrop: integer("right_since_drop"),
   },
   (t) => [index("service_autonomy_tenant").on(t.tenantId)],
 );
@@ -215,6 +217,8 @@ export const atlasSettings = app.table("atlas_settings", {
   capPerRunEur: doublePrecision("cap_per_run_eur"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
+  /** Salt of the automation signing secret (derived, never stored). Rotating it rotates the secret. */
+  executorNonce: text("executor_nonce"),
 });
 
 export type AtlasNotifyMode = "push" | "summary" | "nothing";
@@ -229,9 +233,20 @@ export const atlasNotifyPrefs = app.table(
       .references(() => members.id, { onDelete: "cascade" }),
     mode: text("mode").$type<AtlasNotifyMode>().notNull().default("summary"),
     updatedAt: updatedAt(),
+    /** When the 09:00 summary last went out to this member. */
+    lastSummaryAt: timestamp("last_summary_at", { withTimezone: true }),
   },
   (t) => [index("atlas_notify_prefs_tenant").on(t.tenantId)],
 );
+
+export type BacktestStats = {
+  replayed?: number;
+  resolvedAlone?: number;
+  medianMinutesSooner?: number | null;
+  perService?: Record<string, { incidents: number; right: number }>;
+  /** Progress while running: incidents done so far. */
+  done?: number;
+};
 
 /** A replay of past incidents against today's Atlas, graded like a real run. */
 export const backtests = app.table(
@@ -252,6 +267,11 @@ export const backtests = app.table(
     error: text("error"),
     runAt: timestamp("run_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    /**
+     * What the replay found besides the grades: { resolvedAlone, medianMinutesSooner,
+     * replayed, perService: { [serviceId]: { incidents, right } } }.
+     */
+    stats: jsonb("stats").$type<BacktestStats>().notNull().default({}),
   },
   (t) => [index("backtests_tenant").on(t.tenantId, t.runAt)],
 );

@@ -372,6 +372,13 @@
       "when": 1792315264646,
       "tag": "0052_rule_atlas_directive",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1792354968227,
+      "tag": "0053_v2_design_pass",
+      "breakpoints": true
     }
   ]
 }

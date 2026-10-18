@@ -125,7 +125,7 @@ export async function seed(tx: SeedTx, tenantId: string): Promise<void> {
 
   // 4. Preview: Sam's invitation is pending, so his weekend slots go to Karim, one click each.
   const people = peopleIndex(await peopleOf(tx, run.id));
-  const active = new Set(
+  const active = new Set<string>(
     memberRows
       .filter((m: { status: string }) => m.status === "active")
       .map((m: { id: string }) => m.id),
