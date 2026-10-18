@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { incidents, investigations, postMortems, withTenant } from "@openincident/db";
 import { ensureInvestigationRow } from "@openincident/investigations";
+import { gradeRun } from "@/lib/atlas/control";
 import { getT } from "@/i18n/server";
 import { requireResponder } from "@/lib/session";
 import { requestAssessment } from "@/lib/investigations";
@@ -88,7 +89,11 @@ export async function addInvestigationNote(formData: FormData) {
   revalidatePath(`/app/incidents/${number}`);
 }
 
-/** Once the post-mortem names the cause: how close the analysis came, in a person's judgement. */
+/**
+ * Once the post-mortem names the cause: how close the analysis came, in a
+ * person's judgement. The grade goes through Atlas's ladder, so it counts
+ * toward the service's level — or costs it one.
+ */
 export async function gradeInvestigation(formData: FormData) {
   const current = await requireResponder();
   const number = numberSchema.parse(formData.get("number"));
@@ -101,19 +106,15 @@ export async function gradeInvestigation(formData: FormData) {
     .max(1000)
     .parse(formData.get("note") ?? "");
   const id = await incidentId(current.tenant.id, number);
-  if (id)
-    await withTenant(current.tenant.id, (tx) =>
-      tx
-        .update(investigations)
-        .set({
-          grade,
-          gradeNote: gradeNote || null,
-          gradedByMemberId: current.member.id,
-          gradedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(investigations.incidentId, id)),
-    );
+  const row = id ? await ensureInvestigationRowQuiet(current.tenant.id, id) : null;
+  if (row)
+    await gradeRun(
+      current.tenant.id,
+      row.id,
+      grade,
+      { memberId: current.member.id, label: current.member.name },
+      gradeNote || null,
+    ).catch((err) => console.error("[atlas-ui] grade refused:", err));
   revalidatePath(`/app/incidents/${number}`);
 }
 

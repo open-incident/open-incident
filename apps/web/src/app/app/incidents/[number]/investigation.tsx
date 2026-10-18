@@ -11,14 +11,12 @@ import {
 import { getT, type Translate } from "@/i18n/server";
 import type { IncidentDetail } from "@/lib/incidents";
 import type { InvestigationAccess } from "@/lib/investigations";
+import { listAtlasActions, type AtlasActionRow } from "@/lib/atlas/queries";
+import { memberNames } from "@/components/atlas/data";
+import { approverOf, fixName } from "@/components/atlas/words";
 import { InvestigationLive } from "./investigation-live";
-import {
-  addInvestigationNote,
-  gradeInvestigation,
-  investigationToPostMortem,
-  rerunInvestigation,
-  toggleInvestigationPause,
-} from "./investigation-actions";
+import { investigationToPostMortem, rerunInvestigation } from "./investigation-actions";
+import { AtlasRcaReject } from "./atlas-rca-reject";
 
 const CONFIDENCE_TONE: Record<Confidence, { bg: string; ink: string }> = {
   speculation: { bg: "var(--sunk)", ink: "var(--ink-3)" },
@@ -53,6 +51,7 @@ const btn: React.CSSProperties = {
   fontWeight: 600,
   color: "inherit",
   cursor: "pointer",
+  fontFamily: "inherit",
 };
 const cite: React.CSSProperties = {
   display: "inline-flex",
@@ -64,21 +63,38 @@ const cite: React.CSSProperties = {
   borderRadius: 6,
   padding: "2px 7px",
   textDecoration: "none",
+  maxWidth: "100%",
 };
 
-function Citations({ ids, map }: { ids: string[]; map: Map<string, Citation> }) {
+/** One chip per piece of evidence: "from E1 · deploy CHG-84 · open". */
+function Citations({ ids, map, t }: { ids: string[]; map: Map<string, Citation>; t: Translate }) {
   return (
     <>
       {ids.map((id) => {
         const c = map.get(id);
         const label = c ? `${id} · ${c.label}` : id;
-        return c?.url ? (
-          <a key={id} href={c.url} target="_blank" rel="noreferrer" style={cite} title={label}>
-            {label}
-          </a>
-        ) : (
-          <span key={id} style={cite} title={label}>
-            {label}
+        return (
+          <span key={id} style={cite}>
+            {t("atlas.ui.rca.from")}{" "}
+            <span
+              title={label}
+              style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            >
+              {label}
+            </span>
+            {c?.url && (
+              <>
+                ·{" "}
+                <a
+                  href={c.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: "var(--brand)", fontWeight: 600, textDecoration: "none" }}
+                >
+                  {t("inc2.rca.open")}
+                </a>
+              </>
+            )}
           </span>
         );
       })}
@@ -86,7 +102,7 @@ function Citations({ ids, map }: { ids: string[]; map: Map<string, Citation> }) 
   );
 }
 
-function stateLabel(h: Hypothesis, t: Translate): string {
+function setAsideWhy(h: Hypothesis, t: Translate): string {
   return h.state === "contradicted"
     ? t("ai.investigation.state.contradicted")
     : h.findings.length === 0
@@ -95,11 +111,51 @@ function stateLabel(h: Hypothesis, t: Translate): string {
 }
 
 /**
+ * "H1 guided the run." — what the leading hypothesis led Atlas to do, read off
+ * the journal: the system action it drove, who approved it or that Atlas ran
+ * it alone, and the verification that confirmed it.
+ */
+function guidedSentence(
+  t: Translate,
+  actions: AtlasActionRow[],
+  names: Map<string, string>,
+): string | null {
+  if (actions.length === 0) return null;
+  const sys =
+    actions.find((a) => a.kind === "system" && a.executedAt) ??
+    actions.find((a) => a.kind === "system") ??
+    null;
+  const time = (d: Date) => t.fmt.time(d, t.timeZone);
+  if (!sys) return t("atlas.ui.rca.guidedSteps", { count: actions.length });
+  const approver = approverOf(actions, sys, names);
+  let s =
+    sys.approvalState === "waiting"
+      ? t("atlas.ui.rca.guidedWaiting", { title: fixName(sys), time: time(sys.at) })
+      : approver
+        ? t("atlas.ui.rca.guidedApproved", {
+            title: fixName(sys),
+            time: time(sys.at),
+            name: approver,
+          })
+        : sys.autonomous
+          ? t("atlas.ui.rca.guidedAlone", {
+              title: fixName(sys),
+              time: time(sys.executedAt ?? sys.at),
+            })
+          : t("atlas.ui.rca.guided", { title: fixName(sys), time: time(sys.at) });
+  const verified = actions.find((a) => a.verifiedAt)?.verifiedAt;
+  if (verified) s += ` ${t("atlas.ui.rca.verified", { time: time(verified) })}`;
+  return s;
+}
+
+/**
  * The Root cause analysis tab: the surviving hypothesis in full, the findings
  * that hold it up with their citations, and what the adversarial pass could
- * not break. Three things a person does here — accept it into the post-mortem,
- * contest it with what they know, or ask for another pass — and, after
- * closure, grade how close it came.
+ * not break. Above it, when Atlas acted, what that hypothesis led it to do.
+ * Three things a person does here — accept it into the post-mortem, reject it
+ * with a reason (the reason becomes cited evidence and the analysis runs
+ * again), or ask for another pass. The grade after closure lives on the
+ * Atlas tab, with the run it judges.
  */
 export async function Investigation({
   tenantId,
@@ -157,7 +213,6 @@ export async function Investigation({
   if (!access.ok || !inv || inv.runs === 0)
     return (
       <div
-        className="oi-rise-fast"
         data-testid="rca"
         style={{
           ...panel,
@@ -165,6 +220,7 @@ export async function Investigation({
           display: "flex",
           flexDirection: "column",
           gap: 10,
+          animation: "oi-rise .16s ease backwards",
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -184,7 +240,7 @@ export async function Investigation({
             />
           )}
           <span style={{ flex: 1 }} />
-          {acts && !running && (
+          {acts && (
             <form action={rerunInvestigation} style={{ display: "contents" }}>
               <input type="hidden" name="number" value={number} />
               <button
@@ -221,11 +277,23 @@ export async function Investigation({
       </div>
     );
 
+  const journal = await listAtlasActions(tenantId, inc.row.id);
+  const names = await memberNames(
+    tenantId,
+    journal.map((a) => a.approvedByMemberId),
+  );
+  const guided = top ? guidedSentence(t, journal, names) : null;
+
   return (
     <div
-      className="oi-rise-fast"
       data-testid="rca"
-      style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-start" }}
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 14,
+        alignItems: "flex-start",
+        animation: "oi-rise .16s ease backwards",
+      }}
     >
       <div
         style={{
@@ -236,6 +304,39 @@ export async function Investigation({
           flex: "10 1 460px",
         }}
       >
+        {top && guided && (
+          <Link
+            href={`/app/incidents/${number}?tab=atlas`}
+            data-testid="rca-guided"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+              background: "var(--viol-t)",
+              borderRadius: 12,
+              padding: "10px 14px",
+              cursor: "pointer",
+              color: "var(--ink)",
+              textDecoration: "none",
+            }}
+          >
+            <span style={{ color: "var(--viol)" }}>✦</span>
+            <span style={{ flex: "1 1 300px", fontSize: 12.5, lineHeight: 1.5 }}>
+              <strong>{t("atlas.ui.rca.guidedLead", { id: top.id })}</strong> {guided}
+            </span>
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--viol)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {t("atlas.ui.rca.toAtlas")}
+            </span>
+          </Link>
+        )}
         <div
           data-testid="rca-summary"
           style={{
@@ -288,30 +389,32 @@ export async function Investigation({
             >
               {t("inc2.rca.gradeAfter", {
                 grade: inv.grade
-                  ? t(`ai.investigation.grade.${inv.grade}`)
+                  ? t(`ai.investigation.grade.${inv.grade}`).toLowerCase()
                   : t("inc2.rca.notGraded"),
               })}
             </span>
             <span style={{ flex: 1 }} />
-            <span
-              data-testid="rca-status"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 11.5,
-                fontWeight: 600,
-                color: statusInk,
-              }}
-            >
+            {(running || inv.paused || inv.status === "failed") && (
               <span
-                aria-hidden
-                style={{ width: 6, height: 6, borderRadius: "50%", background: statusInk }}
-              />
-              {inv.paused && !running
-                ? t("ai.investigation.paused")
-                : t(`ai.investigation.status.${inv.status}`)}
-            </span>
+                data-testid="rca-status"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: statusInk,
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{ width: 6, height: 6, borderRadius: "50%", background: statusInk }}
+                />
+                {inv.paused && !running
+                  ? t("ai.investigation.paused")
+                  : t(`ai.investigation.status.${inv.status}`)}
+              </span>
+            )}
             <InvestigationLive
               incidentId={inc.row.id}
               lastEventId={inc.events.at(-1)?.id ?? ""}
@@ -320,7 +423,7 @@ export async function Investigation({
             />
             <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
               {t("inc2.rca.at", {
-                when: inv.completedAt ? t.fmt.relative(inv.completedAt) : "—",
+                when: inv.completedAt ? t.fmt.dateTime(inv.completedAt, t.timeZone) : "—",
               })}
             </span>
           </div>
@@ -363,7 +466,7 @@ export async function Investigation({
                 <span
                   style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--ok)" }}
                 />
-                {t("inc2.rca.accepted")}
+                {t("atlas.ui.rca.accepted")}
               </div>
             )}
             {/*
@@ -371,11 +474,20 @@ export async function Investigation({
               control with it, "another pass" included: an assessment written
               once was frozen, and evidence arriving afterwards had nowhere to
               go. The banner says it was written; asking for another pass is
-              still allowed, and writing it again is the same button as before.
+              still allowed.
             */}
-            {acts && top && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {afterResolution && !written && (
+            {acts && (
+              <AtlasRcaReject
+                number={number}
+                hasTop={Boolean(top)}
+                labels={{
+                  reject: t("atlas.ui.rca.reject"),
+                  placeholder: t("ai.investigation.steerPlaceholder"),
+                  hint: t("ai.investigation.steerHint"),
+                  submit: t("ai.investigation.steerSubmit"),
+                }}
+              >
+                {top && afterResolution && !written && (
                   <form action={investigationToPostMortem} style={{ display: "contents" }}>
                     <input type="hidden" name="number" value={number} />
                     <button
@@ -383,43 +495,17 @@ export async function Investigation({
                       data-testid="rca-to-pm"
                       style={{
                         ...btn,
+                        padding: "0 15px",
+                        border: 0,
                         background: "var(--viol)",
-                        borderColor: "var(--viol)",
-                        color: "var(--on-brand)",
+                        color: "#fff",
                       }}
                     >
-                      {t("inc2.rca.accept")}
+                      {t("atlas.ui.rca.accept")}
                     </button>
                   </form>
                 )}
-                {!running && (
-                  <form action={rerunInvestigation} style={{ display: "contents" }}>
-                    <input type="hidden" name="number" value={number} />
-                    <button
-                      type="submit"
-                      data-testid="rca-rerun"
-                      className="oi-hover-edge-fill"
-                      style={{ ...btn, fontWeight: 500 }}
-                    >
-                      {t("inc2.rca.anotherPass")}
-                    </button>
-                  </form>
-                )}
-                {inv.runs > 0 && (
-                  <form action={toggleInvestigationPause} style={{ display: "contents" }}>
-                    <input type="hidden" name="number" value={number} />
-                    <input type="hidden" name="paused" value={inv.paused ? "0" : "1"} />
-                    <button
-                      type="submit"
-                      data-testid="rca-pause"
-                      className="oi-hover-edge-fill"
-                      style={{ ...btn, fontWeight: 500 }}
-                    >
-                      {inv.paused ? t("ai.investigation.resume") : t("ai.investigation.pause")}
-                    </button>
-                  </form>
-                )}
-              </div>
+              </AtlasRcaReject>
             )}
           </div>
         </div>
@@ -443,7 +529,7 @@ export async function Investigation({
               {t("ai.investigation.findingsNone")}
             </div>
           )}
-          {findings.map((f, i) => (
+          {findings.map((f) => (
             <div
               key={f.id}
               data-testid="rca-finding"
@@ -452,7 +538,7 @@ export async function Investigation({
                 gridTemplateColumns: "34px minmax(0,1fr)",
                 gap: 12,
                 padding: "12px 18px",
-                borderBottom: i === findings.length - 1 ? 0 : "1px solid var(--line-2)",
+                borderBottom: "1px solid var(--line-2)",
               }}
             >
               <span
@@ -484,10 +570,13 @@ export async function Investigation({
                     alignItems: "center",
                   }}
                 >
-                  <span style={{ ...cite, border: 0, padding: 0 }}>
-                    {t("inc2.rca.from", { source: t(`ai.investigation.check.${f.check}`) })}
-                  </span>
-                  <Citations ids={f.citations} map={citations} />
+                  {f.citations.length === 0 ? (
+                    <span style={cite}>
+                      {t("inc2.rca.from", { source: t(`ai.investigation.check.${f.check}`) })}
+                    </span>
+                  ) : (
+                    <Citations ids={f.citations} map={citations} t={t} />
+                  )}
                 </span>
               </span>
             </div>
@@ -533,100 +622,14 @@ export async function Investigation({
               >
                 <span style={{ fontWeight: 600, color: "var(--ink)" }}>{h.id}</span> {h.challenge}
                 {h.challengeCitations.length > 0 && (
-                  <span
-                    style={{
-                      display: "flex",
-                      gap: 5,
-                      flexWrap: "wrap",
-                      marginTop: 5,
-                    }}
-                  >
-                    <Citations ids={h.challengeCitations} map={citations} />
+                  <span style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 5 }}>
+                    <Citations ids={h.challengeCitations} map={citations} t={t} />
                   </span>
                 )}
               </div>
             ))
           )}
         </div>
-
-        {acts && (
-          <details style={{ ...panel, padding: "14px 18px" }} data-testid="rca-steer">
-            <summary
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-                listStyle: "none",
-                color: "var(--brand)",
-              }}
-            >
-              {t("inc2.rca.contest")}
-            </summary>
-            <p style={{ margin: "8px 0", fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
-              {t("ai.investigation.steerHint")}
-            </p>
-            {inv.notes.length > 0 && (
-              <ul
-                style={{
-                  margin: "0 0 8px",
-                  padding: 0,
-                  listStyle: "none",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                }}
-              >
-                {inv.notes.slice(-5).map((n) => (
-                  <li
-                    key={n.id}
-                    style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.55 }}
-                  >
-                    <span style={{ fontWeight: 600, color: "var(--ink)" }}>{n.memberName}</span>
-                    <span style={{ color: "var(--ink-3)" }}>
-                      {" "}
-                      · {t.fmt.relative(new Date(n.at))} —{" "}
-                    </span>
-                    {n.body}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <form
-              action={addInvestigationNote}
-              data-testid="rca-note-form"
-              style={{ display: "flex", flexDirection: "column", gap: 8 }}
-            >
-              <input type="hidden" name="number" value={number} />
-              <textarea
-                name="body"
-                required
-                minLength={3}
-                maxLength={2000}
-                rows={2}
-                placeholder={t("ai.investigation.steerPlaceholder")}
-                className="oi-field"
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  border: "1px solid var(--line)",
-                  borderRadius: 10,
-                  padding: "8px 11px",
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                  fontFamily: "inherit",
-                  background: "var(--panel)",
-                  resize: "vertical",
-                  outline: "none",
-                }}
-              />
-              <div>
-                <button type="submit" disabled={running} style={btn}>
-                  {t("ai.investigation.steerSubmit")}
-                </button>
-              </div>
-            </form>
-          </details>
-        )}
       </div>
 
       <div
@@ -656,24 +659,30 @@ export async function Investigation({
               top
                 ? t("inc2.rca.findingsAgree", {
                     level: t(`ai.investigation.confidence.${top.confidence}`),
-                    count: findings.length,
+                    count: findings.filter((f) => top.findings.includes(f.id)).length,
                   })
                 : "—"
             }
           />
           <Row
-            k={t("inc2.rca.challenger")}
+            k={t("atlas.ui.rca.challengerShort")}
             v={
               objections
-                ? t("inc2.rca.rejectedCount", { count: objections })
+                ? t("atlas.ui.rca.rejectedCount", { count: objections })
                 : t("inc2.rca.noObjection")
             }
           />
           <Row
-            k={t("ai.investigation.grade")}
+            k={t("atlas.ui.rca.gradeShort")}
             v={
               inv.grade
-                ? `${t(`ai.investigation.grade.${inv.grade}`)}${row?.graderName ? ` · ${row.graderName}` : ""}`
+                ? `${t(`ai.investigation.grade.${inv.grade}`).toLowerCase()}${
+                    inv.gradeNote
+                      ? ` — ${inv.gradeNote}`
+                      : row?.graderName
+                        ? ` · ${row.graderName}`
+                        : ""
+                  }`
                 : t("inc2.rca.notGraded")
             }
           />
@@ -686,45 +695,8 @@ export async function Investigation({
               paddingTop: 8,
             }}
           >
-            {t("inc2.rca.gradeNote")}
+            {t("atlas.ui.rca.gradeNote")}
           </div>
-          {acts && !inv.grade && afterResolution && (
-            <form
-              action={gradeInvestigation}
-              style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}
-            >
-              <input type="hidden" name="number" value={number} />
-              <input
-                name="note"
-                maxLength={1000}
-                placeholder={t("ai.investigation.gradeNotePlaceholder")}
-                className="oi-field"
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  height: 32,
-                  border: "1px solid var(--line)",
-                  borderRadius: 8,
-                  padding: "0 10px",
-                  fontSize: 12.5,
-                  background: "var(--panel)",
-                  outline: "none",
-                }}
-              />
-              {(["bullseye", "on_target", "miss", "nowhere_near"] as const).map((g) => (
-                <button
-                  key={g}
-                  type="submit"
-                  name="grade"
-                  value={g}
-                  className="oi-hover-edge-fill"
-                  style={{ ...btn, height: 28, padding: "0 10px", fontSize: 12, fontWeight: 500 }}
-                >
-                  {t(`ai.investigation.grade.${g}`)}
-                </button>
-              ))}
-            </form>
-          )}
         </div>
 
         {others.length > 0 && (
@@ -737,12 +709,12 @@ export async function Investigation({
               gap: 8,
             }}
           >
-            <div style={eyebrow}>{t("inc2.rca.rejected")}</div>
+            <div style={eyebrow}>{t("atlas.ui.rca.rejected")}</div>
             {others.map((h) => (
               <div key={h.id} style={{ fontSize: 12.5, lineHeight: 1.5 }}>
                 <span style={{ fontWeight: 600 }}>{h.id}</span> {h.whatBroke}{" "}
                 {h.state !== "open" && (
-                  <span style={{ color: "var(--ink-3)" }}>· {stateLabel(h, t)}</span>
+                  <span style={{ color: "var(--ink-3)" }}>· {setAsideWhy(h, t)}</span>
                 )}
               </div>
             ))}
@@ -759,7 +731,7 @@ export async function Investigation({
             lineHeight: 1.55,
           }}
         >
-          {t("inc2.rca.footer")}
+          {t("atlas.ui.rca.footer")}
           {written && (
             <>
               {" "}
@@ -772,12 +744,6 @@ export async function Investigation({
               </Link>
             </>
           )}
-        </div>
-        <div style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.5 }}>
-          {t("ai.investigation.footer", {
-            model: inv.model ?? "—",
-            provider: inv.provider ?? "—",
-          })}
         </div>
       </div>
     </div>

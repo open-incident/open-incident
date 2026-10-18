@@ -7,6 +7,7 @@ import type { IncidentDetail } from "@/lib/incidents";
 import { aiAllowance, recentChanges, relatedIncidents } from "@/lib/ai-capabilities";
 import { onCallNow } from "@/lib/oncall";
 import { listMonitors } from "@/lib/monitors";
+import { serviceDependencies } from "@/lib/services";
 import type { IncidentService } from "../services-of";
 
 type Line = { text: string; source: string; when: string; href?: string };
@@ -40,7 +41,7 @@ export async function ContextTab({
 }) {
   const t = await getT();
   const configured = aiConfigured();
-  const { onCall, monitors, changes, runbooks } = await withTenant(tenantId, async (tx) => ({
+  const { onCall, monitors, changes, runbooks, deps } = await withTenant(tenantId, async (tx) => ({
     onCall: await onCallNow(tx, tenantId),
     monitors: await listMonitors(tx, tenantId),
     changes: await recentChanges(tx, tenantId, {
@@ -49,6 +50,16 @@ export async function ContextTab({
       resolvedAt: inc.row.resolvedAt,
     }),
     runbooks: await runbooksForService(tx, tenantId, serviceId),
+    // The links people settled between services, with each one's state. The
+    // calls the traces observe are the Services screen's to fold in.
+    deps: await Promise.all(
+      services.map(async (s) => ({
+        service: s,
+        nodes: (
+          await serviceDependencies(tx, tenantId, { id: s.id, key: s.key, aliases: [] }, [])
+        ).filter((n) => !n.hidden),
+      })),
+    ),
   }));
   const keys = new Set(services.map((s) => s.key));
   const mine = monitors.filter((m) => m.serviceKey && keys.has(m.serviceKey));
@@ -63,7 +74,10 @@ export async function ContextTab({
     tx.select().from(investigations).where(eq(investigations.incidentId, inc.row.id)),
   );
   const top = inv?.hypotheses.find((h) => h.id === inv.summary?.topHypothesisId) ?? null;
-  const pinned = inc.events.filter((e) => e.pinned);
+  // The decisions taken during the incident, as the timeline recorded them.
+  const decisions = inc.events.filter(
+    (e) => e.kind === "note" && (e.payload as { system?: unknown }).system === "decision",
+  );
   // A card the instance cannot fill says which obstacle it is — never a blank.
   const relatedBlocked = !configured
     ? t("inc2.ctx.unavailable")
@@ -76,7 +90,7 @@ export async function ContextTab({
   const cards: Card[] = [
     {
       title: t("inc2.ctx.serviceOwner"),
-      note: t("inc2.card.services"),
+      note: t("atlas.ui.ctx.fromServices"),
       lines: services.map((s) => ({
         text: s.ownerTeamName
           ? t("inc2.ctx.servicePolicy", { service: s.key, team: s.ownerTeamName })
@@ -88,7 +102,7 @@ export async function ContextTab({
     },
     {
       title: t("inc2.ctx.onCall"),
-      note: t("nav.onCall"),
+      note: t("atlas.ui.ctx.fromSchedule"),
       lines: onCall.map((s) => ({
         text: s.memberName
           ? t("inc2.ctx.onCallUntil", {
@@ -103,21 +117,41 @@ export async function ContextTab({
       })),
     },
     {
-      title: t("inc2.ctx.monitors"),
-      note: t("nav.monitors"),
-      lines: mine.map((m) => ({
-        text: t("inc2.ctx.monitorState", {
-          name: m.name,
-          state: t(`monitors.state.${m.state}`),
-        }),
-        source: t("nav.monitors"),
-        when: m.lastCheckAt ? t.fmt.relative(m.lastCheckAt) : "—",
-        href: `/app/monitors/${m.id}`,
-      })),
+      title: t("atlas.ui.ctx.deps"),
+      note: t("atlas.ui.ctx.fromMonitors"),
+      testId: "ctx-dependencies",
+      lines: [
+        ...deps
+          .filter((d) => d.nodes.length > 0)
+          .map((d) => {
+            const named = (n: (typeof d.nodes)[number]) =>
+              n.state === "degraded" || n.state === "offline"
+                ? `${n.key} (${t(`atlas.ui.ctx.state.${n.state}`)})`
+                : n.key;
+            const ups = d.nodes.filter((n) => n.direction === "upstream").map(named);
+            const downs = d.nodes.filter((n) => n.direction === "downstream").map(named);
+            return {
+              text: [ups.join(", "), d.service.key, downs.join(", ")].filter(Boolean).join(" → "),
+              source: t("nav.services"),
+              when: t("inc2.upd.always"),
+              href: `/app/services/${d.service.id}`,
+            };
+          }),
+        ...mine.map((m) => ({
+          text: t("inc2.ctx.monitorState", {
+            name: m.name,
+            state: t(`monitors.state.${m.state}`),
+          }),
+          source: t("nav.monitors"),
+          when: m.lastCheckAt ? t.fmt.relative(m.lastCheckAt) : "—",
+          href: `/app/monitors/${m.id}`,
+        })),
+      ],
     },
     {
       title: t("inc2.ctx.changes"),
-      note: t("ai.changes.title"),
+      note: t("atlas.ui.ctx.fromChanges"),
+      testId: "ai-changes",
       lines: changes.map((c) => ({
         text: `${c.title}${c.actorName ? ` · ${c.actorName}` : ""}`,
         source: t(`ai.changes.kind.${c.kind}`),
@@ -128,7 +162,7 @@ export async function ContextTab({
     {
       title: t("inc2.ctx.runbooks"),
       testId: "ai-runbooks",
-      note: String(runbooks.length),
+      note: t("atlas.ui.ctx.fromLinks"),
       lines: runbooks.map((r) => ({
         text: r.title,
         source: r.sourceUrl ? new URL(r.sourceUrl).host : t("ai.runbooks.pasted"),
@@ -150,7 +184,7 @@ export async function ContextTab({
     },
     {
       title: t("inc2.ctx.rootCause"),
-      note: top ? t(`ai.investigation.confidence.${top.confidence}`) : "—",
+      note: top ? `${top.id} · ${t(`ai.investigation.confidence.${top.confidence}`)}` : "—",
       ai: true,
       ...(configured ? {} : { unavailable: t("inc2.ctx.unavailable") }),
       lines:
@@ -166,20 +200,32 @@ export async function ContextTab({
           : [],
     },
     {
-      title: t("inc2.ctx.pinned"),
-      note: String(pinned.length),
-      lines: pinned.map((e) => ({
-        text: typeof e.payload.message === "string" ? e.payload.message : e.kind,
-        source: e.actorName ?? t("timeline.system"),
-        when: t.fmt.dateTime(e.occurredAt, t.timeZone),
-      })),
+      title: t("atlas.ui.ctx.decisions"),
+      testId: "ctx-decisions",
+      note: String(decisions.length),
+      lines: decisions.map((e) => {
+        const p = e.payload as { title?: unknown };
+        const who = e.actorName ? (e.actorName.split(" ")[0] ?? e.actorName) : null;
+        return {
+          text: [t.fmt.time(e.occurredAt, t.timeZone), String(p.title ?? ""), who]
+            .filter(Boolean)
+            .join(" · "),
+          source: t("atlas.ui.ctx.decisionsSource"),
+          when: t.fmt.dateCompact(e.occurredAt),
+          href: `/app/incidents/${inc.row.number}?tab=post-incident`,
+        };
+      }),
     },
   ];
 
   return (
     <div
-      className="oi-rise-fast"
-      style={{ display: "flex", flexDirection: "column", gap: 12 }}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        animation: "oi-rise .16s ease backwards",
+      }}
       data-testid="incident-context"
     >
       <div
@@ -192,7 +238,7 @@ export async function ContextTab({
         }}
       >
         <span style={{ color: "var(--viol)" }}>✦</span>
-        {t("inc2.ctx.lead")}
+        {t("atlas.ui.ctx.lead")}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 12 }}>
         {cards.map((c) => (

@@ -31,21 +31,23 @@ test.describe("Root cause analysis", () => {
     // Every finding cites evidence that exists — the ids are rendered as chips.
     const finding = page.getByTestId("rca-finding").first();
     await expect(finding).toBeVisible();
-    await expect(finding.locator("a, span[title]").last()).toHaveText(/^[A-Z]\d+ · /);
+    await expect(finding.locator("span[title]").last()).toHaveText(/^[A-Z]\d+ · /);
     // The adversarial reviewer weakened the second hypothesis and said why.
     // The adversarial reviewer's objections are their own block.
     await expect(page.getByTestId("rca-review").first()).toContainText(/Mock review/);
 
-    // Steering: a note is cited by the next assessment. The block is a
-    // disclosure, closed until someone asks for it.
-    await page.getByTestId("rca-steer").locator("summary").click();
+    // Rejecting with a reason: the reason is cited by the next assessment.
+    // The field opens only when someone asks for it.
+    await page.getByTestId("rca-reject").click();
     const form = page.getByTestId("rca-note-form");
     await form.locator("textarea").fill("Smoke note: the rollback did not restore service.");
     await form.getByRole("button").click();
-    await expect(page.getByTestId("rca-steer")).toContainText("Smoke note", { timeout: 45_000 });
     await expect(page.getByTestId("rca-findings")).toContainText(/rollback did not help/, {
       timeout: 45_000,
     });
+    // The note is credited in what Atlas did.
+    await page.goto("/app/incidents/221?tab=atlas");
+    await expect(page.getByTestId("atlas-journal")).toContainText("Smoke note");
 
     // The timeline says so.
     await page.goto("/app/incidents/221");
