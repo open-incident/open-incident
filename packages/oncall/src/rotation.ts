@@ -5,6 +5,11 @@
  * month, or covers weekends only; its ordered members take turns, starting
  * from `effectiveFrom`. Active hours narrow the coverage inside each day.
  * Overrides win over the rotation; a null-member override is an assumed gap.
+ *
+ * The order of people has a history: `previousOrders` holds the orders that
+ * ran before the current one, each until the next one starts. Changing the
+ * people writes a new order that starts at the next handover, so the shift
+ * being worked — and every shift before it — keeps the person it had.
  */
 import { addDays, localParts, minutesOf, zonedTime } from "./time";
 
@@ -18,7 +23,12 @@ export type RotationLike = {
   memberIds: string[];
   effectiveFrom: Date;
   position: number;
+  /** Orders in force before `effectiveFrom`, oldest first (ISO dates, as stored). */
+  previousOrders?: ReadonlyArray<{ memberIds: string[]; effectiveFrom: string | Date }> | null;
 };
+
+/** One order of people: who takes the turns, counted from which instant. */
+export type RotationOrder = { memberIds: string[]; effectiveFrom: Date };
 
 export type OverrideLike = {
   id: string;
@@ -44,6 +54,34 @@ export type Shift = {
 
 const DAY = 86_400_000;
 
+/** Every order of the rotation, oldest first, the current one last. */
+export function ordersOf(rotation: RotationLike): RotationOrder[] {
+  const earlier = (rotation.previousOrders ?? [])
+    .map((o) => ({ memberIds: o.memberIds, effectiveFrom: new Date(o.effectiveFrom) }))
+    .filter((o) => o.effectiveFrom.getTime() < rotation.effectiveFrom.getTime())
+    .sort((a, b) => a.effectiveFrom.getTime() - b.effectiveFrom.getTime());
+  return [...earlier, { memberIds: rotation.memberIds, effectiveFrom: rotation.effectiveFrom }];
+}
+
+/**
+ * The order in force at an instant: the latest one that started at or before
+ * it. Null before the rotation's very first order — nobody was on it yet.
+ */
+export function orderAt(rotation: RotationLike, at: Date): RotationOrder | null {
+  const t = at.getTime();
+  if (t >= rotation.effectiveFrom.getTime())
+    return { memberIds: rotation.memberIds, effectiveFrom: rotation.effectiveFrom };
+  if (!rotation.previousOrders?.length) return null;
+  let hit: RotationOrder | null = null;
+  for (const o of ordersOf(rotation)) if (o.effectiveFrom.getTime() <= t) hit = o;
+  return hit;
+}
+
+/** The order turns are counted from at an instant — the one in force, else the first one. */
+function countingOrder(rotation: RotationLike, at: Date): RotationOrder {
+  return orderAt(rotation, at) ?? ordersOf(rotation)[0]!;
+}
+
 /** The shift boundaries of a rotation around an instant: [start, end) of the turn containing `at`. */
 export function turnBounds(
   schedule: ScheduleLike,
@@ -60,10 +98,13 @@ export function turnBounds(
     [y, m, d] = addDays(y, m, d, -1);
     start = zonedTime(y, m, d, handover, tz);
   }
+  const counting = countingOrder(rotation, at);
   if (rotation.interval === "daily") {
     const [ny, nm, nd] = addDays(y, m, d, 1);
     const end = zonedTime(ny, nm, nd, handover, tz);
-    const index = Math.floor((start.getTime() - anchorFor(schedule, rotation).getTime()) / DAY);
+    const index = Math.floor(
+      (start.getTime() - anchorFor(schedule, rotation, counting.effectiveFrom).getTime()) / DAY,
+    );
     return { start, end, index: Math.round(index) };
   }
   if (rotation.interval === "weekly" || rotation.interval === "weekend") {
@@ -77,12 +118,13 @@ export function turnBounds(
     const [ny, nm, nd] = addDays(y, m, d, 7);
     const end = zonedTime(ny, nm, nd, handover, tz);
     const index = Math.round(
-      (start.getTime() - anchorFor(schedule, rotation).getTime()) / (7 * DAY),
+      (start.getTime() - anchorFor(schedule, rotation, counting.effectiveFrom).getTime()) /
+        (7 * DAY),
     );
     return { start, end, index };
   }
-  // monthly: turns change on the handover day-of-month = effectiveFrom's day
-  const eff = localParts(rotation.effectiveFrom, tz);
+  // monthly: turns change on the handover day-of-month = the first order's day
+  const eff = localParts(ordersOf(rotation)[0]!.effectiveFrom, tz);
   let sy = p.year;
   let sm = p.month;
   let s = zonedTime(sy, sm, Math.min(eff.day, daysInMonth(sy, sm)), handover, tz);
@@ -101,7 +143,8 @@ export function turnBounds(
     ey += 1;
   }
   const e = zonedTime(ey, em, Math.min(eff.day, daysInMonth(ey, em)), handover, tz);
-  const index = (sy - eff.year) * 12 + (sm - eff.month);
+  const from = localParts(counting.effectiveFrom, tz);
+  const index = (sy - from.year) * 12 + (sm - from.month);
   return { start: s, end: e, index };
 }
 
@@ -109,13 +152,13 @@ function daysInMonth(y: number, m: number): number {
   return new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
 
-/** The instant the rotation's first turn started: the handover at/before effectiveFrom, aligned on the handover day. */
-function anchorFor(schedule: ScheduleLike, rotation: RotationLike): Date {
+/** The instant an order's first turn started: the handover at/before its start, aligned on the handover day. */
+function anchorFor(schedule: ScheduleLike, rotation: RotationLike, effectiveFrom: Date): Date {
   const tz = schedule.timezone;
-  const p = localParts(rotation.effectiveFrom, tz);
+  const p = localParts(effectiveFrom, tz);
   let [y, m, d] = [p.year, p.month, p.day];
   let start = zonedTime(y, m, d, schedule.handoverTime, tz);
-  if (start.getTime() > rotation.effectiveFrom.getTime()) {
+  if (start.getTime() > effectiveFrom.getTime()) {
     [y, m, d] = addDays(y, m, d, -1);
     start = zonedTime(y, m, d, schedule.handoverTime, tz);
   }
@@ -153,12 +196,24 @@ export function rotationMemberAt(
   rotation: RotationLike,
   at: Date,
 ): string | null {
-  if (rotation.memberIds.length === 0) return null;
-  if (at.getTime() < rotation.effectiveFrom.getTime()) return null;
   if (!rotationActiveAt(schedule, rotation, at)) return null;
+  return turnMemberAt(schedule, rotation, at);
+}
+
+/**
+ * The member whose turn covers an instant, active hours aside: a business-hours
+ * rotation still has somebody's week at night — they are just not paged then.
+ */
+export function turnMemberAt(
+  schedule: ScheduleLike,
+  rotation: RotationLike,
+  at: Date,
+): string | null {
+  const order = orderAt(rotation, at);
+  if (!order || order.memberIds.length === 0) return null;
   const { index } = turnBounds(schedule, rotation, at);
-  const n = rotation.memberIds.length;
-  return rotation.memberIds[((index % n) + n) % n] ?? null;
+  const n = order.memberIds.length;
+  return order.memberIds[((index % n) + n) % n] ?? null;
 }
 
 /** The override in force for a rotation at an instant, most recent first. */
@@ -361,16 +416,144 @@ export function sampleOnCall(
     }
     if (!active) continue;
     expected = true;
-    if (r.memberIds.length === 0 || t < r.effectiveFrom.getTime()) continue;
+    const order = orderAt(r, at);
+    if (!order || order.memberIds.length === 0) continue;
     let turn = cache.get(r.id);
     if (!turn || t < turn.start || t >= turn.end) {
       const b = turnBounds(schedule, r, at);
       turn = { start: b.start.getTime(), end: b.end.getTime(), index: b.index };
       cache.set(r.id, turn);
     }
-    const n = r.memberIds.length;
-    const member = r.memberIds[((turn.index % n) + n) % n];
+    const n = order.memberIds.length;
+    const member = order.memberIds[((turn.index % n) + n) % n];
     if (member) members.add(member);
   }
   return { expected, members };
+}
+
+/* ---------- The order of people, as its people read and change it ---------- */
+
+/** A rotation read at an instant: whose turn it is, and who comes after. */
+export type RotationQueue = {
+  /** Whose turn it is now, active hours aside — null when the turn has nobody. */
+  current: string | null;
+  /** When the current turn ends: the next handover. */
+  handoverAt: Date;
+  /**
+   * The people who take the following turns, in order: one full cycle from the
+   * next handover, without the current person's own return at its end.
+   */
+  upcoming: string[];
+  /** Whether the current person is still in the cycle after the handover. */
+  currentStays: boolean;
+  /** A change of order is written and waits for the next handover. */
+  pending: boolean;
+};
+
+export function rotationQueue(
+  schedule: ScheduleLike,
+  rotation: RotationLike,
+  now: Date,
+): RotationQueue {
+  const { end } = turnBounds(schedule, rotation, now);
+  const current = turnMemberAt(schedule, rotation, now);
+  const next = orderAt(rotation, end);
+  const cycle: string[] = [];
+  if (next && next.memberIds.length > 0) {
+    const { index } = turnBounds(schedule, rotation, end);
+    const n = next.memberIds.length;
+    for (let i = 0; i < n; i++) cycle.push(next.memberIds[(((index + i) % n) + n) % n]!);
+  }
+  const currentStays = current !== null && cycle.includes(current);
+  const upcoming =
+    current !== null && cycle[cycle.length - 1] === current ? cycle.slice(0, -1) : cycle;
+  return {
+    current,
+    handoverAt: end,
+    upcoming,
+    currentStays,
+    pending: rotation.effectiveFrom.getTime() > now.getTime(),
+  };
+}
+
+/** When each of the next `count` turns starts, from the next handover on. */
+export function nextTurnStarts(
+  schedule: ScheduleLike,
+  rotation: RotationLike,
+  now: Date,
+  count: number,
+): Date[] {
+  const out: Date[] = [];
+  let cursor = turnBounds(schedule, rotation, now).end;
+  for (let i = 0; i < count && i < 400; i++) {
+    out.push(cursor);
+    cursor = turnBounds(schedule, rotation, cursor).end;
+  }
+  return out;
+}
+
+/** What a change of people writes on the rotation row. */
+export type OrderChange = {
+  memberIds: string[];
+  effectiveFrom: Date;
+  previousOrders: Array<{ memberIds: string[]; effectiveFrom: string }>;
+};
+
+/** How many past orders a rotation keeps — two years of weekly changes. */
+const KEPT_ORDERS = 100;
+
+/**
+ * A new order of people, applied at the next handover: the shift being worked
+ * keeps its person, and so does every shift before it.
+ *
+ * `upcoming` is the order of the turns after the handover, as the reader set
+ * it; `currentStays` says whether the person holding the current turn comes
+ * back after them. When nobody holds the current turn there is no shift to
+ * protect, and the order starts right away.
+ *
+ * Returns null when nothing changes.
+ */
+export function planOrderChange(
+  schedule: ScheduleLike,
+  rotation: RotationLike,
+  now: Date,
+  upcoming: string[],
+  currentStays: boolean,
+): OrderChange | null {
+  const queue = rotationQueue(schedule, rotation, now);
+  const wanted = [...new Set(upcoming)];
+  const cycle =
+    queue.current !== null && currentStays && !wanted.includes(queue.current)
+      ? [...wanted, queue.current]
+      : wanted;
+  const before = [...queue.upcoming, ...(queue.currentStays ? [queue.current!] : [])];
+  if (
+    queue.current !== null &&
+    cycle.length === before.length &&
+    cycle.every((m, i) => m === before[i])
+  )
+    return null;
+
+  const earlier = (rotation.previousOrders ?? []).map((o) => ({
+    memberIds: o.memberIds,
+    effectiveFrom: new Date(o.effectiveFrom).toISOString(),
+  }));
+  const pending = rotation.effectiveFrom.getTime() > now.getTime();
+  const startsAt = queue.current === null ? now : queue.handoverAt;
+  // A pending order never ran: it is replaced, not kept. One that did run is
+  // history, kept for the shifts it decided.
+  const kept = pending
+    ? earlier.filter((o) => new Date(o.effectiveFrom).getTime() < startsAt.getTime())
+    : [
+        ...earlier,
+        {
+          memberIds: rotation.memberIds,
+          effectiveFrom: rotation.effectiveFrom.toISOString(),
+        },
+      ];
+  return {
+    memberIds: cycle,
+    effectiveFrom: startsAt,
+    previousOrders: kept.slice(-KEPT_ORDERS),
+  };
 }

@@ -7,11 +7,23 @@ test.describe("Coverage", () => {
     page,
   }) => {
     await signIn(page, MEMBERS.owner);
-    // Coverage is a line per schedule on the Schedules tab. The gaps are no
-    // longer listed one by one: the line says how many hours have nobody, so
-    // the override is proven by that figure rising rather than by a new row.
+    // The override is taken from the Now tab, which is where the dialog lives;
+    // the card it opens from names the schedule it lands on.
+    await page.goto("/app/on-call?tab=now");
+    const card = page
+      .getByTestId("oncall-now")
+      .filter({ has: page.getByTestId("override-open") })
+      .first();
+    const scheduleName = (await card.locator("span").first().textContent())?.trim() ?? "";
+    // Coverage is a line per schedule on the Schedules tab. The gaps are not
+    // listed one by one: the line says how many hours have nobody — and says
+    // nothing while there are none —, so the override is proven by that figure
+    // rising rather than by a new row.
     await page.goto("/app/on-call?tab=schedules");
-    const summary = page.getByTestId("coverage-summary").first();
+    const summary = page
+      .getByTestId("schedule-row")
+      .filter({ hasText: scheduleName })
+      .getByTestId("coverage-summary");
     await expect(summary).toBeVisible();
     const hours = async () => {
       const text = (await summary.textContent()) ?? "";
@@ -21,11 +33,15 @@ test.describe("Coverage", () => {
     const before = await hours();
     // A null-member override tomorrow for two hours: an assumed gap inside the
     // expected window. At 10:00 local on purpose — the dialog binds the override
-    // to the day rotation (09:00–21:00 in the demo), so a slot taken at the
-    // current hour would fall outside it at night and open no gap.
-    // The override is taken from the Now tab, which is where the dialog lives.
+    // to the first rotation (the day one, 09:00–21:00 in the demo), so a slot
+    // taken at the current hour would fall outside it at night and open no gap.
     await page.goto("/app/on-call?tab=now");
-    await page.getByTestId("override-open").first().click();
+    await page
+      .getByTestId("oncall-now")
+      .filter({ hasText: scheduleName })
+      .getByTestId("override-open")
+      .first()
+      .click();
     const start = new Date(Date.now() + 24 * 3_600_000);
     start.setHours(10, 0, 0, 0);
     const end = new Date(start.getTime() + 2 * 3_600_000);
@@ -52,14 +68,19 @@ test.describe("Coverage", () => {
 
     // Put the week back. The gap stays open otherwise, and the next run makes
     // the same one — the figure does not rise, and the test fails on a
-    // workspace it is pointed at twice.
+    // workspace it is pointed at twice. The override is taken back where it
+    // shows: its cell in the grid of its schedule, tagged OVERRIDE.
     await page.goto("/app/on-call?tab=now");
-    const rows = page.getByTestId("override-row");
-    for (let guard = 0; guard < 10; guard++) {
-      const left = await rows.count();
-      if (left === 0) break;
-      await rows.first().getByTestId("override-row-remove").click();
-      await expect(rows).toHaveCount(left - 1);
+    const pick = page.getByTestId("grid-schedules").getByRole("link", { name: scheduleName });
+    if ((await pick.count()) > 0) await pick.first().click();
+    const day = local(start).slice(0, 10);
+    const cell = page.locator(`[data-testid="shift-cell"][data-day="${day}"][data-override="1"]`);
+    for (let guard = 0; guard < 6 && (await cell.count()) > 0; guard++) {
+      await cell.first().click();
+      await expect(page.getByTestId("reassign")).toBeVisible();
+      await page.getByTestId("override-remove").first().click();
+      // Removing sends the reader back to the grid with the band closed.
+      await expect(page.getByTestId("reassign")).toHaveCount(0);
     }
     await expect
       .poll(

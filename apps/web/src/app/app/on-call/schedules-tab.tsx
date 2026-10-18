@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { withTenant } from "@openincident/db";
 import { isManagerRole } from "@openincident/config";
-import { getT } from "@/i18n/server";
+import { getT, type Translate } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
 import { getWorkspace } from "@/lib/tenant";
-import { avatarTone, initials } from "@/lib/avatar";
 import {
   activeMembers,
   getSchedule,
@@ -14,7 +13,9 @@ import {
   type ScheduleDetail,
 } from "@/lib/oncall";
 import { NewScheduleDialog } from "./new-schedule";
-import { publishSchedule, updateRotationMembers } from "./actions";
+import { publishSchedule } from "./actions";
+import { RotationPeople } from "./people";
+import { followsTheSun } from "./grid";
 
 const GHOST: React.CSSProperties = {
   height: 30,
@@ -26,31 +27,49 @@ const GHOST: React.CSSProperties = {
   alignItems: "center",
   fontSize: 12,
   fontWeight: 600,
-  color: "inherit",
+  color: "var(--ink)",
   textDecoration: "none",
   cursor: "pointer",
 };
 
-const ICON: React.CSSProperties = {
-  width: 22,
-  height: 22,
-  border: "1px solid var(--line)",
-  borderRadius: 7,
-  background: "var(--panel)",
-  color: "var(--ink-3)",
-  display: "grid",
-  placeItems: "center",
-  fontSize: 11,
-  cursor: "pointer",
-};
+/**
+ * What a schedule is made of, in the design's words: "2 rotations ·
+ * follow-the-sun · handover 09:00 / 21:00 · 5 members", or "1 rotation ·
+ * weekly · 09:00 – 18:00 · 3 members". Read from the rotations themselves.
+ */
+function summaryOf(t: Translate, detail: ScheduleDetail): string {
+  const rots = detail.rotations;
+  const people = new Set(rots.flatMap((r) => r.memberIds));
+  const parts = [t("oc2.sched.rotationsN", { count: rots.length })];
+  if (followsTheSun(rots)) {
+    parts.push(t("ocv2.sched.followSun"));
+    const starts = [...new Set(rots.map((r) => r.activeStart!))].sort();
+    parts.push(t("oc2.sched.handover", { time: starts.join(" / ") }));
+  } else {
+    for (const i of [...new Set(rots.map((r) => r.interval))])
+      parts.push(t(`oc2.sched.interval.${i}`));
+    const hours = [
+      ...new Set(
+        rots
+          .filter((r) => r.activeStart && r.activeEnd)
+          .map((r) => t("oc2.now.hoursRange", { from: r.activeStart!, to: r.activeEnd! })),
+      ),
+    ];
+    if (rots.length > 0 && hours.length > 0 && rots.every((r) => r.activeStart && r.activeEnd))
+      parts.push(hours.join(" / "));
+    else parts.push(t("oc2.sched.handover", { time: detail.schedule.handoverTime }));
+  }
+  parts.push(t("oc2.sched.membersN", { count: people.size }));
+  return parts.join(t("oc2.sep"));
+}
 
 /**
- * On-call · Schedules — one row per schedule: what it is made of, who is in
- * it, the calendar feed, and the way into the week that it drives.
+ * On-call · Schedules — one row per schedule: what it is made of, its
+ * people, the calendar feed, and the way into the grid that draws it.
  *
- * The summary counts what the schedule really holds; the hours-with-nobody
- * figure is the sixty-day sweep, because a schedule that looks fine and has a
- * hole on the 3rd of next month is the one that wakes nobody that night.
+ * The line also warns when the next sixty days hold hours with nobody: a
+ * schedule that looks fine and has a hole on the 3rd of next month is the one
+ * that wakes nobody that night. A covered schedule says nothing more.
  */
 export async function SchedulesTab({ q }: { q: Record<string, string | undefined> }) {
   const { tenant, member } = await requireMember();
@@ -67,32 +86,29 @@ export async function SchedulesTab({ q }: { q: Record<string, string | undefined
     }
     return { details, people: await activeMembers(tx, tenant.id) };
   });
-  const nameOf = (id: string) => data.people.find((m) => m.id === id)?.name ?? "—";
 
   return (
-    <div className="oi-rise-fast" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        animation: "oi-rise .16s ease backwards",
+      }}
+      data-screen-label="Schedules"
+    >
       {q.error && (
         <div role="alert" style={{ fontSize: 12.5, color: "var(--dang)" }}>
           {t("oc2.sched.errorInvalid")}
         </div>
       )}
-      {data.details.length === 0 && (
+      {data.details.length === 0 && !manages && (
         <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("oc2.sched.none")}</div>
       )}
       {data.details.map((detail) => {
         const s = detail.schedule;
-        const people = new Set(detail.rotations.flatMap((r) => r.memberIds));
-        const intervals = [...new Set(detail.rotations.map((r) => r.interval))];
         const coverage = scheduleCoverage(detail, now);
-        const summary = [
-          t("oc2.sched.rotationsN", { count: detail.rotations.length }),
-          ...intervals.map((i) => t(`oc2.sched.interval.${i}`)),
-          t("oc2.sched.handover", { time: s.handoverTime }),
-          t("oc2.sched.membersN", { count: people.size }),
-          coverage.gaps.length
-            ? t("oc2.sched.gaps", { count: Math.round(coverage.uncoveredMinutes / 60) })
-            : t("oc2.sched.covered"),
-        ].join(t("oc2.sep"));
+        const gapHours = Math.round(coverage.uncoveredMinutes / 60);
         const open = q.members === s.id;
         return (
           <div
@@ -129,7 +145,15 @@ export async function SchedulesTab({ q }: { q: Record<string, string | undefined
                   )}
                 </div>
                 <div data-testid="coverage-summary" style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                  {summary}
+                  {summaryOf(t, detail)}
+                  {coverage.gaps.length > 0 && (
+                    <>
+                      {t("oc2.sep")}
+                      <span style={{ color: "var(--wait)", fontWeight: 600 }}>
+                        {t("oc2.sched.gaps", { count: gapHours })}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
               <span style={{ flex: 1 }} />
@@ -141,20 +165,18 @@ export async function SchedulesTab({ q }: { q: Record<string, string | undefined
                   </button>
                 </form>
               )}
-              {manages && (
-                <Link
-                  href={
-                    open
-                      ? "/app/on-call?tab=schedules"
-                      : `/app/on-call?tab=schedules&members=${s.id}`
-                  }
-                  className="oi-hover"
-                  data-testid="schedule-members"
-                  style={GHOST}
-                >
-                  {t("oc2.sched.members")}
-                </Link>
-              )}
+              <Link
+                href={
+                  open ? "/app/on-call?tab=schedules" : `/app/on-call?tab=schedules&members=${s.id}`
+                }
+                className="oi-hover"
+                data-testid="schedule-members"
+                aria-expanded={open}
+                scroll={false}
+                style={GHOST}
+              >
+                {t("oc2.sched.members")}
+              </Link>
               <a
                 href={`/api/oncall/ical/${s.icalToken}`}
                 title={t("oc2.sched.icalHint")}
@@ -164,8 +186,9 @@ export async function SchedulesTab({ q }: { q: Record<string, string | undefined
                 {t("oc2.sched.ical")}
               </a>
               <Link
-                href="/app/on-call?tab=now"
+                href={`/app/on-call?tab=now&schedule=${s.id}`}
                 className="oi-hover-brand-2"
+                data-testid="schedule-open-grid"
                 style={{
                   ...GHOST,
                   border: 0,
@@ -177,127 +200,24 @@ export async function SchedulesTab({ q }: { q: Record<string, string | undefined
               </Link>
             </div>
 
-            {open && manages && (
+            {open && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {detail.rotations.length === 0 && (
                   <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
                     {t("oc2.now.noRotation")}
                   </div>
                 )}
-                {detail.rotations.map((rot) => {
-                  const free = data.people.filter((m) => !rot.memberIds.includes(m.id));
-                  return (
-                    <div
-                      key={rot.id}
-                      data-testid="rotation-members"
-                      style={{
-                        background: "var(--sunk)",
-                        borderRadius: 12,
-                        padding: "11px 13px",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 8,
-                      }}
-                    >
-                      <div style={{ fontSize: 12.5, fontWeight: 600 }}>
-                        {t("oc2.sched.rotationPeople", { name: rot.name })}
-                      </div>
-                      {rot.memberIds.length === 0 && (
-                        <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                          {t("oc2.sched.noMembers")}
-                        </div>
-                      )}
-                      {rot.memberIds.map((id, i) => {
-                        const label = nameOf(id);
-                        const tone = avatarTone(label);
-                        return (
-                          <div key={id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span
-                              style={{
-                                width: 24,
-                                height: 24,
-                                borderRadius: "50%",
-                                background: tone.bg,
-                                color: tone.ink,
-                                display: "grid",
-                                placeItems: "center",
-                                fontSize: 9,
-                                fontWeight: 700,
-                              }}
-                            >
-                              {initials(label)}
-                            </span>
-                            <span style={{ fontSize: 12.5 }}>{label}</span>
-                            <span style={{ flex: 1 }} />
-                            {(["up", "down", "remove"] as const).map((op) => {
-                              if (op === "up" && i === 0) return null;
-                              if (op === "down" && i === rot.memberIds.length - 1) return null;
-                              return (
-                                <form key={op} action={updateRotationMembers}>
-                                  <input type="hidden" name="rotationId" value={rot.id} />
-                                  <input type="hidden" name="memberId" value={id} />
-                                  <input type="hidden" name="op" value={op} />
-                                  <button
-                                    type="submit"
-                                    className="oi-hover"
-                                    aria-label={t(
-                                      op === "up"
-                                        ? "oc2.sched.moveUp"
-                                        : op === "down"
-                                          ? "oc2.sched.moveDown"
-                                          : "oc2.sched.removePerson",
-                                    )}
-                                    style={ICON}
-                                  >
-                                    {op === "up" ? "↑" : op === "down" ? "↓" : "✕"}
-                                  </button>
-                                </form>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                      {free.length === 0 ? (
-                        <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                          {t("oc2.sched.everyoneIn")}
-                        </div>
-                      ) : (
-                        <form
-                          action={updateRotationMembers}
-                          style={{ display: "flex", alignItems: "center", gap: 8 }}
-                        >
-                          <input type="hidden" name="rotationId" value={rot.id} />
-                          <input type="hidden" name="op" value="add" />
-                          <select
-                            name="memberId"
-                            className="oi-field"
-                            style={{
-                              height: 30,
-                              padding: "0 8px",
-                              border: "1px solid var(--line)",
-                              borderRadius: 8,
-                              background: "var(--panel)",
-                              fontSize: 12.5,
-                            }}
-                          >
-                            {free.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="submit"
-                            className="oi-hover"
-                            style={{ ...GHOST, height: 30 }}
-                          >
-                            {t("oc2.sched.addPerson")}
-                          </button>
-                        </form>
-                      )}
-                    </div>
-                  );
-                })}
+                {detail.rotations.map((rot) => (
+                  <RotationPeople
+                    key={rot.id}
+                    schedule={s}
+                    rotation={rot}
+                    people={data.people}
+                    now={now}
+                    manages={manages}
+                    returnTo={`/app/on-call?tab=schedules&members=${s.id}`}
+                  />
+                ))}
               </div>
             )}
           </div>

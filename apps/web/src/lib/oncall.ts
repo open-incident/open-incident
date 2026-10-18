@@ -29,7 +29,7 @@ export async function listSchedules(tx: Tx, tenantId: string) {
     .select()
     .from(schedules)
     .where(eq(schedules.tenantId, tenantId))
-    .orderBy(asc(schedules.createdAt));
+    .orderBy(asc(schedules.createdAt), asc(schedules.name));
 }
 
 export async function activeMembers(tx: Tx, tenantId: string): Promise<MemberLite[]> {

@@ -1,6 +1,15 @@
 import Link from "next/link";
 import { eq } from "drizzle-orm";
-import { monitors, services, teams, withTenant, type EscalationNode } from "@openincident/db";
+import {
+  monitors,
+  rotations,
+  services,
+  teamMembers,
+  teams,
+  withTenant,
+  type EscalationNode,
+} from "@openincident/db";
+import { AtlasPolicyExplainer, AtlasPolicyStep } from "@/components/atlas/policy-step";
 import { isManagerRole } from "@openincident/config";
 import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
@@ -68,6 +77,14 @@ export async function PoliciesTab() {
         .select({ id: monitors.id, serviceId: monitors.serviceId })
         .from(monitors)
         .where(eq(monitors.tenantId, tenant.id)),
+      teamSizes: await tx
+        .select({ teamId: teamMembers.teamId, memberId: teamMembers.memberId })
+        .from(teamMembers)
+        .where(eq(teamMembers.tenantId, tenant.id)),
+      rotationPeople: await tx
+        .select({ scheduleId: rotations.scheduleId, memberIds: rotations.memberIds })
+        .from(rotations)
+        .where(eq(rotations.tenantId, tenant.id)),
     };
   });
   const names: Names = data.names;
@@ -88,6 +105,31 @@ export async function PoliciesTab() {
       ...(watched.length ? [t("oc2.pol.usedMonitors", { count: watched.length })] : []),
     ];
     return parts.length ? parts.join(t("oc2.sep")) : t("oc2.pol.usedNone");
+  };
+
+  /** The services this policy is the default of — the ones Atlas reports on in its first step. */
+  const servicesOf = (pathId: string): string[] => {
+    const owners = new Set(data.teams.filter((x) => x.policyPathId === pathId).map((x) => x.id));
+    return data.services.filter((s) => s.ownerTeamId && owners.has(s.ownerTeamId)).map((s) => s.id);
+  };
+
+  /** How many people a level reaches when it names a team or a whole schedule. */
+  const headcount = (node: Extract<EscalationNode, { kind: "level" }>): number | null => {
+    const ids = new Set<string>();
+    let counted = false;
+    for (const target of node.targets) {
+      if (target.kind === "team") {
+        counted = true;
+        for (const r of data.teamSizes) if (r.teamId === target.teamId) ids.add(r.memberId);
+      }
+      if (target.kind === "schedule" && target.mode === "everyone") {
+        counted = true;
+        for (const r of data.rotationPeople)
+          if (r.scheduleId === target.scheduleId) for (const m of r.memberIds) ids.add(m);
+      }
+      if (target.kind === "member") ids.add(target.memberId);
+    }
+    return counted ? ids.size : null;
   };
 
   const sentence = (node: EscalationNode, levelIndex: number): string => {
@@ -121,29 +163,32 @@ export async function PoliciesTab() {
   };
 
   const chipsOf = (node: EscalationNode): string[] => {
-    if (node.kind === "level")
+    if (node.kind === "level") {
+      const many = headcount(node);
       return [
+        ...(many !== null ? [t("ocv2.pol.chipPeople", { count: many })] : []),
         t(node.urgency === "high" ? "oc2.pol.chipWakes" : "oc2.pol.chipSilent"),
-        t("oc2.pol.chipAck", { count: node.ackTimeoutMinutes }),
         ...(node.retries > 0
           ? [t("oc2.pol.chipRetry", { count: node.retries, interval: node.retryIntervalMinutes })]
           : []),
         ...(node.everyoneMustAck ? [t("oc2.pol.chipAllAck")] : []),
         ...(node.roundRobin ? [t("oc2.pol.chipRoundRobin")] : []),
       ];
+    }
     if (node.kind === "condition") return [t("oc2.pol.condElse")];
     return [];
   };
 
   return (
     <div
-      className="oi-rise-fast"
       style={{
         display: "grid",
         gridTemplateColumns: "minmax(0, 1fr) 320px",
         gap: 14,
         alignItems: "start",
+        animation: "oi-rise .16s ease backwards",
       }}
+      data-screen-label="On-call policies"
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {data.paths.length === 0 && (
@@ -182,9 +227,21 @@ export async function PoliciesTab() {
                 gap: 12,
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 14.5, fontWeight: 700 }}>{entry.path.name}</span>
-                <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 14.5, fontWeight: 700, flex: "none" }}>
+                  {entry.path.name}
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--ink-3)",
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={usedBy(entry.path.id, entry.routes.length)}
+                >
                   {usedBy(entry.path.id, entry.routes.length)}
                 </span>
                 {entry.hasDraft && (
@@ -196,6 +253,8 @@ export async function PoliciesTab() {
                       color: "var(--wait)",
                       borderRadius: 999,
                       padding: "2px 8px",
+                      flex: "none",
+                      whiteSpace: "nowrap",
                     }}
                   >
                     {t("oc2.pol.draft")}
@@ -223,6 +282,7 @@ export async function PoliciesTab() {
                 <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("oc2.pol.empty")}</div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                  <AtlasPolicyStep tenantId={tenant.id} serviceIds={servicesOf(entry.path.id)} />
                   {chain.map(({ node, offset }) => {
                     if (node.kind === "level") levelIndex += 1;
                     const chips = chipsOf(node);
@@ -355,6 +415,7 @@ export async function PoliciesTab() {
             <NewPathDialog />
           </div>
         )}
+        <AtlasPolicyExplainer tenantId={tenant.id} />
         <div
           style={{
             background: "var(--sunk)",
@@ -365,7 +426,14 @@ export async function PoliciesTab() {
             lineHeight: 1.55,
           }}
         >
-          {t("oc2.pol.ownerNote")}
+          {t("oc2.pol.ownerNote")}{" "}
+          <Link
+            href="/app/on-call?tab=teams"
+            data-testid="policy-teams-link"
+            style={{ color: "var(--brand)", fontWeight: 600, textDecoration: "none" }}
+          >
+            {t("ocv2.pol.teamsLink")}
+          </Link>
         </div>
       </div>
     </div>

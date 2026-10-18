@@ -119,6 +119,8 @@ export async function resolveTargets(
         .where(eq(scheduleOverrides.scheduleId, sched.id));
       if (t.mode === "everyone") {
         for (const r of rots) for (const m of r.memberIds) ids.add(m);
+        // Someone leaving the rotation at the next handover still holds this turn.
+        for (const s of onCallAt(sched, rots, ovs, now)) if (s.memberId) ids.add(s.memberId);
       } else if (t.mode === "next") {
         for (const r of rots) {
           const m = nextOnCall(sched, r, ovs, now);

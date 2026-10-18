@@ -279,8 +279,6 @@ test.describe("On-call & alerting", () => {
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/on-call?tab=policies");
     await expect(page.getByTestId("path-level").first()).toBeVisible();
-    // Every policy starts with Atlas: the side note says what each level does.
-    await expect(page.getByTestId("policy-atlas-note")).toContainText(/Atlas/);
     // Teams have no tab of their own; the policies lead to them.
     await page.getByTestId("policy-teams-link").click();
     await expect(page).toHaveURL(/tab=teams/);
@@ -289,16 +287,8 @@ test.describe("On-call & alerting", () => {
     // One dry run per policy card now, so the first is the one to drive.
     await page.getByTestId("path-test").first().click();
     await expect(page.getByTestId("path-test-result").first()).toBeVisible();
-    await page.goto("/app/settings/alert-routes");
-    await expect(
-      page.getByTestId("route-row").filter({ hasText: "Production alerts" }),
-    ).toBeVisible();
-    await page.goto("/app/settings/alert-priorities");
-    await expect(page.getByTestId("priority-row")).toHaveCount(4);
-    await page.goto("/app/settings/working-hours");
-    await expect(page.getByTestId("hours-row").filter({ hasText: "EU business" })).toBeVisible();
-    await page.goto("/app/settings/integrations");
-    await expect(page.getByTestId("integration-card").filter({ hasText: "Datadog" })).toBeVisible();
+    // Rules, alert severities, working hours and integrations are Settings
+    // screens: their own specs drive them.
     await signOut(page);
   });
 });

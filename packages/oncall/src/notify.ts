@@ -14,14 +14,16 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Queue } from "bullmq";
 import IORedis from "ioredis";
-import { and, eq } from "drizzle-orm";
+import { and, eq, lte, sql } from "drizzle-orm";
 import {
   escalations,
   getTenantById,
+  members,
   notificationDeliveries,
   notificationMethods,
   notificationRules,
   withTenant,
+  workspaces,
   type NotificationStep,
   type Tx,
 } from "@openincident/db";
@@ -30,6 +32,7 @@ import { smsConfigured, smsTransport, voiceConfigured, voiceTransport } from "@o
 import { dmSlackUser, dmTeamsUser, slackConfigured, teamsConfigured } from "@openincident/chat";
 import { NOTIFY_QUEUE } from "./queues";
 import { recordInbox } from "./inbox";
+import { addDays, localParts, zonedTime } from "./time";
 import { originFor } from "@openincident/config";
 
 export type NotifyChannel = "email" | "sms" | "voice" | "webpush" | "slack" | "teams";
@@ -62,6 +65,10 @@ export type NotifyJob = {
   escalationId?: string | null;
   /** The public origin of the workspace, for links and voice callbacks. */
   origin: string;
+  /** Low urgency: the push is silent — it lands without ringing. */
+  urgency?: Urgency;
+  /** An email digest step: one message for every digest waiting for this member. */
+  digest?: boolean;
 };
 
 let queue: Queue | null = null;
@@ -93,21 +100,45 @@ export async function enqueueNotification(job: NotifyJob, delayMs: number): Prom
   }
 }
 
-/** The default personal rule when a member set none — restricted to what is verified and available. */
+/**
+ * The default personal rule when a member set none — at send time it is
+ * restricted to what is available here and verified for them, and falls back
+ * to the account email when nothing else is left.
+ *
+ * High urgency: the chat message and the push at once, a call after a minute
+ * without acknowledgement, a second call at four. Low urgency: the chat
+ * message and a silent push at once, and the 09:00 email digest.
+ */
 export function defaultSteps(urgency: Urgency): NotificationStep[] {
   return urgency === "high"
     ? [
-        { kind: "webpush", delayMinutes: 0 },
         { kind: "slack", delayMinutes: 0 },
         { kind: "teams", delayMinutes: 0 },
-        { kind: "email", delayMinutes: 0 },
+        { kind: "webpush", delayMinutes: 0 },
         { kind: "voice", delayMinutes: 1 },
-        { kind: "sms", delayMinutes: 3 },
+        { kind: "sms", delayMinutes: 1 },
+        { kind: "voice", delayMinutes: 4 },
       ]
     : [
+        { kind: "slack", delayMinutes: 0 },
+        { kind: "teams", delayMinutes: 0 },
         { kind: "webpush", delayMinutes: 0 },
-        { kind: "email", delayMinutes: 0 },
+        { kind: "email", delayMinutes: 0, at: DIGEST_AT },
       ];
+}
+
+/** When the low-urgency email digest goes out, in the member's zone. */
+export const DIGEST_AT = "09:00";
+
+/** The next time a wall-clock "HH:MM" comes round in a zone, strictly after `now`. */
+export function nextLocalTime(now: Date, hhmm: string, timeZone: string): Date {
+  const p = localParts(now, timeZone);
+  for (let i = 0; i < 3; i++) {
+    const [y, m, d] = addDays(p.year, p.month, p.day, i);
+    const at = zonedTime(y, m, d, hhmm, timeZone);
+    if (at.getTime() > now.getTime()) return at;
+  }
+  return new Date(now.getTime() + 86_400_000);
 }
 
 export function maskTarget(channel: NotifyChannel, value: string): string {
@@ -169,13 +200,24 @@ export async function notifyMember(
   const steps = (rule?.steps?.length ? rule.steps : defaultSteps(input.urgency)).filter(
     (s) => available.includes(s.kind) && targetFor(s.kind),
   );
-  const chosen = steps.length > 0 ? steps : [{ kind: "email" as const, delayMinutes: 0 }];
+  const chosen: NotificationStep[] =
+    steps.length > 0 ? steps : [{ kind: "email" as const, delayMinutes: 0 }];
   const out: Array<{ deliveryId: string; channel: NotifyChannel; delayMinutes: number }> = [];
   const jobs: Array<{ job: NotifyJob; delayMs: number }> = [];
+  // A digest waits for its hour in the member's own zone (else the workspace's).
+  const zone =
+    input.kind === "escalation" && chosen.some((s) => s.at)
+      ? await memberZone(tx, tenantId, member.id)
+      : "UTC";
   for (const step of chosen) {
     const target = targetFor(step.kind)!;
-    const ackToken = input.ackable ? randomBytes(16).toString("hex") : null;
-    const sendAfter = new Date(now.getTime() + step.delayMinutes * 60_000);
+    // Only a page waits for the digest: a cover request or a shift reminder
+    // is about the next hours and goes out at once.
+    const digest = step.kind === "email" && Boolean(step.at) && input.kind === "escalation";
+    const ackToken = input.ackable && !digest ? randomBytes(16).toString("hex") : null;
+    const sendAfter = digest
+      ? nextLocalTime(now, step.at!, zone)
+      : new Date(now.getTime() + step.delayMinutes * 60_000);
     const [row] = await tx
       .insert(notificationDeliveries)
       .values({
@@ -189,11 +231,21 @@ export async function notifyMember(
         alertId: input.alertId ?? null,
         status: "queued",
         ackToken,
-        message: { subject: input.subject, text: input.text, url: input.url },
+        message: {
+          subject: input.subject,
+          text: input.text,
+          url: input.url,
+          ...(digest ? { digest: true } : {}),
+        },
         sendAfter,
       })
       .returning({ id: notificationDeliveries.id });
-    out.push({ deliveryId: row!.id, channel: step.kind, delayMinutes: step.delayMinutes });
+    const delayMs = Math.max(0, sendAfter.getTime() - now.getTime());
+    out.push({
+      deliveryId: row!.id,
+      channel: step.kind,
+      delayMinutes: Math.round(delayMs / 60_000),
+    });
     jobs.push({
       job: {
         tenantId,
@@ -206,8 +258,10 @@ export async function notifyMember(
         ackToken: ackToken ?? undefined,
         escalationId: input.escalationId ?? null,
         origin: input.origin,
+        urgency: input.urgency,
+        ...(digest ? { digest: true } : {}),
       },
-      delayMs: step.delayMinutes * 60_000,
+      delayMs,
     });
   }
   // Enqueue after the rows exist. Without Redis the immediate steps go now; the
@@ -231,6 +285,20 @@ export async function notifyMember(
     });
   }
   return out;
+}
+
+/** The zone a member's day is counted in: their own, else the workspace's. */
+async function memberZone(tx: Tx, tenantId: string, memberId: string): Promise<string> {
+  const [m] = await tx
+    .select({ timezone: members.timezone })
+    .from(members)
+    .where(eq(members.id, memberId));
+  if (m?.timezone) return m.timezone;
+  const [w] = await tx
+    .select({ timezone: workspaces.timezone })
+    .from(workspaces)
+    .where(eq(workspaces.tenantId, tenantId));
+  return w?.timezone ?? "Europe/Paris";
 }
 
 /** The bell links inside the app, so an absolute origin is dropped. */
@@ -311,6 +379,8 @@ export async function jobFromDelivery(
       ackToken: d.ackToken ?? undefined,
       escalationId: d.escalationId,
       origin,
+      urgency: d.urgency ?? undefined,
+      ...(d.message.digest ? { digest: true } : {}),
     };
   });
 }
@@ -327,6 +397,7 @@ export function tenantOrigin(slug: string, customDomain?: string | null): string
 async function sendWebPush(
   subscription: string,
   payload: string,
+  urgency: Urgency = "high",
 ): Promise<{ ok: boolean; error?: string; gone?: boolean }> {
   const webpush = await import("web-push");
   webpush.default.setVapidDetails(
@@ -336,8 +407,8 @@ async function sendWebPush(
   );
   try {
     await webpush.default.sendNotification(JSON.parse(subscription), payload, {
-      TTL: 300,
-      urgency: "high",
+      TTL: urgency === "high" ? 300 : 3600,
+      urgency: urgency === "high" ? "high" : "normal",
     });
     return { ok: true };
   } catch (err) {
@@ -383,6 +454,8 @@ export async function deliverNotification(
   });
   if (skip === "done") return { status: "handled" };
   if (skip === "handled") return { status: "handled" };
+
+  if (job.digest && job.channel === "email") return deliverDigest(job);
 
   const ackUrl = job.ackToken ? `${job.origin}/ack/${job.ackToken}` : null;
   let result: { ok: boolean; ref?: string; error?: string; gone?: boolean };
@@ -448,7 +521,10 @@ export async function deliverNotification(
             body: job.text,
             url: job.url ?? job.origin,
             ackUrl,
+            // Low urgency lands without a sound and without staying on screen.
+            silent: job.urgency === "low",
           }),
+          job.urgency ?? "high",
         );
         break;
       }
@@ -497,6 +573,85 @@ export async function deliverNotification(
     }
   });
   return result.ok ? { status: "sent" } : { status: "failed", error: result.error };
+}
+
+/**
+ * The 09:00 email digest: the first digest job of the hour claims every digest
+ * waiting for the same member and sends them as one message; the jobs of the
+ * others find their row already sent and stop. The claim is one UPDATE, so two
+ * jobs running at once never send the same line twice.
+ */
+async function deliverDigest(
+  job: NotifyJob,
+): Promise<{ status: "sent" | "failed" | "handled"; error?: string }> {
+  const claimed = await withTenant(job.tenantId, async (tx) => {
+    const [own] = await tx
+      .select({ memberId: notificationDeliveries.memberId })
+      .from(notificationDeliveries)
+      .where(eq(notificationDeliveries.id, job.deliveryId));
+    if (!own?.memberId) return [];
+    return tx
+      .update(notificationDeliveries)
+      .set({ status: "sent", sentAt: new Date() })
+      .where(
+        and(
+          eq(notificationDeliveries.tenantId, job.tenantId),
+          eq(notificationDeliveries.memberId, own.memberId),
+          eq(notificationDeliveries.methodKind, "email"),
+          eq(notificationDeliveries.status, "queued"),
+          sql`(${notificationDeliveries.message} ->> 'digest') = 'true'`,
+          lte(notificationDeliveries.sendAfter, new Date(Date.now() + 60_000)),
+        ),
+      )
+      .returning({
+        id: notificationDeliveries.id,
+        message: notificationDeliveries.message,
+        createdAt: notificationDeliveries.createdAt,
+      });
+  });
+  if (!claimed.some((c) => c.id === job.deliveryId)) return { status: "handled" };
+  const lines = claimed
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    .flatMap((c) => [
+      `• ${c.message.subject}`,
+      `  ${c.message.text}`,
+      ...(c.message.url ? [`  ${c.message.url}`] : []),
+      "",
+    ]);
+  const subject =
+    claimed.length === 1
+      ? `Digest — ${claimed[0]!.message.subject}`
+      : `Digest — ${claimed.length} low-urgency pages since yesterday`;
+  let outcome: { ok: boolean; ref?: string; error?: string };
+  try {
+    const r = await sendTenantEmail({
+      tenantId: job.tenantId,
+      to: job.target,
+      subject,
+      text: lines.join("\n"),
+      kind: "escalation",
+      immediate: true,
+    });
+    outcome =
+      r.delivered || r.queued
+        ? { ok: true, ref: r.messageId }
+        : { ok: false, error: r.error ?? "mail failed" };
+  } catch (err) {
+    outcome = { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  const ids = claimed.map((c) => c.id);
+  await withTenant(job.tenantId, async (tx) => {
+    for (const id of ids)
+      await tx
+        .update(notificationDeliveries)
+        .set(
+          outcome.ok
+            ? { providerRef: outcome.ref ?? null }
+            : { status: "failed", error: outcome.error ?? "failed" },
+        )
+        .where(eq(notificationDeliveries.id, id));
+  });
+  return outcome.ok ? { status: "sent" } : { status: "failed", error: outcome.error };
 }
 
 /** Hash of a verification code, stored instead of the code. */

@@ -84,13 +84,19 @@ export function levelTargets(
 }
 
 /**
- * The same target, but named by the person actually holding the pager: a card
- * that says "Jordan now" is read at a glance, "whoever is on call in Platform
- * primary now" is read twice. Falls back to the phrase when nobody is on call.
+ * The same target, but named the way a glance reads it: the person actually
+ * holding the pager by their first name — "Jordan now" rather than "whoever is
+ * on call in Platform primary now" —, a colleague by their first name, a team
+ * as "Platform team". Falls back to the phrase when nobody is on call.
  */
 function pagedName(t: Translate, target: EscalationTarget, names: Names): string {
-  if (target.kind === "schedule" && target.mode === "current")
-    return names.onCall(target.scheduleId) ?? targetText(t, target, names);
+  const first = (name: string) => name.split(/\s+/).filter(Boolean)[0] ?? name;
+  if (target.kind === "schedule" && target.mode === "current") {
+    const holder = names.onCall(target.scheduleId);
+    return holder ? first(holder) : targetText(t, target, names);
+  }
+  if (target.kind === "member") return first(names.member(target.memberId));
+  if (target.kind === "team") return t("ocv2.now.chainTeam", { name: names.team(target.teamId) });
   return targetText(t, target, names);
 }
 

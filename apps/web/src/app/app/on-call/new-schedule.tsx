@@ -35,7 +35,9 @@ export function NewScheduleDialog({
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const [interval, setInterval_] = useState<"weekly" | "daily" | "weekend">("weekly");
+  const [interval, setInterval_] = useState<"weekly" | "daily" | "weekend" | "follow-sun">(
+    "weekly",
+  );
   const [picked, setPicked] = useState<string[]>([]);
   return (
     <>
@@ -195,7 +197,7 @@ export function NewScheduleDialog({
                     padding: 3,
                   }}
                 >
-                  {(["weekly", "daily", "weekend"] as const).map((k) => (
+                  {(["weekly", "daily", "weekend", "follow-sun"] as const).map((k) => (
                     <button
                       key={k}
                       type="button"
@@ -215,7 +217,9 @@ export function NewScheduleDialog({
                         cursor: "pointer",
                       }}
                     >
-                      {t(`oncall.interval.${k}`)}
+                      {k === "follow-sun"
+                        ? t("ocv2.sched.intervalFollowSun")
+                        : t(`oncall.interval.${k}`)}
                     </button>
                   ))}
                 </div>

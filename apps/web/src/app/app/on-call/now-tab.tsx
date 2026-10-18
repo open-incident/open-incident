@@ -1,9 +1,9 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { withTenant } from "@openincident/db";
-import { addDays, localParts, zonedTime, type Shift } from "@openincident/oncall";
+import { addDays, localParts, turnMemberAt, zonedTime, type Shift } from "@openincident/oncall";
 import { getT } from "@/i18n/server";
-import { canRespond, requireMember } from "@/lib/session";
+import { canRespond, isManager, requireMember } from "@/lib/session";
 import { avatarTone, initials } from "@/lib/avatar";
 import {
   activeMembers,
@@ -13,12 +13,25 @@ import {
   type ScheduleDetail,
 } from "@/lib/oncall";
 import { chainSentence, loadNameSource, namesOf, policyForSchedule } from "./policy";
-import { acceptCover, deleteOverride, pageOnCall, requestCover } from "./actions";
+import { acceptCover, pageOnCall, requestCover } from "./actions";
 import { OverrideDialog } from "./override-dialog";
 import { ShiftPicker } from "./shift-picker";
-
-const pad = (n: number) => String(n).padStart(2, "0");
-const keyOf = (d: [number, number, number]) => `${d[0]}-${pad(d[1])}-${pad(d[2])}`;
+import { RotationPeople } from "./people";
+import {
+  cellOf,
+  dayHead,
+  dayTime,
+  dayKey,
+  firstName,
+  hoursOf,
+  inSentence,
+  monthHead,
+  nextWhen,
+  slotOf,
+  weekDays,
+  weekendDays,
+  type Day,
+} from "./grid";
 
 const CARD: React.CSSProperties = {
   background: "var(--panel)",
@@ -40,29 +53,57 @@ const BANNER: React.CSSProperties = {
   fontSize: 13,
 };
 
+const SEG: React.CSSProperties = {
+  display: "flex",
+  gap: 2,
+  background: "var(--sunk)",
+  borderRadius: 9,
+  padding: 2,
+};
+
+const segItem = (on: boolean): React.CSSProperties => ({
+  height: 24,
+  padding: "0 10px",
+  borderRadius: 7,
+  background: on ? "var(--panel)" : "transparent",
+  color: on ? "var(--ink)" : "var(--ink-3)",
+  boxShadow: on ? "var(--shadow-card)" : "none",
+  display: "flex",
+  alignItems: "center",
+  fontSize: 11.5,
+  fontWeight: 600,
+  textDecoration: "none",
+  whiteSpace: "nowrap",
+});
+
+/** How far ahead the tab reads the schedules: the week, the week-ends of two months, the next shift. */
+const HORIZON_DAYS = 60;
+
 /**
  * On-call · Now — who carries each pager at this second, what the escalation
- * policy would do with it, and the seven days ahead as one grid where a click
- * hands over a single shift.
+ * policy would do with it, and the days ahead as one grid where a click hands
+ * a single shift to somebody else.
  *
- * Everything here is read from the published schedules: a draft covers nobody
- * and is not drawn, and a schedule whose rotations are all outside their hours
- * says so rather than showing a name that would not be woken.
+ * Everything is read from the published schedules: a draft covers nobody and
+ * is not drawn. The grid shows one schedule at a time — the one "Open" chose
+ * on the Schedules tab, else the first — in two views: the seven days ahead,
+ * and the week-ends of the next two months.
  */
 export async function NowTab({ q }: { q: Record<string, string | undefined> }) {
   const { tenant, member } = await requireMember();
   const t = await getT();
   const now = new Date();
   const tz = t.timeZone;
+  const tag = t.locale.tag;
   const acts = canRespond(member);
+  const manages = isManager(member);
   const today = localParts(now, tz);
-  const dayTriples = Array.from({ length: 7 }, (_, i) =>
-    addDays(today.year, today.month, today.day, i),
-  );
-  const dayStarts = dayTriples.map((d) => zonedTime(d[0], d[1], d[2], "00:00", tz));
-  const windowFrom = dayStarts[0]!;
-  const after = addDays(today.year, today.month, today.day, 7);
-  const windowTo = zonedTime(after[0], after[1], after[2], "00:00", tz);
+  // A week back: the shift under way started before today — a weekly turn
+  // began up to seven days ago, and its card says since when.
+  const back = addDays(today.year, today.month, today.day, -8);
+  const windowFrom = zonedTime(back[0], back[1], back[2], "00:00", tz);
+  const end = addDays(today.year, today.month, today.day, HORIZON_DAYS);
+  const windowTo = zonedTime(end[0], end[1], end[2], "00:00", tz);
 
   const data = await withTenant(tenant.id, async (tx) => {
     const all = await listSchedules(tx, tenant.id);
@@ -71,6 +112,16 @@ export async function NowTab({ q }: { q: Record<string, string | undefined> }) {
       const one = await getSchedule(tx, tenant.id, s.id, { from: windowFrom, to: windowTo }, now);
       if (one) details.push(one);
     }
+    // The reader's own schedules first — their pager is the one they came for —,
+    // then the oldest; the name settles schedules created in the same instant.
+    const mine = (d: ScheduleDetail) =>
+      d.rotations.some((r) => r.memberIds.includes(member.id)) ? 0 : 1;
+    details.sort(
+      (a, b) =>
+        mine(a) - mine(b) ||
+        a.schedule.createdAt.getTime() - b.schedule.createdAt.getTime() ||
+        a.schedule.name.localeCompare(b.schedule.name),
+    );
     const paths = await listPaths(tx, tenant.id);
     const people = await activeMembers(tx, tenant.id);
     const byId = new Map(people.map((m) => [m.id, m.name]));
@@ -90,60 +141,87 @@ export async function NowTab({ q }: { q: Record<string, string | undefined> }) {
 
   const names = data.names;
   const nameOf = (id: string | null) => (id ? names.member(id) : t("oc2.now.nobody"));
+  const view = q.view === "month" ? "month" : "week";
+  const shown = data.details.find((d) => d.schedule.id === q.schedule) ?? data.details[0] ?? null;
 
-  /** The shift of a rotation covering an instant, and the one covering a day the most. */
-  const at = (shifts: Shift[], when: Date) =>
-    shifts.find(
-      (s) => s.startAt.getTime() <= when.getTime() && s.endAt.getTime() > when.getTime(),
-    ) ?? null;
-  const onDay = (shifts: Shift[], from: Date, to: Date) => {
-    let best: Shift | null = null;
-    let widest = 0;
-    for (const s of shifts) {
-      const overlap =
-        Math.min(s.endAt.getTime(), to.getTime()) - Math.max(s.startAt.getTime(), from.getTime());
-      if (overlap > widest) {
-        widest = overlap;
-        best = s;
-      }
-    }
-    return best;
+  /** A link to this tab that keeps the schedule and the view, and changes the rest. */
+  const href = (extra: Record<string, string | undefined> = {}) => {
+    const p = new URLSearchParams({ tab: "now" });
+    const base: Record<string, string | undefined> = {
+      schedule: shown && data.details.length > 1 ? shown.schedule.id : undefined,
+      view: view === "month" ? "month" : undefined,
+      ...extra,
+    };
+    for (const [k, v] of Object.entries(base)) if (v) p.set(k, v);
+    return `/app/on-call?${p.toString()}`;
   };
 
-  type Card = { detail: ScheduleDetail; slot: ScheduleDetail["current"][number] | null };
+  /* ---------- The cards: one per pager being carried ---------- */
+
+  type Card = {
+    detail: ScheduleDetail;
+    slot: ScheduleDetail["current"][number] | null;
+    /** No rotation is on right now: whose turn it is, and when they are on again. */
+    off: { memberId: string | null; backAt: Date | null; rotationName: string } | null;
+  };
   const cards: Card[] = [];
   for (const detail of data.details) {
-    if (detail.current.length) for (const slot of detail.current) cards.push({ detail, slot });
-    else cards.push({ detail, slot: null });
+    if (detail.current.length) {
+      for (const slot of detail.current) cards.push({ detail, slot, off: null });
+      continue;
+    }
+    const upcoming = Object.values(detail.shifts)
+      .flat()
+      .filter((s) => s.startAt.getTime() > now.getTime())
+      .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())[0];
+    const rot =
+      detail.rotations.find((r) => r.id === upcoming?.rotationId) ?? detail.rotations[0] ?? null;
+    cards.push({
+      detail,
+      slot: null,
+      off: rot
+        ? {
+            memberId: turnMemberAt(detail.schedule, rot, now),
+            backAt: upcoming?.startAt ?? null,
+            rotationName: rot.name,
+          }
+        : null,
+    });
   }
-  const rows = data.details.flatMap((detail) => detail.rotations.map((rot) => ({ detail, rot })));
+
+  /** Whether an instant is close enough to now for its hour alone to name it. */
+  const within = (at: Date) => Math.abs(at.getTime() - now.getTime()) < 20 * 3_600_000;
+
+  /** The first shift after now handed to somebody other than `memberId`. */
+  const nextOf = (detail: ScheduleDetail, memberId: string | null): Shift | null =>
+    Object.values(detail.shifts)
+      .flat()
+      .filter((s) => s.memberId && s.memberId !== memberId && s.startAt.getTime() >= now.getTime())
+      .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())[0] ?? null;
+
+  /* ---------- The grid ---------- */
+
+  const days: Day[] = view === "month" ? weekendDays(now, tz) : weekDays(now, tz);
+  const todayKey = dayKey([today.year, today.month, today.day]);
+  const selected = q.cell
+    ? { rotationId: q.cell.split(":")[0] ?? "", day: q.cell.split(":")[1] ?? "" }
+    : null;
   const offers = data.details.flatMap((detail) =>
     detail.openCovers
       .filter((c) => c.requesterMemberId !== member.id)
       .map((c) => ({ detail, cover: c })),
   );
-  const many = data.details.length > 1;
-  /**
-   * The overrides in the window, listed so one can be taken back.
-   *
-   * A slot handed over covers part of a shift as often as all of it, and the
-   * picker under the grid only knows the override that covers a whole one — so
-   * a two-hour hand-over made from the dialog could be written and never
-   * unwritten. This is the list that undoes it.
-   */
-  const overrides = data.details
-    .flatMap((detail) => detail.overrides.map((o) => ({ detail, o })))
-    .filter((x) => x.o.endAt.getTime() > now.getTime())
-    .sort((a, b) => a.o.startAt.getTime() - b.o.startAt.getTime());
-  const selected = q.cell
-    ? { rotationId: q.cell.split(":")[0]!, dayKey: q.cell.split(":")[1]! }
-    : null;
 
   return (
     <div
-      className="oi-rise-fast"
-      style={{ display: "flex", flexDirection: "column", gap: 14 }}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+        animation: "oi-rise .16s ease backwards",
+      }}
       data-testid="oncall-now-tab"
+      data-screen-label="On-call — now"
     >
       {cards.length === 0 ? (
         <div style={{ ...CARD, gap: 6 }}>
@@ -174,41 +252,40 @@ export async function NowTab({ q }: { q: Record<string, string | undefined> }) {
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-          {cards.map(({ detail, slot }) => {
+          {cards.map(({ detail, slot, off }) => {
+            const zone = detail.schedule.timezone;
             const shifts = slot ? (detail.shifts[slot.rotationId] ?? []) : [];
-            const current = slot ? at(shifts, now) : null;
-            const nextShift = slot
-              ? (shifts
-                  .filter(
-                    (s) =>
-                      s.startAt.getTime() >= (current?.endAt.getTime() ?? now.getTime()) &&
-                      s.memberId !== slot.memberId,
-                  )
-                  .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())[0] ?? null)
-              : (Object.values(detail.shifts)
-                  .flat()
-                  .filter((s) => s.memberId && s.startAt.getTime() > now.getTime())
-                  .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())[0] ?? null);
-            const who = slot ? nameOf(slot.memberId) : t("oc2.now.uncovered");
-            const tone = slot?.memberId
-              ? avatarTone(who)
-              : { bg: "var(--sunk)", ink: "var(--ink-3)" };
+            const current =
+              shifts.find(
+                (s) => s.startAt.getTime() <= now.getTime() && s.endAt.getTime() > now.getTime(),
+              ) ?? null;
+            const holder = slot ? slot.memberId : (off?.memberId ?? null);
+            const who = slot
+              ? nameOf(slot.memberId)
+              : holder
+                ? nameOf(holder)
+                : t("oc2.now.uncovered");
+            const tone = holder ? avatarTone(who) : { bg: "var(--sunk)", ink: "var(--ink-3)" };
+            const next = nextOf(detail, holder);
             const policy = policyForSchedule(data.paths, detail.schedule.id);
             const rotation = slot ? detail.rotations.find((r) => r.id === slot.rotationId) : null;
+            const meta =
+              detail.rotations.length > 1
+                ? t("ocv2.now.rotationMeta", {
+                    name: inSentence(slot?.rotationName ?? off?.rotationName ?? ""),
+                  })
+                : (hoursOf(detail.rotations[0] ?? { activeStart: null, activeEnd: null }) ??
+                  t("oc2.now.hours247"));
             const isMine = slot?.memberId === member.id;
             return (
               <div
-                key={`${detail.schedule.id}:${slot?.rotationId ?? "none"}`}
+                key={`${detail.schedule.id}:${slot?.rotationId ?? "off"}`}
                 style={CARD}
                 data-testid="oncall-now"
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 700 }}>{detail.schedule.name}</span>
-                  {slot && (
-                    <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                      {slot.rotationName}
-                    </span>
-                  )}
+                  <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>{meta}</span>
                   <span style={{ flex: 1 }} />
                   {slot && (
                     <span
@@ -250,25 +327,31 @@ export async function NowTab({ q }: { q: Record<string, string | undefined> }) {
                       flex: "none",
                     }}
                   >
-                    {slot?.memberId ? initials(who) : "—"}
+                    {holder ? initials(who) : "—"}
                   </span>
                   <div style={{ flex: 1, minWidth: 0, lineHeight: 1.25 }}>
                     <div style={{ fontSize: 16, fontWeight: 600 }}>{who}</div>
                     <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
                       {slot
                         ? t("oc2.now.window", {
-                            from: current
-                              ? t.fmt.time(current.startAt, detail.schedule.timezone)
-                              : t.fmt.time(now, detail.schedule.timezone),
-                            to: t.fmt.time(slot.until, detail.schedule.timezone),
-                            zone: detail.schedule.timezone,
+                            // Within the day the hour says it; a turn that began
+                            // days ago names its day.
+                            from: within(current?.startAt ?? now)
+                              ? t.fmt.time(current?.startAt ?? now, zone)
+                              : dayTime(current!.startAt, tag, zone),
+                            to: within(slot.until)
+                              ? t.fmt.time(slot.until, zone)
+                              : dayTime(slot.until, tag, zone),
+                            zone,
                           })
-                        : t("oc2.now.uncoveredNote")}
+                        : off?.backAt
+                          ? t("ocv2.now.offHours", { when: nextWhen(off.backAt, now, tag, zone) })
+                          : t("oc2.now.uncoveredNote")}
                     </div>
                   </div>
-                  {slot?.memberId && acts && (
+                  {holder && acts && (
                     <form action={pageOnCall}>
-                      <input type="hidden" name="memberId" value={slot.memberId} />
+                      <input type="hidden" name="memberId" value={holder} />
                       <button
                         type="submit"
                         data-testid="page-oncall"
@@ -279,14 +362,16 @@ export async function NowTab({ q }: { q: Record<string, string | undefined> }) {
                           border: "1px solid var(--line)",
                           borderRadius: 9,
                           background: "var(--panel)",
+                          color: "var(--ink)",
                           display: "flex",
                           alignItems: "center",
                           fontSize: 12.5,
                           fontWeight: 600,
                           cursor: "pointer",
+                          whiteSpace: "nowrap",
                         }}
                       >
-                        {t("oc2.now.page", { name: who.split(" ")[0] ?? who })}
+                        {t("oc2.now.page", { name: firstName(who) })}
                       </button>
                     </form>
                   )}
@@ -329,11 +414,11 @@ export async function NowTab({ q }: { q: Record<string, string | undefined> }) {
                   }}
                 >
                   {t("oc2.now.next")}{" "}
-                  <strong style={{ color: "var(--ink)", fontWeight: 600 }}>
-                    {nextShift
+                  <strong style={{ color: "var(--ink)", fontWeight: 700 }}>
+                    {next
                       ? t("oc2.now.nextWho", {
-                          name: nameOf(nextShift.memberId),
-                          when: t.fmt.dateTime(nextShift.startAt, detail.schedule.timezone),
+                          name: firstName(nameOf(next.memberId)),
+                          when: nextWhen(next.startAt, now, tag, zone),
                         })
                       : t("oc2.now.nextNone")}
                   </strong>
@@ -380,9 +465,17 @@ export async function NowTab({ q }: { q: Record<string, string | undefined> }) {
       {q.paged && (
         <div
           role="status"
-          style={{ ...BANNER, background: "var(--ok-t)", border: "1px solid var(--ok)" }}
+          style={{ ...BANNER, background: "var(--ok-t)", border: "1px solid rgba(14,122,88,.3)" }}
         >
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--ok)" }} />
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: "var(--ok)",
+              flex: "none",
+            }}
+          />
           {t("oc2.now.paged", { name: q.paged })}
         </div>
       )}
@@ -391,25 +484,61 @@ export async function NowTab({ q }: { q: Record<string, string | undefined> }) {
           role="alert"
           style={{ ...BANNER, background: "var(--dang-t)", border: "1px solid var(--dang)" }}
         >
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--dang)" }} />
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: "var(--dang)",
+              flex: "none",
+            }}
+          />
           {t("oc2.now.pageUnavailable")}
         </div>
       )}
       {q.coverSent && (
         <div
           role="status"
-          style={{ ...BANNER, background: "var(--ok-t)", border: "1px solid var(--ok)" }}
+          data-testid="cover-sent"
+          style={{ ...BANNER, background: "var(--ok-t)", border: "1px solid rgba(14,122,88,.3)" }}
         >
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--ok)" }} />
-          {t("oc2.now.coverSent", { count: Number(q.coverSent) || 0 })}
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: "var(--ok)",
+              flex: "none",
+            }}
+          />
+          {(() => {
+            const from = q.coverFrom ? new Date(q.coverFrom) : null;
+            const to = q.coverTo ? new Date(q.coverTo) : null;
+            const count = Number(q.coverSent) || 0;
+            return from && to && !Number.isNaN(from.getTime()) && !Number.isNaN(to.getTime())
+              ? t("ocv2.now.coverSent", {
+                  count,
+                  from: dayTime(from, tag, tz),
+                  to: dayTime(to, tag, tz),
+                })
+              : t("oc2.now.coverSent", { count });
+          })()}
         </div>
       )}
       {q.covered === "1" && (
         <div
           role="status"
-          style={{ ...BANNER, background: "var(--ok-t)", border: "1px solid var(--ok)" }}
+          style={{ ...BANNER, background: "var(--ok-t)", border: "1px solid rgba(14,122,88,.3)" }}
         >
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--ok)" }} />
+          <span
+            style={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              background: "var(--ok)",
+              flex: "none",
+            }}
+          />
           {t("oc2.now.covered")}
         </div>
       )}
@@ -455,243 +584,304 @@ export async function NowTab({ q }: { q: Record<string, string | undefined> }) {
         </form>
       ))}
 
-      <div
-        style={{
-          background: "var(--panel)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--radius-card)",
-          boxShadow: "var(--shadow-card)",
-          padding: "14px 16px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center" }}>
-          <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t("oc2.now.days")}</span>
-          <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-            {t("oc2.now.zone", { zone: tz })}
-          </span>
-        </div>
-        {rows.length === 0 ? (
-          <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("oc2.now.gridEmpty")}</div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "130px repeat(7, 1fr)", gap: 5 }}>
-            <span />
-            {dayStarts.map((d, i) => (
-              <div
-                key={d.getTime()}
-                style={{
-                  textAlign: "center",
-                  fontSize: 11.5,
-                  fontWeight: i === 0 ? 700 : 500,
-                  color: i === 0 ? "var(--brand)" : "var(--ink-3)",
-                  background: i === 0 ? "var(--brand-t)" : "transparent",
-                  borderRadius: 7,
-                  padding: "3px 0",
-                }}
-              >
-                {i === 0 ? t("oc2.now.today", { day: t.fmt.dateCompact(d) }) : t.fmt.dateCompact(d)}
-              </div>
-            ))}
-            {rows.map(({ detail, rot }) => {
-              const shifts = detail.shifts[rot.id] ?? [];
-              const hours = rot.activeStart
-                ? t("oc2.now.hoursRange", { from: rot.activeStart, to: rot.activeEnd ?? "" })
-                : t("oc2.now.hours247");
-              return (
-                <Fragment key={rot.id}>
-                  <div
-                    style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}
-                  >
-                    <span style={{ fontSize: 12.5, fontWeight: 600 }}>{rot.name}</span>
-                    <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
-                      {many ? `${detail.schedule.name}${t("oc2.sep")}${hours}` : hours}
-                    </span>
-                  </div>
-                  {dayTriples.map((triple, i) => {
-                    const from = dayStarts[i]!;
-                    const to = dayStarts[i + 1] ?? windowTo;
-                    const shift = onDay(shifts, from, to);
-                    const label = shift ? nameOf(shift.memberId) : null;
-                    const tone =
-                      shift && shift.memberId
-                        ? avatarTone(label!)
-                        : { bg: "var(--sunk)", ink: "var(--ink-3)" };
-                    const key = `${rot.id}:${keyOf(triple)}`;
-                    const on = q.cell === key;
-                    const cell = (
-                      <>
-                        <span style={{ fontSize: 11.5, fontWeight: 600, color: tone.ink }}>
-                          {shift
-                            ? shift.memberId
-                              ? (label!.split(" ")[0] ?? label)
-                              : t("oc2.now.nobody")
-                            : ""}
-                        </span>
-                        {shift?.override && (
-                          <span
-                            style={{
-                              fontSize: 8.5,
-                              fontWeight: 700,
-                              letterSpacing: ".06em",
-                              color: tone.ink,
-                              opacity: 0.8,
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            {t("oc2.now.overrideTag")}
-                          </span>
-                        )}
-                      </>
-                    );
-                    const style: React.CSSProperties = {
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 2,
-                      minHeight: 46,
-                      borderRadius: 9,
-                      background: shift ? tone.bg : "transparent",
-                      border: shift?.override
-                        ? `1.5px dashed ${tone.ink}`
-                        : shift
-                          ? "1px solid transparent"
-                          : "1px dashed var(--line-2)",
-                      boxShadow: on ? "0 0 0 2px var(--brand)" : "none",
-                      textDecoration: "none",
-                      color: "inherit",
-                    };
-                    return acts ? (
-                      <Link
-                        key={key}
-                        href={on ? "/app/on-call?tab=now" : `/app/on-call?tab=now&cell=${key}`}
-                        data-testid="shift-cell"
-                        className="oi-hover-edge"
-                        style={{ ...style, cursor: "pointer" }}
-                      >
-                        {cell}
-                      </Link>
-                    ) : (
-                      <div key={key} data-testid="shift-cell" style={style}>
-                        {cell}
-                      </div>
-                    );
-                  })}
-                </Fragment>
-              );
-            })}
-          </div>
-        )}
-        {selected &&
-          acts &&
-          (() => {
-            const hit = rows.find(({ rot }) => rot.id === selected.rotationId);
-            if (!hit) return null;
-            const index = dayTriples.findIndex((d) => keyOf(d) === selected.dayKey);
-            if (index < 0) return null;
-            const from = dayStarts[index]!;
-            const to = dayStarts[index + 1] ?? windowTo;
-            const shift = onDay(hit.detail.shifts[hit.rot.id] ?? [], from, to);
-            const pool = hit.rot.memberIds.length
-              ? data.people.filter((m) => hit.rot.memberIds.includes(m.id))
-              : data.people;
-            // No shift to hand over: the override covers the rotation's own
-            // window on that day, read in the SCHEDULE's zone — the hours the
-            // rotation is written in, not the reader's.
-            const zone = hit.detail.schedule.timezone;
-            const day = dayTriples[index]!;
-            const fallbackStart = zonedTime(
-              day[0],
-              day[1],
-              day[2],
-              hit.rot.activeStart ?? "00:00",
-              zone,
-            );
-            const afterDay = addDays(day[0], day[1], day[2], 1);
-            let fallbackEnd = zonedTime(day[0], day[1], day[2], hit.rot.activeEnd ?? "00:00", zone);
-            if (fallbackEnd.getTime() <= fallbackStart.getTime())
-              fallbackEnd = zonedTime(
-                afterDay[0],
-                afterDay[1],
-                afterDay[2],
-                hit.rot.activeEnd ?? "00:00",
-                zone,
-              );
-            return (
-              <ShiftPicker
-                scheduleId={hit.detail.schedule.id}
-                rotationId={hit.rot.id}
-                startAt={(shift?.startAt ?? fallbackStart).toISOString()}
-                endAt={(shift?.endAt ?? fallbackEnd).toISOString()}
-                overrideId={shift?.override ? (shift.overrideId ?? null) : null}
-                candidates={pool
-                  .filter((m) => m.id !== shift?.memberId)
-                  .map((m) => ({ id: m.id, name: m.name }))}
-                label={`${t.fmt.dateCompact(from)}${t("oc2.sep")}${hit.rot.name}`}
-              />
-            );
-          })()}
-      </div>
-
-      {overrides.length > 0 && (
+      {shown && (
         <div
+          data-testid="oncall-grid"
           style={{
             background: "var(--panel)",
             border: "1px solid var(--line)",
             borderRadius: "var(--radius-card)",
             boxShadow: "var(--shadow-card)",
-            padding: "12px 16px",
+            padding: "14px 16px",
             display: "flex",
             flexDirection: "column",
-            gap: 8,
+            gap: 10,
           }}
         >
-          <div
-            style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", color: "var(--ink-3)" }}
-          >
-            {t("oc2.now.overridesTitle")}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13.5, fontWeight: 600 }}>
+              {view === "month" ? t("ocv2.now.weekendsTitle") : t("oc2.now.days")}
+            </span>
+            {data.details.length > 1 && (
+              <div style={SEG} data-testid="grid-schedules">
+                {data.details.map((d) => (
+                  <Link
+                    key={d.schedule.id}
+                    href={href({ schedule: d.schedule.id })}
+                    aria-current={d === shown ? "true" : undefined}
+                    style={segItem(d === shown)}
+                  >
+                    {d.schedule.name}
+                  </Link>
+                ))}
+              </div>
+            )}
+            <span style={{ flex: 1 }} />
+            <div style={SEG} data-testid="grid-view">
+              <Link
+                href={href({ view: undefined })}
+                aria-current={view === "week" ? "true" : undefined}
+                style={segItem(view === "week")}
+              >
+                {t("ocv2.now.week")}
+              </Link>
+              <Link
+                href={href({ view: "month" })}
+                aria-current={view === "month" ? "true" : undefined}
+                data-testid="grid-view-month"
+                style={segItem(view === "month")}
+              >
+                {t("ocv2.now.month")}
+              </Link>
+            </div>
+            <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+              {t("oc2.now.zone", { zone: tz })}
+            </span>
           </div>
-          {overrides.map(({ detail, o }) => (
+
+          {shown.rotations.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("oc2.now.gridEmpty")}</div>
+          ) : (
             <div
-              key={o.id}
-              data-testid="override-row"
-              style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}
+              style={{
+                display: "grid",
+                gridTemplateColumns: `130px repeat(${days.length}, minmax(0, 1fr))`,
+                gap: view === "month" ? 4 : 5,
+              }}
             >
-              <span style={{ fontSize: 12.5, flex: 1, minWidth: 220 }}>
-                {many ? `${detail.schedule.name}${t("oc2.sep")}` : ""}
-                {t.fmt.dateTime(o.startAt, detail.schedule.timezone)} –{" "}
-                {t.fmt.time(o.endAt, detail.schedule.timezone)}
-                {t("oc2.sep")}
-                <strong>{o.memberId ? nameOf(o.memberId) : t("oc2.now.overrideNobody")}</strong>
-              </span>
-              {acts && (
-                <form action={deleteOverride}>
-                  <input type="hidden" name="id" value={o.id} />
-                  <button
-                    type="submit"
-                    data-testid="override-row-remove"
-                    className="oi-hover-dang"
+              {view === "month" && (
+                <>
+                  <span />
+                  {days.map((d, i) =>
+                    i % 2 === 0 ? (
+                      <div
+                        key={`m-${dayKey(d)}`}
+                        style={{
+                          gridColumn: "span 2",
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          letterSpacing: ".06em",
+                          textTransform: "uppercase",
+                          color:
+                            i === 0 || days[i - 2]?.[1] !== d[1] ? "var(--ink-3)" : "transparent",
+                          paddingLeft: 2,
+                        }}
+                      >
+                        {monthHead(d, tag)}
+                      </div>
+                    ) : null,
+                  )}
+                </>
+              )}
+              <span />
+              {days.map((d) => {
+                const isToday = dayKey(d) === todayKey;
+                return (
+                  <div
+                    key={`h-${dayKey(d)}`}
                     style={{
-                      height: 26,
-                      padding: "0 10px",
-                      border: "1px solid var(--line)",
-                      borderRadius: 8,
-                      background: "var(--panel)",
-                      color: "var(--dang)",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: "pointer",
+                      textAlign: "center",
+                      fontSize: 11.5,
+                      fontWeight: isToday ? 700 : 500,
+                      color: isToday ? "var(--brand)" : "var(--ink-3)",
+                      background: isToday ? "var(--brand-t)" : "transparent",
+                      borderRadius: 7,
+                      padding: "3px 0",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
                     }}
                   >
-                    {t("oc2.now.removeOverride")}
-                  </button>
-                </form>
-              )}
+                    {isToday && view === "week"
+                      ? t("oc2.now.today", { day: dayHead(d, tag) })
+                      : dayHead(d, tag)}
+                  </div>
+                );
+              })}
+              {shown.rotations.map((rot) => {
+                const shifts = shown.shifts[rot.id] ?? [];
+                const peopleOpen = q.people === rot.id;
+                return (
+                  <Fragment key={rot.id}>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "center",
+                        minWidth: 0,
+                      }}
+                    >
+                      <span style={{ fontSize: 12.5, fontWeight: 600 }}>{rot.name}</span>
+                      <span style={{ fontSize: 11, color: "var(--ink-3)" }}>
+                        {hoursOf(rot) ?? t("oc2.now.hours247")}
+                      </span>
+                      <Link
+                        href={href({ people: peopleOpen ? undefined : rot.id })}
+                        data-testid="rotation-people-toggle"
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: "var(--brand)",
+                          textDecoration: "none",
+                          marginTop: 2,
+                          width: "fit-content",
+                        }}
+                      >
+                        {t("ocv2.now.people", { count: rot.memberIds.length })}
+                      </Link>
+                    </div>
+                    {days.map((d) => {
+                      const slot = slotOf(shown.schedule, rot, d);
+                      const key = `${rot.id}:${dayKey(d)}`;
+                      const on = q.cell === key;
+                      if (!slot)
+                        return (
+                          <div
+                            key={key}
+                            data-testid="shift-cell-off"
+                            style={{
+                              minHeight: view === "month" ? 40 : 46,
+                              borderRadius: 9,
+                              border: "1px dashed var(--line-2)",
+                            }}
+                          />
+                        );
+                      const cell = cellOf(shifts, shown.overrides, rot.id, slot);
+                      const s = cell.shift;
+                      const label = s ? (s.memberId ? nameOf(s.memberId) : null) : null;
+                      const tone = label
+                        ? avatarTone(label)
+                        : { bg: "var(--sunk)", ink: "var(--ink-3)" };
+                      const ov = cell.overrides.length > 0;
+                      const style: React.CSSProperties = {
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 2,
+                        minHeight: view === "month" ? 40 : 46,
+                        minWidth: 0,
+                        borderRadius: 9,
+                        background: s ? tone.bg : "transparent",
+                        border: ov
+                          ? `1.5px dashed ${tone.ink}`
+                          : s
+                            ? "1px solid transparent"
+                            : "1px dashed var(--line)",
+                        boxShadow: on ? "0 0 0 2px var(--brand)" : "none",
+                        textDecoration: "none",
+                        color: "inherit",
+                        overflow: "hidden",
+                      };
+                      const content = (
+                        <>
+                          <span
+                            style={{
+                              fontSize: 11.5,
+                              fontWeight: 600,
+                              color: tone.ink,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              maxWidth: "100%",
+                              padding: "0 3px",
+                            }}
+                          >
+                            {s ? (label ? firstName(label) : t("oc2.now.nobody")) : ""}
+                          </span>
+                          {ov && (
+                            <span
+                              style={{
+                                fontSize: 8.5,
+                                fontWeight: 700,
+                                letterSpacing: ".06em",
+                                color: tone.ink,
+                                opacity: 0.8,
+                                textTransform: "uppercase",
+                              }}
+                            >
+                              {t("oc2.now.overrideTag")}
+                            </span>
+                          )}
+                        </>
+                      );
+                      return acts ? (
+                        <Link
+                          key={key}
+                          href={href({ cell: on ? undefined : key, people: q.people })}
+                          data-testid="shift-cell"
+                          aria-current={on ? "true" : undefined}
+                          data-day={dayKey(d)}
+                          data-rotation={rot.id}
+                          data-override={ov ? "1" : undefined}
+                          scroll={false}
+                          className="oi-cell"
+                          style={{ ...style, cursor: "pointer" }}
+                        >
+                          {content}
+                        </Link>
+                      ) : (
+                        <div key={key} data-testid="shift-cell" style={style}>
+                          {content}
+                        </div>
+                      );
+                    })}
+                    {peopleOpen && (
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <RotationPeople
+                          schedule={shown.schedule}
+                          rotation={rot}
+                          people={data.people}
+                          now={now}
+                          manages={manages}
+                          returnTo={href({ people: rot.id })}
+                        />
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
             </div>
-          ))}
+          )}
+
+          {selected &&
+            acts &&
+            (() => {
+              const rot = shown.rotations.find((r) => r.id === selected.rotationId);
+              const d = days.find((x) => dayKey(x) === selected.day);
+              if (!rot || !d) return null;
+              const slot = slotOf(shown.schedule, rot, d);
+              if (!slot) return null;
+              const cell = cellOf(shown.shifts[rot.id] ?? [], shown.overrides, rot.id, slot);
+              const holder = cell.shift?.memberId ?? null;
+              // A slot under way is handed over from now on: the hours already
+              // worked keep the person who worked them.
+              const start = new Date(
+                Math.max(slot.from.getTime(), Math.floor(now.getTime() / 60_000) * 60_000),
+              );
+              return (
+                <ShiftPicker
+                  scheduleId={shown.schedule.id}
+                  rotationId={rot.id}
+                  startAt={start.toISOString()}
+                  endAt={slot.to.toISOString()}
+                  overrides={cell.overrides.map((o) => ({
+                    id: o.id,
+                    partial:
+                      o.startAt.getTime() > slot.from.getTime() ||
+                      o.endAt.getTime() < slot.to.getTime(),
+                    from: t.fmt.time(o.startAt, shown.schedule.timezone),
+                    to: t.fmt.time(o.endAt, shown.schedule.timezone),
+                  }))}
+                  candidates={data.people
+                    .filter((m) => m.id !== holder)
+                    .map((m) => ({ id: m.id, name: m.name }))}
+                  label={`${dayHead(d, tag)}${t("oc2.sep")}${rot.name}`}
+                  closeHref={href({ people: q.people })}
+                  returnTo={href({ people: q.people })}
+                  ended={slot.to.getTime() <= now.getTime()}
+                />
+              );
+            })()}
         </div>
       )}
     </div>

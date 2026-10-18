@@ -42,7 +42,7 @@ async function origin(): Promise<string> {
 export async function sendTest() {
   const current = await requireMember();
   const base = await origin();
-  await withTenant(current.tenant.id, (tx) =>
+  const sent = await withTenant(current.tenant.id, (tx) =>
     notifyMember(
       tx,
       current.tenant.id,
@@ -57,8 +57,10 @@ export async function sendTest() {
       },
     ),
   );
+  // The banner names the channels really queued, in the order they go out.
+  const channels = [...new Set(sent.map((d) => d.channel))].join(",");
   revalidatePath(PATH);
-  redirect(`${PAGE}&test=1`);
+  redirect(`${PAGE}&test=1&ch=${channels}`);
 }
 
 /** Adds a phone (SMS or voice) and sends a 6-digit code through that very channel — the proof it works. */
@@ -232,7 +234,7 @@ export async function saveShiftReminders(formData: FormData) {
 export async function updateRule(formData: FormData) {
   const current = await requireMember();
   const urgency = z.enum(["high", "low"]).parse(formData.get("urgency"));
-  const op = z.enum(["add", "remove"]).parse(formData.get("op"));
+  const op = z.enum(["add", "remove", "removeGroup"]).parse(formData.get("op"));
   await withTenant(current.tenant.id, async (tx) => {
     const [rule] = await tx
       .select()
@@ -243,17 +245,29 @@ export async function updateRule(formData: FormData) {
           eq(notificationRules.urgency, urgency),
         ),
       );
-    const { defaultSteps } = await import("@openincident/oncall");
-    const steps = [...(rule?.steps ?? defaultSteps(urgency))];
+    const { defaultSteps, DIGEST_AT } = await import("@openincident/oncall");
+    let steps = [...(rule?.steps ?? defaultSteps(urgency))];
     if (op === "add") {
-      const kind = z.enum(["email", "sms", "voice", "webpush"]).parse(formData.get("kind"));
+      const kind = z
+        .enum(["email", "sms", "voice", "webpush", "slack", "teams", "digest"])
+        .parse(formData.get("kind"));
       const delay = z.coerce.number().int().min(0).max(120).parse(formData.get("delayMinutes"));
-      if (steps.length < 10) steps.push({ kind, delayMinutes: delay });
-      steps.sort((a, b) => a.delayMinutes - b.delayMinutes);
+      if (steps.length < 10)
+        steps.push(
+          kind === "digest"
+            ? { kind: "email", delayMinutes: 0, at: DIGEST_AT }
+            : { kind, delayMinutes: delay },
+        );
+    } else if (op === "removeGroup") {
+      // One line of the card is every step that goes out at the same moment.
+      const key = z.string().max(16).parse(formData.get("group"));
+      steps = steps.filter((st) => (st.at ? `at:${st.at}` : `+${st.delayMinutes}`) !== key);
     } else {
       const index = z.coerce.number().int().min(0).parse(formData.get("index"));
       steps.splice(index, 1);
     }
+    // Immediate first, then by delay; the digest closes the rule.
+    steps.sort((a, b) => (a.at ? 1 : 0) - (b.at ? 1 : 0) || a.delayMinutes - b.delayMinutes);
     if (rule)
       await tx
         .update(notificationRules)
@@ -265,6 +279,7 @@ export async function updateRule(formData: FormData) {
         .values({ tenantId: current.tenant.id, memberId: current.member.id, urgency, steps });
   });
   revalidatePath(PATH);
+  redirect(PAGE);
 }
 
 /** Links the member's Slack user (by email, through the workspace's Slack app) as a verified DM method. */
@@ -291,11 +306,15 @@ export async function linkSlackMethod() {
   const ok = await withTenant(current.tenant.id, async (tx) => {
     const install = await getSlackInstall(tx, current.tenant.id);
     if (!install) return false;
-    const userId = await linkSlackIdentity(tx, current.tenant.id, slack(install.token), {
+    const api = slack(install.token);
+    const userId = await linkSlackIdentity(tx, current.tenant.id, api, {
       id: current.member.id,
       email: current.member.email,
     });
     if (!userId) return false;
+    // The handle the row shows ("@amelie"): what the person reads in Slack.
+    const user = await api.userInfo(userId).catch(() => null);
+    const handle = user?.name ? `@${user.name}` : null;
     const existing = await tx
       .select({ id: notificationMethods.id })
       .from(notificationMethods)
@@ -311,7 +330,7 @@ export async function linkSlackMethod() {
         memberId: current.member.id,
         kind: "slack",
         value: userId,
-        label: install.teamName,
+        label: handle ?? install.teamName,
         verifiedAt: new Date(),
       });
     await ensureHighUrgencyStep(tx, current.member.id, "slack");
@@ -347,7 +366,8 @@ export async function linkTeamsMethod() {
         memberId: current.member.id,
         kind: "teams",
         value: userId,
-        label: install.teamName,
+        // The account the chat reaches, as the row shows it.
+        label: current.member.email,
         verifiedAt: new Date(),
       });
     await ensureHighUrgencyStep(tx, current.member.id, "teams");

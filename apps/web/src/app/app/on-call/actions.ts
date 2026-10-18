@@ -17,7 +17,12 @@ import {
   teams,
   withTenant,
 } from "@openincident/db";
-import { availableChannels, notifyMember } from "@openincident/oncall";
+import {
+  availableChannels,
+  notifyMember,
+  planOrderChange,
+  rotationQueue,
+} from "@openincident/oncall";
 import { recordAudit } from "@/lib/audit";
 import { getT } from "@/i18n/server";
 import { TIMEZONES } from "@/lib/oncall";
@@ -43,7 +48,7 @@ export async function createSchedule(formData: FormData) {
         .string()
         .refine((v) => TIMEZONES.includes(v) || /^[A-Za-z_]+\/[A-Za-z_]+$/.test(v)),
       handoverTime: hhmm,
-      interval: z.enum(["weekly", "daily", "weekend"]),
+      interval: z.enum(["weekly", "daily", "weekend", "follow-sun"]),
     })
     .safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) redirect("/app/on-call?tab=schedules&error=invalid");
@@ -65,15 +70,46 @@ export async function createSchedule(formData: FormData) {
         createdByMemberId: current.member.id,
       })
       .returning({ id: schedules.id });
-    await tx.insert(rotations).values({
-      tenantId: current.tenant.id,
-      scheduleId: row!.id,
-      name: input.interval === "weekend" ? "Week-ends" : "Primary",
-      interval: input.interval,
-      handoverDay: 1,
-      memberIds,
-      position: 0,
-    });
+    if (input.interval === "follow-sun") {
+      // Follow-the-sun in one click: a day rotation from the handover for
+      // twelve hours, a night rotation for the other twelve. The same people
+      // take both, one turn apart, so nobody holds the pager round the clock.
+      const [h, m] = input.handoverTime.split(":").map(Number) as [number, number];
+      const half = `${String((h + 12) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      await tx.insert(rotations).values([
+        {
+          tenantId: current.tenant.id,
+          scheduleId: row!.id,
+          name: "Day",
+          interval: "weekly",
+          handoverDay: 1,
+          activeStart: input.handoverTime,
+          activeEnd: half,
+          memberIds,
+          position: 0,
+        },
+        {
+          tenantId: current.tenant.id,
+          scheduleId: row!.id,
+          name: "Night",
+          interval: "weekly",
+          handoverDay: 1,
+          activeStart: half,
+          activeEnd: input.handoverTime,
+          memberIds: memberIds.length > 1 ? [...memberIds.slice(1), memberIds[0]!] : memberIds,
+          position: 1,
+        },
+      ]);
+    } else
+      await tx.insert(rotations).values({
+        tenantId: current.tenant.id,
+        scheduleId: row!.id,
+        name: input.interval === "weekend" ? "Week-ends" : "Primary",
+        interval: input.interval,
+        handoverDay: 1,
+        memberIds,
+        position: 0,
+      });
     await recordAudit(tx, current, "config", "schedule.created", { name: input.name });
     return row!.id;
   });
@@ -99,31 +135,74 @@ export async function publishSchedule(formData: FormData) {
   revalidatePath("/app/on-call");
 }
 
-/** Rotation membership: order, add, remove. Applies from the next computation — past slots never move. */
+/** Where an action sends the reader back: a page of this screen, never elsewhere. */
+function backTo(formData: FormData, fallback: string): string {
+  const raw = formData.get("returnTo");
+  return typeof raw === "string" && /^\/app\/on-call(\?[^#\s]*)?$/.test(raw) ? raw : fallback;
+}
+
+/**
+ * The people of a rotation, in turn order: move one up or down, take one out,
+ * add one. The change is written as a new order that starts at the next
+ * handover — the person on call now finishes their shift, and every shift
+ * before it keeps the person it had. A rotation nobody holds right now takes
+ * the new order at once: there is no shift to protect.
+ */
 export async function updateRotationMembers(formData: FormData) {
   const current = await requireManager();
   const rotationId = uuid.parse(formData.get("rotationId"));
   const op = z.enum(["up", "down", "remove", "add"]).parse(formData.get("op"));
   const memberId = uuid.parse(formData.get("memberId"));
-  const scheduleId = await withTenant(current.tenant.id, async (tx) => {
+  const now = new Date();
+  await withTenant(current.tenant.id, async (tx) => {
     const [r] = await tx
       .select()
       .from(rotations)
       .where(and(eq(rotations.tenantId, current.tenant.id), eq(rotations.id, rotationId)));
-    if (!r) return null;
-    const list = [...r.memberIds];
-    const i = list.indexOf(memberId);
-    if (op === "add" && i === -1) list.push(memberId);
-    if (op === "remove" && i >= 0) list.splice(i, 1);
-    if (op === "up" && i > 0) [list[i - 1], list[i]] = [list[i]!, list[i - 1]!];
-    if (op === "down" && i >= 0 && i < list.length - 1)
-      [list[i + 1], list[i]] = [list[i]!, list[i + 1]!];
-    await tx.update(rotations).set({ memberIds: list }).where(eq(rotations.id, r.id));
-    await recordAudit(tx, current, "config", "rotation.members_changed", { rotation: r.name, op });
-    return r.scheduleId;
+    if (!r) return;
+    const [s] = await tx.select().from(schedules).where(eq(schedules.id, r.scheduleId));
+    if (!s) return;
+    if (op === "add") {
+      const [m] = await tx
+        .select({ id: members.id })
+        .from(members)
+        .where(and(eq(members.tenantId, current.tenant.id), eq(members.id, memberId)));
+      if (!m) return;
+    }
+    const queue = rotationQueue(s, r, now);
+    const upcoming = [...queue.upcoming];
+    let stays = queue.currentStays;
+    const i = upcoming.indexOf(memberId);
+    if (op === "up" && i > 0) [upcoming[i - 1], upcoming[i]] = [upcoming[i]!, upcoming[i - 1]!];
+    if (op === "down" && i >= 0 && i < upcoming.length - 1)
+      [upcoming[i + 1], upcoming[i]] = [upcoming[i]!, upcoming[i + 1]!];
+    if (op === "remove") {
+      if (memberId === queue.current) stays = false;
+      if (i >= 0) upcoming.splice(i, 1);
+    }
+    if (op === "add") {
+      if (memberId === queue.current) stays = true;
+      else if (i === -1) upcoming.push(memberId);
+    }
+    const change = planOrderChange(s, r, now, upcoming, stays);
+    if (!change) return;
+    await tx
+      .update(rotations)
+      .set({
+        memberIds: change.memberIds,
+        effectiveFrom: change.effectiveFrom,
+        previousOrders: change.previousOrders,
+      })
+      .where(eq(rotations.id, r.id));
+    await recordAudit(tx, current, "config", "rotation.members_changed", {
+      rotation: r.name,
+      op,
+      memberId,
+      from: change.effectiveFrom.toISOString(),
+    });
   });
   revalidatePath("/app/on-call");
-  if (scheduleId) redirect(`/app/on-call?tab=schedules&members=${scheduleId}`);
+  redirect(backTo(formData, "/app/on-call?tab=schedules"));
 }
 
 /** One override on one slot — the rotation is untouched, everything is traced. Member empty = NOBODY. */
@@ -144,6 +223,7 @@ export async function createOverride(formData: FormData) {
   const start = new Date(input.startAt);
   const end = new Date(input.endAt);
   if (end <= start) redirect("/app/on-call?tab=now&error=invalid");
+  const back = backTo(formData, "/app/on-call?tab=now");
   await withTenant(current.tenant.id, async (tx) => {
     await tx.insert(scheduleOverrides).values({
       tenantId: current.tenant.id,
@@ -163,7 +243,7 @@ export async function createOverride(formData: FormData) {
     });
   });
   revalidatePath("/app/on-call");
-  redirect("/app/on-call?tab=now");
+  redirect(back);
 }
 
 export async function deleteOverride(formData: FormData) {
@@ -180,7 +260,7 @@ export async function deleteOverride(formData: FormData) {
     return o.scheduleId;
   });
   revalidatePath("/app/on-call");
-  if (scheduleId) redirect("/app/on-call?tab=now");
+  if (scheduleId) redirect(backTo(formData, "/app/on-call?tab=now"));
 }
 
 /**
@@ -251,7 +331,9 @@ export async function requestCover(formData: FormData) {
     return reachable.length;
   });
   revalidatePath("/app/on-call");
-  redirect(`/app/on-call?tab=now&coverSent=${notified}`);
+  redirect(
+    `/app/on-call?tab=now&coverSent=${notified}&coverFrom=${encodeURIComponent(input.startAt)}&coverTo=${encodeURIComponent(input.endAt)}`,
+  );
 }
 
 /** Accepting a cover request creates the override and closes the request — once. */
