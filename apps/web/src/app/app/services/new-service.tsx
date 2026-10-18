@@ -51,18 +51,13 @@ export function NewService({ teams }: { teams: Array<{ id: string; name: string 
         type="button"
         data-testid="service-new"
         onClick={() => setOpen(true)}
-        className="oi-hover-brand-2"
         style={{
-          height: 32,
-          padding: "0 13px",
-          borderRadius: 9,
-          background: "var(--brand)",
-          color: "var(--on-brand)",
           border: 0,
-          display: "flex",
-          alignItems: "center",
-          fontSize: 12.5,
+          background: "none",
+          padding: 0,
+          fontSize: 12,
           fontWeight: 600,
+          color: "var(--brand)",
           cursor: "pointer",
         }}
       >
@@ -86,7 +81,7 @@ export function NewService({ teams }: { teams: Array<{ id: string; name: string 
           <form
             action={declareService}
             onClick={(e) => e.stopPropagation()}
-            className="oi-rise-fast"
+
             role="dialog"
             aria-modal="true"
             data-testid="service-form"
@@ -97,6 +92,7 @@ export function NewService({ teams }: { teams: Array<{ id: string; name: string 
               borderRadius: "var(--radius-modal)",
               boxShadow: "var(--shadow-modal)",
               overflow: "hidden",
+              animation: "oi-rise .2s ease backwards",
             }}
           >
             <div

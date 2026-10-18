@@ -3,7 +3,7 @@
  * pages, follow-ups over a period, compared with the previous one. Test
  * incidents are excluded. What is not measurable is said, not simulated.
  */
-import { and, eq, gte, isNull, lt, ne } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lt, ne } from "drizzle-orm";
 import {
   alertSources,
   alerts,
@@ -12,6 +12,8 @@ import {
   followUps,
   incidents,
   members,
+  monitorDays,
+  monitors,
   notificationDeliveries,
   services,
   severities,
@@ -86,16 +88,25 @@ export async function incidentInsights(tx: Tx, tenantId: string, period: Period)
   const mtta = (set: typeof rows) =>
     median(
       set
-        .filter((r) => r.inc.acknowledgedAt)
+        .filter((r) => r.inc.acknowledgedAt && r.inc.acknowledgedAt >= r.inc.declaredAt)
         .map((r) => (r.inc.acknowledgedAt!.getTime() - r.inc.declaredAt.getTime()) / 60_000),
     );
   const mttr = (set: typeof rows) =>
     median(
       set
-        .filter((r) => r.inc.resolvedAt)
+        .filter((r) => r.inc.resolvedAt && r.inc.resolvedAt >= r.inc.declaredAt)
         .map((r) => (r.inc.resolvedAt!.getTime() - r.inc.declaredAt.getTime()) / 60_000),
     );
   const high = (set: typeof rows) => set.filter((r) => r.sevRank !== null && r.sevRank <= 1).length;
+  // "SEV1 + SEV2": the label is the workspace's own names for its two worst levels.
+  const highNames = (
+    await tx
+      .select({ name: severities.name })
+      .from(severities)
+      .where(eq(severities.tenantId, tenantId))
+      .orderBy(asc(severities.rank))
+      .limit(2)
+  ).map((r) => r.name);
   const bySeverity = new Map<string, number>();
   for (const r of cur)
     bySeverity.set(r.sevName ?? "—", (bySeverity.get(r.sevName ?? "—") ?? 0) + 1);
@@ -104,7 +115,7 @@ export async function incidentInsights(tx: Tx, tenantId: string, period: Period)
     const k = r.serviceName ?? "—";
     const e = byService.get(k) ?? { count: 0, mttr: [] };
     e.count++;
-    if (r.inc.resolvedAt)
+    if (r.inc.resolvedAt && r.inc.resolvedAt >= r.inc.declaredAt)
       e.mttr.push((r.inc.resolvedAt.getTime() - r.inc.declaredAt.getTime()) / 60_000);
     byService.set(k, e);
   }
@@ -113,6 +124,7 @@ export async function incidentInsights(tx: Tx, tenantId: string, period: Period)
     mtta: stat(mtta(cur), mtta(prev)),
     mttr: stat(mttr(cur), mttr(prev)),
     high: stat(high(cur), high(prev)),
+    highNames,
     weekly: buckets(
       cur.map((r) => r.inc.declaredAt),
       period,
@@ -338,10 +350,12 @@ export async function followUpInsights(tx: Tx, tenantId: string, period: Period)
     set.length
       ? Math.round((set.filter((r) => r.f.status === "done").length / set.length) * 100)
       : null;
+  // A completion stamped before the creation is a broken row, not a negative
+  // duration: it is left out of the median rather than dragging it below zero.
   const closure = (set: typeof rows) =>
     median(
       set
-        .filter((r) => r.f.completedAt)
+        .filter((r) => r.f.completedAt && r.f.completedAt >= r.f.createdAt)
         .map((r) => (r.f.completedAt!.getTime() - r.f.createdAt.getTime()) / DAY),
     );
   const now = new Date();
@@ -378,11 +392,30 @@ export async function followUpInsights(tx: Tx, tenantId: string, period: Period)
     byTeam.set(team, e);
   }
   const p1 = rows.find((r) => r.priorityName === "P1")?.targetDays ?? null;
+  // Overdue at the start of the period, for the comparison: open then (not yet
+  // completed), created before it, and already past due.
+  const overdueThen = await tx
+    .select({ id: followUps.id, completedAt: followUps.completedAt })
+    .from(followUps)
+    .innerJoin(incidents, eq(incidents.id, followUps.incidentId))
+    .where(
+      and(
+        eq(followUps.tenantId, tenantId),
+        ne(incidents.mode, "test"),
+        lt(followUps.createdAt, period.from),
+        lt(followUps.dueAt, period.from),
+      ),
+    );
+  const overduePrev = overdueThen.filter(
+    (r) => !r.completedAt || r.completedAt >= period.from,
+  ).length;
   return {
     created: stat(cur.length, prev.length),
+    createdFrom: new Set(cur.map((r) => r.incidentNumber)).size,
+    done: cur.filter((r) => r.f.status === "done").length,
     closed: stat(closed(cur), closed(prev)),
     closureDays: stat(closure(cur), closure(prev)),
-    overdue: stat(overdueNow.length, null),
+    overdue: stat(overdueNow.length, overduePrev),
     byTeam: [...byTeam.entries()]
       .map(([id, e]) => ({
         name: nameOfTeam.get(id) ?? id,
@@ -413,21 +446,86 @@ export async function followUpInsights(tx: Tx, tenantId: string, period: Period)
   };
 }
 
-/** The delta label of a stat against the previous period: sign and unit given by the caller. */
-export function delta(
-  s: Stat,
-  unit: "count" | "pct" | "minutes" | "days",
-): { text: string; good: boolean | null } | null {
+/**
+ * How a KPI's change against the previous period is read: relative (%),
+ * absolute (a count, minutes, days), or in points of a percentage.
+ */
+export type ChangeKind = "rel" | "abs" | "pts";
+
+/** The change of a stat against the previous period, in the KPI's own unit; null when a side is unknown. */
+export function change(s: Stat, kind: ChangeKind): number | null {
   if (s.value === null || s.prev === null) return null;
-  const d = s.value - s.prev;
-  if (unit === "pct")
-    return { text: `${d >= 0 ? "+" : "−"}${Math.abs(Math.round(d))} pt`, good: null };
-  if (unit === "count") {
-    if (s.prev === 0) return { text: `+${s.value}`, good: null };
-    const pct = Math.round((d / s.prev) * 100);
-    return { text: `${pct >= 0 ? "+" : "−"}${Math.abs(pct)} %`, good: null };
-  }
-  return { text: `${d >= 0 ? "+" : "−"}${Math.abs(Math.round(d * 10) / 10)}`, good: null };
+  if (kind === "rel") return s.prev === 0 ? null : ((s.value - s.prev) / s.prev) * 100;
+  return s.value - s.prev;
+}
+
+const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+
+/**
+ * Uptime from the monitors' daily ledger: seconds online, degraded and offline
+ * per monitor per day, summed over the period and the one before. A monitor
+ * that was paused simply has no seconds for those days — it neither helps nor
+ * hurts the figure.
+ */
+export async function uptimeInsights(tx: Tx, tenantId: string, period: Period) {
+  const mons = await tx
+    .select({
+      id: monitors.id,
+      name: monitors.name,
+      type: monitors.type,
+      paused: monitors.paused,
+      state: monitors.state,
+      createdAt: monitors.createdAt,
+      serviceKey: services.key,
+    })
+    .from(monitors)
+    .leftJoin(services, eq(services.id, monitors.serviceId))
+    .where(eq(monitors.tenantId, tenantId))
+    .orderBy(asc(monitors.name));
+  const days = await tx
+    .select()
+    .from(monitorDays)
+    .where(and(eq(monitorDays.tenantId, tenantId), gte(monitorDays.day, dayKey(period.prevFrom))));
+  const from = dayKey(period.from);
+  const totals = (cur: boolean) => {
+    const set = days.filter((d) => (cur ? d.day >= from : d.day < from));
+    const online = set.reduce((n, d) => n + d.onlineSeconds, 0);
+    const degraded = set.reduce((n, d) => n + d.degradedSeconds, 0);
+    const offline = set.reduce((n, d) => n + d.offlineSeconds, 0);
+    const total = online + degraded + offline;
+    return {
+      uptime: total > 0 ? ((total - offline) / total) * 100 : null,
+      downMin: total > 0 ? offline / 60 : null,
+      degradedMin: total > 0 ? degraded / 60 : null,
+    };
+  };
+  const cur = totals(true);
+  const prev = totals(false);
+  const active = (at: Date | null) =>
+    mons.filter((m) => !m.paused && (!at || m.createdAt < at)).length;
+  return {
+    uptime: stat(cur.uptime, prev.uptime),
+    downtime: stat(cur.downMin, prev.downMin),
+    degraded: stat(cur.degradedMin, prev.degradedMin),
+    monitors: stat(active(null), mons.length > 0 ? active(period.from) : null),
+    rows: mons.map((m) => {
+      const mine = days.filter((d) => d.monitorId === m.id && d.day >= from);
+      const online = mine.reduce((n, d) => n + d.onlineSeconds, 0);
+      const degraded = mine.reduce((n, d) => n + d.degradedSeconds, 0);
+      const offline = mine.reduce((n, d) => n + d.offlineSeconds, 0);
+      const total = online + degraded + offline;
+      return {
+        monitor: m.name,
+        type: m.type,
+        service: m.serviceKey ?? "",
+        paused: m.paused,
+        uptime_pct: total > 0 ? Math.round(((total - offline) / total) * 100_000) / 1000 : "",
+        downtime_min: Math.round(offline / 60),
+        degraded_min: Math.round(degraded / 60),
+        state_now: m.state,
+      };
+    }),
+  };
 }
 
 /** CSV with a UTF-8 BOM so spreadsheets read accents right. */

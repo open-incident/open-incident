@@ -1,6 +1,10 @@
-/** GET /api/insights/export?tab=incidents|alerts|pager|followups&days=90 — the rows behind the numbers, as CSV. */
+/**
+ * GET /api/insights/export?tab=incidents|alerts|pager|uptime|followups|atlas&days=90
+ * — the rows behind the numbers, as CSV. `tab=pay&period=YYYY-MM` exports a month of on-call pay.
+ */
 import { withTenant } from "@openincident/db";
 import { isManagerRole } from "@openincident/config";
+import { listServiceAutonomy } from "@/lib/atlas/queries";
 import { getPayReport } from "@/lib/pay";
 import { currentMember } from "@/lib/session";
 import {
@@ -10,6 +14,7 @@ import {
   pagerInsights,
   periodOf,
   toCsv,
+  uptimeInsights,
 } from "@/lib/insights";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +58,29 @@ export async function GET(request: Request) {
       },
     });
   }
+  if (tab === "atlas") {
+    // The per-service ladder: where each service stands and on what evidence.
+    const rows = (await listServiceAutonomy(current.tenant.id)).map((s) => ({
+      service: s.key,
+      level: s.effective,
+      cap: s.cap ?? "",
+      incidents_seen: s.incidentsSeen,
+      graded_runs: s.gradedRuns,
+      right_pct: s.rightPct ?? "",
+      backtest_pct: s.backtestPct ?? "",
+      proposals_ok: s.proposalsOk,
+      l3_fixes_ok: s.l3FixesOk,
+      changed_at: s.changedAt,
+    }));
+    return new Response(toCsv(rows), {
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="open-incident-atlas.csv"`,
+      },
+    });
+  }
   const rows = await withTenant(current.tenant.id, async (tx) => {
+    if (tab === "uptime") return (await uptimeInsights(tx, current.tenant.id, period)).rows;
     if (tab === "alerts") return (await alertInsights(tx, current.tenant.id, period)).rows;
     if (tab === "pager")
       return (await pagerInsights(tx, current.tenant.id, period, current.workspace.timezone)).rows;

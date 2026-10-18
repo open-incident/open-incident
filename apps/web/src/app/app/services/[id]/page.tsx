@@ -1,67 +1,36 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { escalationPaths, withTenant } from "@openincident/db";
-import { aiConfigured, runbooksForService } from "@openincident/ai";
+import { runbooksForService } from "@openincident/ai";
+import { ServiceAtlasCard } from "@/components/atlas/service-card";
 import { getT } from "@/i18n/server";
-import { Dependencies } from "./dependencies";
-import { ServiceTelemetry } from "./telemetry-card";
 import { canRespond, isManager, requireMember } from "@/lib/session";
-import { getService, listTeams } from "@/lib/services";
+import { getService, listTeams, mergeCandidates } from "@/lib/services";
 import { telemetryInstalled } from "@/lib/telemetry-module";
-import {
-  assignOwner,
-  clearOwner,
-  createRunbook,
-  deleteRunbook,
-  deleteService,
-  refreshRunbookAction,
-  setTeamPolicy,
-} from "../actions";
+import { ContextCard } from "./context-card";
+import { Dependencies } from "./dependencies";
+import { HeaderActions } from "./header-actions";
+import { Labels } from "./labels";
+import { OwnerCard } from "./owner-card";
+import { RunbookList } from "./runbook-list";
+import { ServiceTelemetry } from "./telemetry-card";
+import { CARD, EYEBROW } from "./ui";
 
-const CARD: React.CSSProperties = {
-  background: "var(--panel)",
-  border: "1px solid var(--line)",
-  borderRadius: "var(--radius-card)",
-  boxShadow: "var(--shadow-card)",
-  padding: "13px 15px",
-  display: "flex",
-  flexDirection: "column",
-  gap: 8,
-};
+const KPI: React.CSSProperties = { ...CARD, padding: "13px 15px", gap: 6 };
 
-const RUNBOOK_BTN: React.CSSProperties = {
-  height: 24,
-  padding: "0 8px",
-  border: "1px solid var(--line)",
-  borderRadius: 6,
-  background: "var(--panel)",
-  fontSize: 11,
-  cursor: "pointer",
-};
-
-const RUNBOOK_FIELD: React.CSSProperties = {
-  height: 30,
-  padding: "0 10px",
-  border: "1px solid var(--line)",
-  borderRadius: 8,
-  fontSize: 12.5,
-  background: "var(--panel)",
-  outline: "none",
-};
-
-const EYEBROW: React.CSSProperties = {
-  fontSize: 10.5,
-  fontWeight: 700,
-  letterSpacing: ".08em",
-  color: "var(--ink-3)",
+const STATE_DOT: Record<string, string> = {
+  online: "var(--ok)",
+  degraded: "var(--wait)",
+  offline: "var(--dang)",
+  paused: "var(--ink-3)",
+  waiting: "var(--ink-3)",
 };
 
 /**
- * One service: who owns it, what watches it, what broke, and what Atlas knows.
- *
- * The dependency card is the honest one: without traces the product does not
- * know what calls what, and says so rather than drawing a graph it invented.
+ * One service: what watches it, what broke, what Atlas may do on it, what it
+ * talks to, what the records say — and, on the right, who owns it, its
+ * runbooks and where it was seen.
  */
 export default async function ServiceDetailPage({
   params,
@@ -74,10 +43,12 @@ export default async function ServiceDetailPage({
   const t = await getT();
   const { id } = await params;
   const { error, exists } = await searchParams;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
 
   const data = await withTenant(tenant.id, async (tx) => {
     const svc = await getService(tx, tenant.id, id);
     if (!svc) return null;
+    if (svc.mergedInto !== null) return { kind: "merged" as const, to: svc.mergedInto };
     // The policies on offer, for the case where the owner team has none: the
     // chain has to be completable where the reader notices it is broken.
     const paths = await tx
@@ -86,28 +57,40 @@ export default async function ServiceDetailPage({
       .where(eq(escalationPaths.tenantId, tenant.id))
       .orderBy(asc(escalationPaths.name));
     return {
+      kind: "ok" as const,
       svc,
       teams: await listTeams(tx, tenant.id),
       paths,
       runbooks: await runbooksForService(tx, tenant.id, svc.id),
+      others: await mergeCandidates(tx, tenant.id, svc.id),
     };
   });
   if (!data) notFound();
-  const { svc, teams, paths, runbooks } = data;
+  if (data.kind === "merged") redirect(`/app/services/${data.to}`);
+  const { svc, teams, paths, runbooks, others } = data;
   const mayEdit = canRespond(member);
   const mayManage = isManager(member);
+  const installed = telemetryInstalled();
 
-  const STATE_DOT: Record<string, string> = {
-    online: "var(--ok)",
-    degraded: "var(--wait)",
-    offline: "var(--dang)",
-    paused: "var(--ink-3)",
-    waiting: "var(--ink-3)",
-  };
+  // "Datadog · Sentry · 3 monitors · traces · Skylark Status (Checkout)".
+  const seenIn = [
+    ...svc.sightings.sources.map((s) => s.name),
+    ...(svc.monitors.length > 0
+      ? [t("services.monitorsCount", { count: svc.monitors.length })]
+      : []),
+    ...(svc.sightings.traces ? [t("services.traces")] : []),
+    ...svc.statusPages.map((p) => `${p.page} (${p.component})`),
+  ];
+  const alertsLine = [
+    ...svc.alertsBySource7d.map((s) => `${s.name} ${s.count}`),
+    t("services.alertsPaged", { count: svc.alertsPaged7d }),
+  ].join(" · ");
+  // A runbook attached to the whole workspace is listed on every service but
+  // belongs to none: only the service's own count in the eyebrow.
+  const ownRunbooks = runbooks.filter((r) => r.serviceId === svc.id);
 
   return (
     <div
-      className="oi-rise"
       style={{
         maxWidth: 1160,
         margin: "0 auto",
@@ -115,10 +98,12 @@ export default async function ServiceDetailPage({
         display: "flex",
         flexDirection: "column",
         gap: 14,
+        animation: "oi-rise .18s ease backwards",
       }}
     >
       <Link
         href="/app/services"
+        className="si-back"
         style={{
           fontSize: 12.5,
           color: "var(--ink-3)",
@@ -128,6 +113,7 @@ export default async function ServiceDetailPage({
       >
         ‹ {t("nav.services")}
       </Link>
+      <style>{`.si-back:hover{color:var(--brand)!important}`}</style>
 
       {exists === "1" && (
         <div
@@ -156,8 +142,7 @@ export default async function ServiceDetailPage({
               }}
             />
             <span style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-              {svc.confirmed ? t("services.confirmed") : t("services.seenOnly")} ·{" "}
-              {t("services.seenInCount", { count: svc.seenIn.length })}
+              {`${svc.confirmed ? t("services.confirmed") : t("services.seenOnly")} · ${t("services.seenInCount", { count: seenIn.length })}`}
             </span>
           </div>
           <h1
@@ -175,52 +160,20 @@ export default async function ServiceDetailPage({
           {svc.name && svc.name !== svc.key && (
             <div style={{ fontSize: 13.5, color: "var(--ink-2)", marginTop: -2 }}>{svc.name}</div>
           )}
-          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {Object.entries(svc.labels).map(([k, v]) => (
-              <span
-                key={k}
-                style={{
-                  fontFamily: "var(--mono)",
-                  fontSize: 11,
-                  background: "var(--sunk)",
-                  borderRadius: 5,
-                  padding: "2px 7px",
-                }}
-              >
-                {k}:{v}
-              </span>
-            ))}
-          </div>
+          <Labels serviceId={svc.id} labels={svc.labels} mayEdit={mayEdit} />
         </div>
-        {/* Only a service that was declared and never observed can be removed:
-            anything traffic names comes back the moment it is named again. */}
-        {mayManage && !svc.lastSeenAt && (
-          <form action={deleteService}>
-            <input type="hidden" name="serviceId" value={svc.id} />
-            <button
-              type="submit"
-              data-testid="service-delete"
-              className="oi-hover-dang"
-              title={t("services.deleteHint")}
-              style={{
-                height: 30,
-                padding: "0 12px",
-                border: "1px solid var(--line)",
-                borderRadius: 9,
-                background: "var(--panel)",
-                color: "var(--dang)",
-                fontSize: 12.5,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              {t("services.delete")}
-            </button>
-          </form>
-        )}
+        <HeaderActions
+          service={{ id: svc.id, key: svc.key }}
+          others={others}
+          mayManage={mayManage}
+          deletable={mayManage && !svc.lastSeenAt}
+        />
       </div>
 
-      {(error === "seen" || error === "has_runbook") && (
+      {(error === "seen" ||
+        error === "has_runbook" ||
+        error === "merge" ||
+        error === "runbook") && (
         <div
           role="alert"
           style={{
@@ -232,7 +185,13 @@ export default async function ServiceDetailPage({
             color: "var(--dang)",
           }}
         >
-          {error === "seen" ? t("services.deleteSeen") : t("services.deleteRunbook")}
+          {error === "seen"
+            ? t("services.deleteSeen")
+            : error === "has_runbook"
+              ? t("services.deleteRunbook")
+              : error === "merge"
+                ? t("services.mergeFailed")
+                : t("svc.runbooks.error")}
         </div>
       )}
 
@@ -245,18 +204,27 @@ export default async function ServiceDetailPage({
         }}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <div style={CARD}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+            <div style={KPI} data-testid="service-monitors">
               <div style={EYEBROW}>{t("services.kpiMonitors", { count: svc.monitors.length })}</div>
               {svc.monitors.length === 0 ? (
                 <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>
                   {t("services.noMonitors")}
                 </div>
               ) : (
-                svc.monitors.slice(0, 4).map((m) => (
-                  <div
+                svc.monitors.slice(0, 3).map((m) => (
+                  <Link
                     key={m.id}
-                    style={{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 6 }}
+                    href={`/app/monitors/${m.id}`}
+                    style={{
+                      fontSize: 12.5,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      color: "inherit",
+                      textDecoration: "none",
+                      minWidth: 0,
+                    }}
                   >
                     <span
                       style={{
@@ -268,379 +236,146 @@ export default async function ServiceDetailPage({
                       }}
                     />
                     <span
-                      style={{
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
+                      style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                     >
-                      {m.name}
+                      {`${m.name}${m.lastLatencyMs !== null && m.state !== "paused" ? ` · ${t.fmt.number(m.lastLatencyMs)} ms` : ""}`}
                     </span>
-                    {m.lastLatencyMs !== null && (
-                      <span style={{ color: "var(--ink-3)", fontFamily: "var(--mono)" }}>
-                        {m.lastLatencyMs} ms
-                      </span>
-                    )}
-                  </div>
+                  </Link>
                 ))
               )}
+              {svc.monitors.length > 3 && (
+                <Link
+                  href="/app/monitors"
+                  style={{
+                    fontSize: 12,
+                    color: "var(--brand)",
+                    fontWeight: 600,
+                    textDecoration: "none",
+                  }}
+                >
+                  {t("services.moreMonitors", { count: svc.monitors.length - 3 })}
+                </Link>
+              )}
             </div>
-            <div style={CARD}>
+            <div style={KPI} data-testid="service-alerts">
               <div style={EYEBROW}>{t("services.kpiAlerts")}</div>
               <div style={{ fontFamily: "var(--title)", fontSize: 22, fontWeight: 600 }}>
-                {svc.alerts7d}
+                {t.fmt.number(svc.alerts7d)}
               </div>
               <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                {t("services.alertsPaged", { count: svc.alertsPaged7d })}
+                {svc.alerts7d === 0 ? t("services.quietWeek") : alertsLine}
               </div>
             </div>
-            <div style={CARD}>
+            <div style={KPI} data-testid="service-incidents">
               <div style={EYEBROW}>{t("services.kpiIncidents")}</div>
               <div style={{ fontFamily: "var(--title)", fontSize: 22, fontWeight: 600 }}>
-                {svc.incidents.length}
+                {t.fmt.number(svc.incidents90d)}
               </div>
-              {svc.incidents.length > 0 && (
-                <div style={{ fontSize: 12, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {svc.incidents.slice(0, 3).map((i) => (
-                    <Link
-                      key={i.number}
-                      href={`/app/incidents/${i.number}`}
-                      style={{
-                        color: "var(--brand)",
-                        fontWeight: 600,
-                        textDecoration: "none",
-                        fontFamily: "var(--mono)",
-                      }}
-                    >
-                      INC-{i.number}
-                    </Link>
-                  ))}
+              {svc.incidents.length === 0 ? (
+                <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                  {t("services.noIncidents")}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: "var(--brand)", fontWeight: 600 }}>
+                  {svc.incidents.map((i, n) => (
+                    <span key={i.number}>
+                      {n > 0 && " · "}
+                      <Link
+                        href={`/app/incidents/${i.number}`}
+                        title={i.name}
+                        style={{ color: "inherit", textDecoration: "none" }}
+                      >
+                        {`INC-${i.number}`}
+                      </Link>
+                    </span>
+                  ))}{" "}
+                  <Link
+                    href="/app/incidents?tab=all"
+                    aria-label={t("services.allIncidents")}
+                    style={{ color: "inherit", textDecoration: "none" }}
+                  >
+                    →
+                  </Link>
                 </div>
               )}
             </div>
           </div>
 
-          {telemetryInstalled() && (
-            <div style={{ ...CARD, padding: "14px 16px", gap: 10 }} data-testid="service-telemetry">
-              <div style={{ display: "flex", alignItems: "center" }}>
-                <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t("svcTelemetry.title")}</span>
-              </div>
-              <ServiceTelemetry tenantId={tenant.id} service={svc.key} />
-            </div>
-          )}
+          <ServiceAtlasCard tenantId={tenant.id} serviceId={svc.id} />
 
-          <div style={{ ...CARD, padding: "14px 16px", gap: 10 }}>
-            <div style={{ display: "flex", alignItems: "center" }}>
-              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t("services.dependencies")}</span>
-            </div>
-            <Dependencies tenantId={tenant.id} service={svc.key} />
-          </div>
+          <Dependencies
+            tenantId={tenant.id}
+            service={{ id: svc.id, key: svc.key, aliases: svc.aliases }}
+            others={others}
+            mayEdit={mayEdit}
+          />
 
-          <div style={{ ...CARD, padding: "14px 16px" }} data-testid="runbooks">
-            <div style={EYEBROW}>{t("svc.runbooks.title")}</div>
-            {runbooks.length === 0 && (
-              <div style={{ fontSize: 12.5, color: "var(--ink-3)" }}>{t("svc.runbooks.none")}</div>
-            )}
-            {runbooks.map((r) => (
-              <div
-                key={r.id}
-                data-testid="runbook-row"
-                style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5 }}
-              >
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  {r.sourceUrl ? (
-                    <a
-                      href={r.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="oi-link"
-                      style={{ fontWeight: 600, display: "block" }}
-                    >
-                      {r.title}
-                    </a>
-                  ) : (
-                    <span style={{ fontWeight: 600, display: "block" }}>{r.title}</span>
-                  )}
-                  <span
-                    style={{ fontSize: 11.5, color: r.fetchError ? "var(--dang)" : "var(--ink-3)" }}
-                  >
-                    {r.fetchError
-                      ? t("svc.runbooks.fetchError", { error: r.fetchError })
-                      : r.fetchedAt
-                        ? t("svc.runbooks.fetchedAt", { when: t.fmt.relative(r.fetchedAt) })
-                        : t("svc.runbooks.pasted", { chars: r.content.length })}
-                  </span>
-                </span>
-                {mayManage && (
-                  <span style={{ display: "flex", gap: 4, flex: "none" }}>
-                    {r.sourceUrl && (
-                      <form action={refreshRunbookAction}>
-                        <input type="hidden" name="id" value={r.id} />
-                        <input type="hidden" name="serviceId" value={svc.id} />
-                        <button
-                          type="submit"
-                          className="oi-hover"
-                          title={t("svc.runbooks.refresh")}
-                          style={RUNBOOK_BTN}
-                        >
-                          ↻
-                        </button>
-                      </form>
-                    )}
-                    <form action={deleteRunbook}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <input type="hidden" name="serviceId" value={svc.id} />
-                      <button
-                        type="submit"
-                        data-testid="runbook-delete"
-                        className="oi-hover-dang"
-                        aria-label={t("common.delete")}
-                        style={{ ...RUNBOOK_BTN, color: "var(--dang)" }}
-                      >
-                        ✕
-                      </button>
-                    </form>
-                  </span>
-                )}
-              </div>
-            ))}
-            {mayManage && (
-              <form
-                action={createRunbook}
-                data-testid="runbook-form"
-                style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}
-              >
-                <input type="hidden" name="serviceId" value={svc.id} />
-                <input
-                  name="title"
-                  required
-                  placeholder={t("svc.runbooks.name")}
-                  className="oi-field"
-                  style={RUNBOOK_FIELD}
-                />
-                <input
-                  name="sourceUrl"
-                  type="url"
-                  placeholder={t("svc.runbooks.url")}
-                  className="oi-field"
-                  style={{ ...RUNBOOK_FIELD, fontFamily: "var(--mono)", fontSize: 12 }}
-                />
-                <textarea
-                  name="content"
-                  rows={3}
-                  placeholder={t("svc.runbooks.content")}
-                  className="oi-field"
-                  style={{
-                    ...RUNBOOK_FIELD,
-                    height: "auto",
-                    padding: "8px 10px",
-                    resize: "vertical",
-                  }}
-                />
-                {error === "runbook" && (
-                  <div role="alert" style={{ fontSize: 12, color: "var(--dang)" }}>
-                    {t("svc.runbooks.error")}
-                  </div>
-                )}
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 11.5, color: "var(--ink-3)", flex: 1 }}>
-                    {t("svc.runbooks.hint")}
-                  </span>
-                  <button
-                    type="submit"
-                    data-testid="runbook-save"
-                    className="oi-hover-brand-2"
-                    style={{
-                      height: 28,
-                      padding: "0 11px",
-                      borderRadius: 8,
-                      background: "var(--brand)",
-                      color: "var(--on-brand)",
-                      border: 0,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {t("svc.runbooks.add")}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
+          {installed && <ServiceTelemetry tenantId={tenant.id} names={[svc.key, ...svc.aliases]} />}
 
-          <div style={{ ...CARD, padding: "14px 16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ color: "var(--viol)" }}>✦</span>
-              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{t("services.context")}</span>
-            </div>
-            <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--ink-2)" }}>
-              {aiConfigured() ? t("services.contextEmpty") : t("services.contextUnavailable")}
-            </div>
-          </div>
+          <ContextCard tenantId={tenant.id} serviceId={svc.id} />
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ ...CARD, padding: "14px 16px" }}>
-            <div style={EYEBROW}>{t("services.owner")}</div>
-            {svc.ownerTeamName ? (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                  <span
-                    style={{
-                      width: 30,
-                      height: 30,
-                      borderRadius: 9,
-                      background: "var(--brand-t)",
-                      color: "var(--brand)",
-                      display: "grid",
-                      placeItems: "center",
-                      fontSize: 11,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {svc.ownerTeamName.slice(0, 2).toUpperCase()}
-                  </span>
-                  <div style={{ lineHeight: 1.25, flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600 }}>{svc.ownerTeamName}</div>
-                    <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                      {svc.ownerPolicyName
-                        ? t("services.pagesPolicy", { policy: svc.ownerPolicyName })
-                        : t("services.noPolicy")}
-                      {svc.ownerChannel ? ` · ${svc.ownerChannel}` : ""}
-                    </div>
-                  </div>
-                  {/* The undo of the click that assigned it. Handing a service
-                      to the wrong team was a one-way gesture until now. */}
-                  {mayEdit && (
-                    <form action={clearOwner}>
-                      <input type="hidden" name="serviceId" value={svc.id} />
-                      <button
-                        type="submit"
-                        data-testid="owner-clear"
-                        aria-label={t("services.clearOwner")}
-                        title={t("services.clearOwner")}
-                        className="oi-hover"
-                        style={{
-                          width: 24,
-                          height: 24,
-                          border: "1px solid var(--line)",
-                          borderRadius: 7,
-                          background: "var(--panel)",
-                          color: "var(--ink-3)",
-                          display: "grid",
-                          placeItems: "center",
-                          fontSize: 11,
-                          cursor: "pointer",
-                          flex: "none",
-                        }}
-                      >
-                        ✕
-                      </button>
-                    </form>
-                  )}
-                </div>
-                {!svc.ownerPolicyName && mayEdit && paths.length > 0 && svc.ownerTeamId && (
-                  <form
-                    action={setTeamPolicy}
-                    style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 2 }}
-                  >
-                    <input type="hidden" name="serviceId" value={svc.id} />
-                    <input type="hidden" name="teamId" value={svc.ownerTeamId} />
-                    <label style={{ fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.4 }}>
-                      {t("services.setPolicy")}
-                    </label>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <select
-                        name="pathId"
-                        defaultValue={paths[0]!.id}
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          height: 30,
-                          border: "1px solid var(--line)",
-                          borderRadius: 8,
-                          background: "var(--panel)",
-                          color: "var(--ink)",
-                          fontSize: 12.5,
-                          padding: "0 7px",
-                        }}
-                      >
-                        {paths.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="submit"
-                        className="oi-hover-brand-2"
-                        style={{
-                          height: 30,
-                          padding: "0 11px",
-                          border: "none",
-                          borderRadius: 8,
-                          background: "var(--brand)",
-                          color: "var(--on-brand)",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {t("services.usePolicy")}
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </>
-            ) : (
-              <div style={{ fontSize: 12.5, color: "var(--wait)", fontWeight: 600 }}>
-                {t("services.noOwner")}
-              </div>
-            )}
-            {mayEdit && teams.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
-                {teams
-                  .filter((x) => x.id !== svc.ownerTeamId)
-                  .slice(0, 3)
-                  .map((x) => (
-                    <form key={x.id} action={assignOwner}>
-                      <input type="hidden" name="serviceId" value={svc.id} />
-                      <input type="hidden" name="teamId" value={x.id} />
-                      <button
-                        type="submit"
-                        className="oi-hover-edge"
-                        style={{
-                          height: 28,
-                          padding: "0 10px",
-                          border: "1px solid var(--line)",
-                          borderRadius: 8,
-                          background: "var(--panel)",
-                          color: "var(--ink-2)",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {x.name}
-                      </button>
-                    </form>
-                  ))}
+          <OwnerCard
+            service={{ id: svc.id, ownerTeamId: svc.ownerTeamId }}
+            owner={
+              svc.ownerTeamName
+                ? {
+                    name: svc.ownerTeamName,
+                    policyName: svc.ownerPolicyName,
+                    channel: svc.ownerChannel,
+                  }
+                : null
+            }
+            teams={teams.map((x) => ({ id: x.id, name: x.name }))}
+            paths={paths}
+            mayEdit={mayEdit}
+          />
+
+          <div style={CARD} data-testid="runbooks">
+            <div style={EYEBROW}>{t("services.kpiRunbooks", { count: ownRunbooks.length })}</div>
+            <RunbookList
+              serviceId={svc.id}
+              mayManage={mayManage}
+              runbooks={runbooks.map((r) => ({
+                id: r.id,
+                title: r.title,
+                sourceUrl: r.sourceUrl,
+                content: r.content,
+                fetchError: r.fetchError,
+                fetchedAt: r.fetchedAt ? r.fetchedAt.toISOString() : null,
+                workspaceWide: r.serviceId === null,
+              }))}
+            />
+          </div>
+
+          <div style={CARD} data-testid="service-seen-in">
+            <div style={EYEBROW}>{t("services.seenIn")}</div>
+            <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--ink-2)" }}>
+              {seenIn.length > 0 ? seenIn.join(" · ") : t("services.seenNowhere")}
+            </div>
+            {svc.aliases.length > 0 && (
+              <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                {t("services.alsoNamed")}{" "}
+                <span style={{ fontFamily: "var(--mono)" }}>{svc.aliases.join(", ")}</span>
               </div>
             )}
           </div>
 
-          <div style={{ ...CARD, padding: "14px 16px" }}>
-            <div style={EYEBROW}>{t("services.seenIn")}</div>
-            <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "var(--ink-2)" }}>
-              {svc.seenIn.length > 0 ? svc.seenIn.join(" · ") : t("services.seenNowhere")}
+          {!installed && (
+            <div
+              style={{
+                background: "var(--sunk)",
+                borderRadius: "var(--radius-card)",
+                padding: "12px 14px",
+                fontSize: 12,
+                color: "var(--ink-2)",
+                lineHeight: 1.5,
+              }}
+            >
+              {t("services.dependenciesNoTelemetry")}
             </div>
-            {svc.lastSeenAt && (
-              <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                {t("services.lastSignal", { when: t.fmt.relative(svc.lastSeenAt) })}
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </div>
     </div>

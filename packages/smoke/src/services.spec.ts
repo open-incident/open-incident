@@ -50,6 +50,7 @@ test.describe("Services", () => {
     // A runbook attached to it blocks the removal rather than being orphaned:
     // the foreign key would null its service and it would vanish from every
     // screen while staying in the assistant's index.
+    await page.getByTestId("runbook-open").click();
     const book = page.getByTestId("runbook-form");
     await book.locator('input[name="title"]').fill("Smoke runbook");
     await book.locator('textarea[name="content"]').fill("Restart the relay, then check the queue.");
@@ -65,6 +66,7 @@ test.describe("Services", () => {
       .filter({ hasText: "Smoke runbook" })
       .getByRole("button")
       .click();
+    await page.getByTestId("runbook-detail").getByTestId("runbook-delete").click();
     await page.waitForURL(/\/app\/services\/[0-9a-f-]{36}$/);
 
     // A typed key is the one field that cannot be edited, so it can be undone.
@@ -75,9 +77,43 @@ test.describe("Services", () => {
     // A service traffic has named keeps its remove button hidden: deleting it
     // would achieve nothing, the next signal carrying the name recreates it.
     await page.goto("/app/services");
-    await page.getByText("checkout-api").first().click();
+    await page.getByTestId("service-row").filter({ hasText: "checkout-api" }).click();
     await page.waitForURL(/\/app\/services\/[0-9a-f-]{36}$/);
     await expect(page.getByTestId("service-delete")).toHaveCount(0);
+    await signOut(page);
+  });
+
+  test("a label is added and removed, a seen service gets an owner and gives it back", async ({
+    page,
+  }) => {
+    await signIn(page, MEMBERS.owner);
+    await page.goto("/app/services");
+    await page.getByTestId("service-row").filter({ hasText: "checkout-api" }).click();
+    await page.waitForURL(/\/app\/services\/[0-9a-f-]{36}$/);
+    const label = `smoke:${stamp}`;
+    await page.getByTestId("label-add").click();
+    await page.getByTestId("label-input").fill(label);
+    await page.getByTestId("label-input").press("Enter");
+    const chip = page.getByTestId("service-label").filter({ hasText: label });
+    await expect(chip).toBeVisible();
+    await chip.hover();
+    await chip.getByRole("button").click();
+    await expect(chip).toHaveCount(0);
+
+    // Seen in traffic: one click gives an owner, the row turns into its
+    // receipt, and Undo puts the service back where it was.
+    await page.goto("/app/services?tab=seen");
+    const row = page.getByTestId("seen-row").first();
+    if ((await page.getByTestId("seen-assign").count()) > 0) {
+      const name = (await row.locator("a").first().textContent())?.trim() ?? "";
+      await row.getByTestId("seen-assign").first().click();
+      await expect(row.getByTestId("seen-done")).toBeVisible();
+      await expect(page.getByTestId("services-tab-conf")).toBeVisible();
+      await row.getByTestId("seen-undo").click();
+      await expect(
+        page.getByTestId("seen-row").filter({ hasText: name }).getByTestId("seen-assign").first(),
+      ).toBeVisible();
+    }
     await signOut(page);
   });
 });

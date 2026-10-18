@@ -30,7 +30,9 @@ Underneath, the product asks one question everywhere: _may this member do this h
 
 Nothing has to be declared before the routing works. A route says who to page — an escalation path, chosen once — and a fresh workspace pages someone the moment a person answers **Who should we page?** on the welcome screen.
 
-A **service** is never created by hand: it appears under **Services** the first time a signal names it — a label on an alert, a monitor. Its **key** _is_ its name (`checkout-api`); there is no second field to fill in. It waits in **Seen in traffic** until a member gives it an **owner team**, which confirms it in the same gesture.
+A **service** is never created by hand: it appears under **Services** the first time a signal names it — a label on an alert, a monitor. Its **key** _is_ its name (`checkout-api`); there is no second field to fill in. It waits in **Seen in traffic** until a member gives it an **owner team**, which confirms it in the same gesture. The suggestion beside it is read from what happened — the team whose members acknowledged its alerts, the owner of the service it talks to in the traces, an owned service sharing its repository — and after the click the row stays as a receipt with **Undo**.
+
+Two names of one thing — `storefront` in the traces, `web-storefront` in the alerts — are joined with **Merge with…** on the service's page: the name you drop keeps being recognised and counts for the one you keep. The same page carries the service's **labels** (`+ label`, written `key:value`), its **runbooks** (**Add runbook**), what Atlas may do on it, its **dependencies** — observed in the traces, which you confirm or hide, or declared by hand — its telemetry figures when the module is installed, and a **Context** card quoting what the records say about it, each statement with its source.
 
 A **team** is a row of its own: its members, a chat channel, and the escalation path it is paged through. Teams live in the **Services** area, and the enterprise edition mirrors your identity provider's groups onto them through [provisioning](scim).
 

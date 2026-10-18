@@ -10,18 +10,20 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   atlasDocuments,
   escalationPaths,
   runbooks,
+  serviceLinks,
   services,
   teams,
   withTenant,
 } from "@openincident/db";
 import { indexRunbook, refreshRunbook } from "@openincident/ai";
 import { recordAudit } from "@/lib/audit";
+import { observeService } from "@/lib/services";
 import { requireManager, requireResponder } from "@/lib/session";
 
 const uuid = z.string().uuid();
@@ -125,6 +127,12 @@ export async function assignOwner(formData: FormData) {
       .set({ ownerTeamId: team.id, confirmed: true, updatedAt: new Date() })
       .where(and(eq(services.tenantId, current.tenant.id), eq(services.id, serviceId)))
       .returning({ key: services.key });
+    // The names merged into it page the same team: routing reads the owner off
+    // whichever name the alert carries.
+    await tx
+      .update(services)
+      .set({ ownerTeamId: team.id, updatedAt: new Date() })
+      .where(and(eq(services.tenantId, current.tenant.id), eq(services.mergedIntoId, serviceId)));
     if (svc) {
       await recordAudit(tx, current, "config", "service.owner_set", {
         service: svc.key,
@@ -133,6 +141,7 @@ export async function assignOwner(formData: FormData) {
     }
   });
   revalidatePath("/app/services");
+  revalidatePath(`/app/services/${serviceId}`);
   revalidatePath("/app");
 }
 
@@ -162,6 +171,11 @@ export async function deleteService(formData: FormData) {
       .where(and(eq(runbooks.tenantId, current.tenant.id), eq(runbooks.serviceId, serviceId)))
       .limit(1);
     if (book) return "has_runbook" as const;
+    // A name merged into it becomes a service of its own again.
+    await tx
+      .update(services)
+      .set({ mergedIntoId: null, updatedAt: new Date() })
+      .where(and(eq(services.tenantId, current.tenant.id), eq(services.mergedIntoId, serviceId)));
     await tx.delete(services).where(eq(services.id, serviceId));
     await recordAudit(tx, current, "config", "service.deleted", { service: svc.key });
     return "deleted" as const;
@@ -190,10 +204,15 @@ export async function clearOwner(formData: FormData) {
       .set({ ownerTeamId: null, confirmed: false, updatedAt: new Date() })
       .where(and(eq(services.tenantId, current.tenant.id), eq(services.id, serviceId)))
       .returning({ key: services.key });
+    await tx
+      .update(services)
+      .set({ ownerTeamId: null, updatedAt: new Date() })
+      .where(and(eq(services.tenantId, current.tenant.id), eq(services.mergedIntoId, serviceId)));
     if (svc)
       await recordAudit(tx, current, "config", "service.owner_cleared", { service: svc.key });
   });
   revalidatePath("/app/services");
+  revalidatePath(`/app/services/${serviceId}`);
   revalidatePath("/app");
 }
 
@@ -307,4 +326,262 @@ export async function refreshRunbookAction(formData: FormData) {
   await refreshRunbook(current.tenant.id, id);
   revalidatePath(`/app/services/${serviceId}`);
   redirect(`/app/services/${serviceId}`);
+}
+
+/* ---------- Labels ---------- */
+
+const labelKey = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9][a-z0-9_./-]{0,39}$/);
+// A control character in a label is not a label.
+const labelValue = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  // eslint-disable-next-line no-control-regex
+  .refine((v) => !/[\u0000-\u001f]/.test(v));
+
+/**
+ * A label on the service, written `key:value` the way the list shows it. A key
+ * that already exists takes the new value: a service has one tier, not two.
+ */
+export async function setLabel(formData: FormData): Promise<{ ok: boolean }> {
+  const current = await requireResponder();
+  const serviceId = uuid.parse(formData.get("serviceId"));
+  const raw = String(formData.get("label") ?? "");
+  const at = raw.indexOf(":");
+  const key = labelKey.safeParse(at > 0 ? raw.slice(0, at) : "");
+  const value = labelValue.safeParse(at > 0 ? raw.slice(at + 1) : "");
+  if (!key.success || !value.success) return { ok: false };
+  await withTenant(current.tenant.id, async (tx) => {
+    const [svc] = await tx
+      .update(services)
+      .set({
+        labels: sql`${services.labels} || jsonb_build_object(${key.data}::text, ${value.data}::text)`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(services.tenantId, current.tenant.id), eq(services.id, serviceId)))
+      .returning({ key: services.key });
+    if (svc)
+      await recordAudit(tx, current, "config", "service.label_set", {
+        service: svc.key,
+        label: `${key.data}:${value.data}`,
+      });
+  });
+  revalidatePath(`/app/services/${serviceId}`);
+  revalidatePath("/app/services");
+  return { ok: true };
+}
+
+export async function removeLabel(formData: FormData) {
+  const current = await requireResponder();
+  const serviceId = uuid.parse(formData.get("serviceId"));
+  const key = labelKey.parse(formData.get("key"));
+  await withTenant(current.tenant.id, async (tx) => {
+    const [svc] = await tx
+      .update(services)
+      .set({ labels: sql`${services.labels} - ${key}::text`, updatedAt: new Date() })
+      .where(and(eq(services.tenantId, current.tenant.id), eq(services.id, serviceId)))
+      .returning({ key: services.key });
+    if (svc)
+      await recordAudit(tx, current, "config", "service.label_removed", {
+        service: svc.key,
+        label: key,
+      });
+  });
+  revalidatePath(`/app/services/${serviceId}`);
+  revalidatePath("/app/services");
+}
+
+/* ---------- Merging two names of one service ---------- */
+
+/** Every table that points at a service, moved over when two names become one. */
+const SERVICE_REFERENCES = [
+  "incidents",
+  "monitors",
+  "change_events",
+  "heartbeats",
+  "runbooks",
+  "status_page_components",
+  "slos",
+  "rum_applications",
+  "atlas_actions",
+] as const;
+
+/**
+ * `storefront` in the traces and `web-storefront` in the alerts are one thing.
+ *
+ * The folded name keeps its row, marked as merged, so the next signal carrying
+ * it is still recognised and counts for the kept service — deleting it would
+ * only have it recreated by that signal. Everything that pointed at it moves:
+ * incidents, monitors, runbooks, status page components, changes. It is paged
+ * through the kept service's owner from now on.
+ */
+export async function mergeServices(formData: FormData) {
+  const current = await requireManager();
+  const keepId = uuid.parse(formData.get("keepId"));
+  const foldId = uuid.parse(formData.get("foldId"));
+  if (keepId === foldId) redirect(`/app/services/${keepId}`);
+  const tenantId = current.tenant.id;
+  const done = await withTenant(tenantId, async (tx) => {
+    const both = await tx
+      .select()
+      .from(services)
+      .where(
+        and(eq(services.tenantId, tenantId), or(eq(services.id, keepId), eq(services.id, foldId))),
+      );
+    const keep = both.find((s) => s.id === keepId);
+    const fold = both.find((s) => s.id === foldId);
+    if (!keep || !fold || keep.mergedIntoId || fold.mergedIntoId) return false;
+
+    for (const table of SERVICE_REFERENCES) {
+      await tx.execute(
+        sql`update ${sql.raw(`app.${table}`)} set service_id = ${keepId}
+             where tenant_id = ${tenantId} and service_id = ${foldId}`,
+      );
+    }
+    // Links: re-pointed, except those that would duplicate one the kept
+    // service already has or would make it depend on itself.
+    await tx.execute(sql`
+      delete from app.service_links l
+       where l.tenant_id = ${tenantId}
+         and (l.from_service_id = ${foldId} or l.to_service_id = ${foldId})
+         and (
+           (case when l.from_service_id = ${foldId} then ${keepId}::uuid else l.from_service_id end)
+             = (case when l.to_service_id = ${foldId} then ${keepId}::uuid else l.to_service_id end)
+           or exists (
+             select 1 from app.service_links k
+              where k.tenant_id = ${tenantId}
+                and k.from_service_id = (case when l.from_service_id = ${foldId} then ${keepId}::uuid else l.from_service_id end)
+                and k.to_service_id = (case when l.to_service_id = ${foldId} then ${keepId}::uuid else l.to_service_id end)
+           )
+         )`);
+    await tx
+      .update(serviceLinks)
+      .set({ fromServiceId: keepId, updatedAt: new Date() })
+      .where(and(eq(serviceLinks.tenantId, tenantId), eq(serviceLinks.fromServiceId, foldId)));
+    await tx
+      .update(serviceLinks)
+      .set({ toServiceId: keepId, updatedAt: new Date() })
+      .where(and(eq(serviceLinks.tenantId, tenantId), eq(serviceLinks.toServiceId, foldId)));
+
+    const owner = keep.ownerTeamId ?? fold.ownerTeamId;
+    const latest = (a: Date | null, b: Date | null) => (!a ? b : !b ? a : a > b ? a : b);
+    await tx
+      .update(services)
+      .set({
+        ownerTeamId: owner,
+        confirmed: keep.confirmed || fold.confirmed || owner !== null,
+        // The kept service's own labels win a disagreement.
+        labels: { ...fold.labels, ...keep.labels },
+        seenIn: [...new Set([...keep.seenIn, ...fold.seenIn])].slice(0, 12),
+        lastSeenAt: latest(keep.lastSeenAt, fold.lastSeenAt),
+        telemetryLastSeenAt: latest(keep.telemetryLastSeenAt, fold.telemetryLastSeenAt),
+        telemetryFirstSeenAt:
+          keep.telemetryFirstSeenAt && fold.telemetryFirstSeenAt
+            ? keep.telemetryFirstSeenAt < fold.telemetryFirstSeenAt
+              ? keep.telemetryFirstSeenAt
+              : fold.telemetryFirstSeenAt
+            : (keep.telemetryFirstSeenAt ?? fold.telemetryFirstSeenAt),
+        updatedAt: new Date(),
+      })
+      .where(eq(services.id, keepId));
+    // The folded name, and any name that had been merged into it.
+    await tx
+      .update(services)
+      .set({ mergedIntoId: keepId, ownerTeamId: owner, confirmed: true, updatedAt: new Date() })
+      .where(
+        and(
+          eq(services.tenantId, tenantId),
+          or(eq(services.id, foldId), eq(services.mergedIntoId, foldId)),
+        ),
+      );
+    await recordAudit(tx, current, "config", "service.merged", {
+      service: keep.key,
+      merged: fold.key,
+    });
+    return true;
+  });
+  revalidatePath("/app/services");
+  revalidatePath("/app");
+  redirect(done ? `/app/services/${keepId}` : `/app/services/${keepId}?error=merge`);
+}
+
+/* ---------- Dependencies ---------- */
+
+/**
+ * What a person says about a call between two services: it is real and
+ * belongs on the map (`declared`), it is noise to hide (`hidden`), or the
+ * decision is taken back (`clear`). The other side may be a name only the
+ * traces know: it becomes a service the moment someone settles a call to it,
+ * exactly as it would have the day its first alert arrived.
+ */
+export async function setDependency(formData: FormData) {
+  const current = await requireResponder();
+  const parsed = z
+    .object({
+      serviceId: uuid,
+      otherId: uuid.or(z.literal("")).optional(),
+      otherKey: z.string().trim().max(120).optional(),
+      direction: z.enum(["upstream", "downstream"]),
+      state: z.enum(["declared", "hidden", "clear"]),
+    })
+    .safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return;
+  const input = parsed.data;
+  const tenantId = current.tenant.id;
+  await withTenant(tenantId, async (tx) => {
+    const [self] = await tx
+      .select({ id: services.id, key: services.key })
+      .from(services)
+      .where(and(eq(services.tenantId, tenantId), eq(services.id, input.serviceId)));
+    if (!self) return;
+    let otherId = input.otherId || null;
+    if (otherId) {
+      const [other] = await tx
+        .select({ id: services.id, mergedIntoId: services.mergedIntoId })
+        .from(services)
+        .where(and(eq(services.tenantId, tenantId), eq(services.id, otherId)));
+      otherId = other ? (other.mergedIntoId ?? other.id) : null;
+    } else if (input.otherKey) {
+      otherId = await observeService(tx, tenantId, input.otherKey, "telemetry");
+    }
+    if (!otherId || otherId === self.id) return;
+    const fromServiceId = input.direction === "downstream" ? self.id : otherId;
+    const toServiceId = input.direction === "downstream" ? otherId : self.id;
+    if (input.state === "clear") {
+      await tx
+        .delete(serviceLinks)
+        .where(
+          and(
+            eq(serviceLinks.tenantId, tenantId),
+            eq(serviceLinks.fromServiceId, fromServiceId),
+            eq(serviceLinks.toServiceId, toServiceId),
+          ),
+        );
+    } else {
+      await tx
+        .insert(serviceLinks)
+        .values({
+          tenantId,
+          fromServiceId,
+          toServiceId,
+          state: input.state,
+          createdByMemberId: current.member.id,
+        })
+        .onConflictDoUpdate({
+          target: [serviceLinks.tenantId, serviceLinks.fromServiceId, serviceLinks.toServiceId],
+          set: { state: input.state, updatedAt: new Date() },
+        });
+    }
+    await recordAudit(tx, current, "config", `service.dependency_${input.state}`, {
+      service: self.key,
+      direction: input.direction,
+      other: otherId,
+    });
+  });
+  revalidatePath(`/app/services/${input.serviceId}`);
 }
