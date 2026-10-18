@@ -82,11 +82,23 @@ export function managePermissionForPath(pathname: string): Permission {
     if (["general", "working-hours", "brand", "billing"].includes(settings))
       return "settings.workspace";
     if (["members", "roles", "sso", "scim"].includes(settings)) return "settings.members";
-    if (["types", "fields", "announcements", "post-incident"].includes(settings))
+    if (["types", "severities", "fields", "announcements", "post-incident"].includes(settings))
       return "settings.response";
-    if (["alert-sources", "alert-routes", "alert-priorities", "heartbeats"].includes(settings))
+    if (
+      [
+        "alert-sources",
+        "alert-routes",
+        "alert-priorities",
+        "alert-attributes",
+        "rules",
+        "alert-severities",
+        "labels",
+        "heartbeats",
+      ].includes(settings)
+    )
       return "settings.alerting";
-    if (["integrations", "api", "ai", "qa"].includes(settings)) return "settings.platform";
+    if (["integrations", "api", "ai", "qa", "observability", "chat", "migrate"].includes(settings))
+      return "settings.platform";
     if (settings === "audit") return "audit.view";
     return "settings.workspace";
   }

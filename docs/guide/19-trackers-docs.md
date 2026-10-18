@@ -7,7 +7,7 @@ summary: Follow-ups exported to GitHub, GitLab, Jira or Linear with their status
 
 ## Issue trackers
 
-Connected per workspace in **Settings → Integrations**, one card per tracker. Credentials are **tested before being saved** (a wrong token saves nothing), encrypted at rest and never shown again.
+Connected per workspace in **Settings → Integrations**, one row per tool: **Connect** opens a dialog with the tracker's fields, **Manage** changes them without retyping the secret, syncs the statuses now or disconnects. Credentials are **tested before being saved** (a wrong token saves nothing), encrypted at rest and never shown again.
 
 | Tracker           | Fields                                                                               | Token                                                             |
 | ----------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |

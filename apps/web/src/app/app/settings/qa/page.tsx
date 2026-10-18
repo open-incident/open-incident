@@ -1,283 +1,179 @@
-import Link from "next/link";
 import { listQaRuns, probeQaTargets, qaCapabilities } from "@openincident/qa";
 import type { QaSuite } from "@openincident/db";
 import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
+import {
+  Chip,
+  FormCard,
+  ListCard,
+  Note,
+  ReadOnly,
+  Row,
+  SettingsPage,
+  Unavailable,
+  pageActionStyle,
+  type ChipSpec,
+} from "@/components/settings/template";
 import { runQaSuite } from "./actions";
 import { AutoRefresh } from "./refresh";
-import { SUITE_ORDER, button, card, chip, durationLabel, statusTone } from "./shared";
+import { SUITE_ORDER, durationLabel, isAlive, statusDot, statusTone } from "./shared";
+import { FlashOnce, SuiteRow } from "./suite-row";
 
 /**
- * Settings → QA. The repository's own test suites, run from the admin by the
- * worker on the machine that has the checkout: Playwright smoke, vitest,
- * typecheck, eslint, prettier. Owner-only; every run is a row with its log.
+ * Settings › Diagnostics (design V2): the repository's own test suites —
+ * Playwright smoke, vitest, typecheck, eslint, prettier — run by the worker
+ * on the machine that hosts this instance. One row per suite with its last
+ * run; the row opens that run (its log, what failed). Owners only: a run
+ * seeds and purges workspaces and drives the instance.
  */
 export default async function QaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; suite?: string }>;
+  searchParams: Promise<{ error?: string; suite?: string; queued?: string }>;
 }) {
   const { tenant, member } = await requireMember();
   const t = await getT();
   const params = await searchParams;
-  if (member.role !== "owner") {
+  const page = {
+    home: t("settingsV2.home"),
+    crumb: t("settingsV2.group.platform"),
+    title: t("settingsV2.entry.qa"),
+    testId: "settings-qa",
+  };
+  if (member.role !== "owner")
     return (
-      <section style={{ flex: 1, display: "grid", placeItems: "center", padding: 32 }}>
-        <p
-          data-testid="qa-owner-only"
-          style={{ fontSize: 13.5, color: "var(--ink-2)", maxWidth: 420, textAlign: "center" }}
-        >
-          {t("qa.ownerOnly")}
-        </p>
-      </section>
+      <SettingsPage {...page} lead={t("settingsV2.qa.leadOwners")}>
+        <Unavailable
+          testId="qa-owner-only"
+          title={t("settingsV2.ownersOnly")}
+          text={t("settingsV2.qa.ownersText")}
+        />
+      </SettingsPage>
     );
-  }
+
   const caps = qaCapabilities();
   const probes = caps.repoRoot ? await probeQaTargets(caps) : { web: false, mailpit: false };
-  const runs = await listQaRuns(tenant.id, 40);
-  const lastOf = (suite: QaSuite) => runs.find((r) => r.suite === suite);
-  const active = runs.some((r) => r.status === "queued" || r.status === "running");
-  const suiteLabel = (s: QaSuite) => t(`qa.suite.${s}.name`);
+  const runs = await listQaRuns(tenant.id, 60);
+  const active = runs.some((r) => isAlive(r.status));
+  const suiteName = (s: QaSuite) => t(`settingsV2.qa.suite.${s}`);
   const statusLabel = (s: (typeof runs)[number]["status"]) => t(`qa.status.${s}`);
-  const ok = (v: boolean) => (
-    <span
-      style={chip(
-        v ? { bg: "var(--ok-t)", ink: "var(--ok)" } : { bg: "var(--dang-t)", ink: "var(--dang)" },
-      )}
-    >
-      {v ? t("qa.prereq.ok") : t("qa.prereq.missing")}
-    </span>
+
+  const rows = SUITE_ORDER.map((suite) => {
+    const last = runs.find((r) => r.suite === suite) ?? null;
+    let sub: string;
+    if (!last) sub = t("settingsV2.qa.never");
+    else if (last.status === "queued")
+      sub = t("settingsV2.qa.queuedAt", { when: t.fmt.relative(last.queuedAt) });
+    else if (last.status === "running")
+      sub = t("settingsV2.qa.runningFor", { duration: durationLabel(last.startedAt, null) });
+    else {
+      const when = t.fmt.relative(last.finishedAt ?? last.startedAt ?? last.queuedAt);
+      const duration = durationLabel(last.startedAt, last.finishedAt);
+      const s = last.summary;
+      if (last.status === "cancelled") sub = t("settingsV2.qa.subCancelled", { when });
+      else if (last.status === "error") sub = t("settingsV2.qa.subError", { when });
+      else if (s.total !== undefined && (s.passed ?? 0) >= s.total)
+        sub = t("settingsV2.qa.subAll", { count: s.total, duration, when });
+      else if (s.total !== undefined)
+        sub = t("settingsV2.qa.subSome", { passed: s.passed ?? 0, total: s.total, duration, when });
+      else if (s.failed) sub = t("settingsV2.qa.subFailed", { count: s.failed, duration, when });
+      else sub = t("settingsV2.qa.subPlain", { duration, when });
+    }
+    const chip: ChipSpec | null = last
+      ? { label: statusLabel(last.status), tone: statusTone(last.status), testId: "qa-last-status" }
+      : null;
+    return {
+      suite,
+      name: suiteName(suite),
+      dot: statusDot(last?.status ?? null),
+      sub,
+      chip,
+      lastId: last?.id ?? null,
+      canRun: Boolean(caps.repoRoot) && !(last && isAlive(last.status)),
+    };
+  });
+
+  const ready = (ok: boolean) => (
+    <Chip tone={ok ? "ok" : "dang"}>
+      {ok ? t("settingsV2.qa.ready") : t("settingsV2.qa.missing")}
+    </Chip>
   );
+  const error =
+    params.error === "busy"
+      ? t("qa.error.busy", { suite: params.suite ? suiteName(params.suite as QaSuite) : "" })
+      : params.error === "queue"
+        ? t("qa.error.queue")
+        : params.error
+          ? t("qa.error.unavailable")
+          : null;
 
   return (
-    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+    <SettingsPage
+      {...page}
+      lead={t("settingsV2.qa.lead")}
+      actions={
+        <form action={runQaSuite}>
+          <input type="hidden" name="suite" value="all" />
+          <button
+            type="submit"
+            data-testid="qa-run-all"
+            disabled={!caps.repoRoot || active}
+            className="oi-hover-brand-2"
+            style={{ ...pageActionStyle(true), opacity: !caps.repoRoot || active ? 0.5 : 1 }}
+          >
+            {t("settingsV2.qa.runAll")}
+          </button>
+        </form>
+      }
+    >
       <AutoRefresh active={active} everyMs={4_000} />
-      <div>
-        <h1 className="oi-title" style={{ margin: 0 }}>
-          {t("qa.title")}
-        </h1>
-        <p className="oi-lead" style={{ marginTop: 6 }}>
-          {t("qa.lead")}
-        </p>
-      </div>
-
-      {params.error && (
-        <p
-          role="alert"
-          data-testid="qa-error"
-          style={{
-            margin: 0,
-            padding: "10px 12px",
-            borderRadius: 10,
-            background: "var(--dang-t)",
-            border: "1px solid var(--dang)",
-            color: "var(--dang)",
-            fontSize: 13,
-          }}
-        >
-          {params.error === "busy"
-            ? t("qa.error.busy", { suite: params.suite ? suiteLabel(params.suite as QaSuite) : "" })
-            : params.error === "queue"
-              ? t("qa.error.queue")
-              : t("qa.error.unavailable")}
-        </p>
+      <FlashOnce
+        message={
+          params.queued
+            ? t("settingsV2.qa.queuedFlash", { count: Number(params.queued) || 0 })
+            : null
+        }
+      />
+      {error && (
+        <Note tone="dang" testId="qa-error">
+          {error}
+        </Note>
       )}
-
-      <section data-testid="qa-prereqs" style={card}>
-        <div className="oi-eyebrow">{t("qa.prereq.title")}</div>
+      <ListCard title={t("settingsV2.qa.suites")} foot={t("settingsV2.qa.foot")} testId="qa-suites">
+        {rows.map((r) => (
+          <SuiteRow key={r.suite} {...r} />
+        ))}
+      </ListCard>
+      <div data-testid="qa-prereqs">
         {!caps.repoRoot ? (
-          <div
-            data-testid="qa-unavailable"
-            style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.55 }}
-          >
-            <strong>{t("qa.unavailable.title")}</strong> — {t("qa.unavailable.body")}
-          </div>
+          <Unavailable
+            testId="qa-unavailable"
+            title={t("settingsV2.unavailable")}
+            text={t("qa.unavailable.body")}
+          />
         ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "auto 1fr auto",
-              gap: "6px 14px",
-              fontSize: 13,
-              alignItems: "center",
-            }}
-          >
-            <span style={{ color: "var(--ink-3)" }}>{t("qa.prereq.repo")}</span>
-            <code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{caps.repoRoot}</code>
-            {ok(true)}
-            <span style={{ color: "var(--ink-3)" }}>{t("qa.prereq.playwright")}</span>
-            <span>{t("qa.prereq.playwrightHint")}</span>
-            {ok(caps.playwright)}
-            <span style={{ color: "var(--ink-3)" }}>{t("qa.prereq.tools")}</span>
-            <span>turbo · eslint · prettier</span>
-            {ok(caps.turbo && caps.eslint && caps.prettier)}
-            <span style={{ color: "var(--ink-3)" }}>{t("qa.prereq.web")}</span>
-            <code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{caps.webHost}</code>
-            {ok(probes.web)}
-            <span style={{ color: "var(--ink-3)" }}>{t("qa.prereq.mailpit")}</span>
-            <code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{caps.mailpitUrl}</code>
-            {ok(probes.mailpit)}
-          </div>
+          <FormCard title={t("settingsV2.qa.machine")} hint={t("settingsV2.qa.machineHint")}>
+            <Row label={t("settingsV2.qa.repo")}>
+              <ReadOnly mono>{caps.repoRoot}</ReadOnly>
+              {ready(true)}
+            </Row>
+            <Row label={t("settingsV2.qa.playwright")} help={t("qa.prereq.playwrightHint")}>
+              {ready(caps.playwright)}
+            </Row>
+            <Row label={t("settingsV2.qa.tools")} help="turbo · eslint · prettier">
+              {ready(caps.turbo && caps.eslint && caps.prettier)}
+            </Row>
+            <Row label={t("settingsV2.qa.web")}>
+              <ReadOnly mono>{caps.webHost}</ReadOnly>
+              {ready(probes.web)}
+            </Row>
+            <Row label={t("settingsV2.qa.mailpit")}>
+              <ReadOnly mono>{caps.mailpitUrl}</ReadOnly>
+              {ready(probes.mailpit)}
+            </Row>
+          </FormCard>
         )}
-        <div style={{ fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}>
-          {t("qa.prereq.note")}
-        </div>
-      </section>
-
-      <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div className="oi-eyebrow">{t("qa.suites")}</div>
-          <span style={{ flex: 1 }} />
-          <form action={runQaSuite}>
-            <input type="hidden" name="suite" value="all" />
-            <button
-              type="submit"
-              data-testid="qa-run-all"
-              disabled={!caps.repoRoot || active}
-              style={{ ...button("primary"), opacity: !caps.repoRoot || active ? 0.5 : 1 }}
-            >
-              {t("qa.runAll")}
-            </button>
-          </form>
-        </div>
-        {SUITE_ORDER.map((suite) => {
-          const last = lastOf(suite);
-          const busy = last ? last.status === "queued" || last.status === "running" : false;
-          return (
-            <div
-              key={suite}
-              data-testid={`qa-suite-${suite}`}
-              style={{ ...card, flexDirection: "row", alignItems: "center", gap: 14 }}
-            >
-              <div
-                style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 3 }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontWeight: 600, fontSize: 14 }}>{suiteLabel(suite)}</span>
-                  {last && (
-                    <Link
-                      href={`/app/settings/qa/${last.id}`}
-                      data-testid="qa-last-status"
-                      style={{ ...chip(statusTone(last.status)), textDecoration: "none" }}
-                    >
-                      {statusLabel(last.status)}
-                    </Link>
-                  )}
-                </div>
-                <div style={{ fontSize: 12.5, color: "var(--ink-3)", lineHeight: 1.45 }}>
-                  {t(`qa.suite.${suite}.desc`)}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
-                  {last
-                    ? t("qa.lastRun", {
-                        when: t.fmt.relative(last.finishedAt ?? last.startedAt ?? last.queuedAt),
-                        duration: durationLabel(last.startedAt, last.finishedAt),
-                        by: last.triggeredByName,
-                      })
-                    : t("qa.never")}
-                  {last?.summary.total !== undefined &&
-                    ` · ${t("qa.counts", { passed: last.summary.passed ?? 0, failed: last.summary.failed ?? 0, total: last.summary.total })}`}
-                </div>
-              </div>
-              <form action={runQaSuite}>
-                <input type="hidden" name="suite" value={suite} />
-                <button
-                  type="submit"
-                  data-testid={`qa-run-${suite}`}
-                  disabled={!caps.repoRoot || busy}
-                  style={{ ...button("plain"), opacity: !caps.repoRoot || busy ? 0.5 : 1 }}
-                >
-                  {busy ? t("qa.running") : t("qa.run")}
-                </button>
-              </form>
-            </div>
-          );
-        })}
-      </section>
-
-      <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div className="oi-eyebrow">{t("qa.history")}</div>
-        {runs.length === 0 && (
-          <div style={{ ...card, color: "var(--ink-3)", fontSize: 13 }}>{t("qa.noRuns")}</div>
-        )}
-        {runs.length > 0 && (
-          <div style={{ ...card, padding: 0, overflow: "hidden" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-              <thead>
-                <tr
-                  style={{
-                    fontSize: 11,
-                    textTransform: "uppercase",
-                    letterSpacing: ".06em",
-                    color: "var(--ink-3)",
-                  }}
-                >
-                  <th style={{ textAlign: "left", padding: "9px 14px" }}>{t("qa.col.suite")}</th>
-                  <th style={{ textAlign: "left", padding: "9px 14px" }}>{t("qa.col.status")}</th>
-                  <th style={{ textAlign: "left", padding: "9px 14px" }}>{t("qa.col.result")}</th>
-                  <th style={{ textAlign: "left", padding: "9px 14px" }}>{t("qa.col.when")}</th>
-                  <th style={{ textAlign: "left", padding: "9px 14px" }}>{t("qa.col.duration")}</th>
-                  <th style={{ textAlign: "left", padding: "9px 14px" }}>{t("qa.col.by")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runs.map((r) => (
-                  <tr
-                    key={r.id}
-                    data-testid="qa-run-row"
-                    style={{ borderTop: "1px solid var(--line-2)" }}
-                  >
-                    <td style={{ padding: "9px 14px" }}>
-                      <Link
-                        href={`/app/settings/qa/${r.id}`}
-                        className="oi-link"
-                        style={{ fontWeight: 600 }}
-                      >
-                        {suiteLabel(r.suite)}
-                      </Link>
-                    </td>
-                    <td style={{ padding: "9px 14px" }}>
-                      <span style={chip(statusTone(r.status))}>{statusLabel(r.status)}</span>
-                    </td>
-                    <td
-                      style={{
-                        padding: "9px 14px",
-                        color: "var(--ink-2)",
-                        fontVariantNumeric: "tabular-nums",
-                      }}
-                    >
-                      {r.summary.total !== undefined
-                        ? t("qa.counts", {
-                            passed: r.summary.passed ?? 0,
-                            failed: r.summary.failed ?? 0,
-                            total: r.summary.total,
-                          })
-                        : r.summary.failed !== undefined
-                          ? t("qa.failedCount", { count: r.summary.failed })
-                          : "—"}
-                    </td>
-                    <td style={{ padding: "9px 14px", color: "var(--ink-3)" }}>
-                      {t.fmt.relative(r.startedAt ?? r.queuedAt)}
-                    </td>
-                    <td
-                      style={{
-                        padding: "9px 14px",
-                        color: "var(--ink-3)",
-                        fontVariantNumeric: "tabular-nums",
-                      }}
-                    >
-                      {durationLabel(r.startedAt, r.finishedAt)}
-                    </td>
-                    <td style={{ padding: "9px 14px", color: "var(--ink-3)" }}>
-                      {r.triggeredByName}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </div>
+      </div>
+    </SettingsPage>
   );
 }

@@ -31,12 +31,15 @@ test.describe("Single sign-on", () => {
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/settings/sso");
     await expect(page.getByTestId("ee-unavailable")).toHaveCount(0);
+    const rowOf = (label: string) => page.locator(`[data-testid="sso-row"][data-label="${label}"]`);
     // A run that stopped halfway leaves its connection behind, and two on one
     // domain are refused: start by clearing it.
-    const stale = page.getByTestId("sso-row").filter({ hasText: "Smoke IdP" });
-    if (await stale.count()) {
-      await stale.getByTestId("sso-remove").click();
-      await page.waitForURL(/removed=1/);
+    for (const label of ["Smoke IdP", "Mock SAML"]) {
+      const stale = rowOf(label);
+      if (await stale.count()) {
+        await stale.getByTestId("sso-remove").click();
+        await expect(stale).toHaveCount(0);
+      }
     }
 
     // An OIDC connection: discovery runs against the mock at creation.
@@ -48,16 +51,23 @@ test.describe("Single sign-on", () => {
     await form.locator('input[name="issuer"]').fill(idp.issuer);
     await form.locator('input[name="clientId"]').fill("smoke-client");
     await form.locator('input[name="clientSecret"]').fill("smoke-secret");
-    await page.getByTestId("sso-enforce").check();
-    await page.getByTestId("sso-save").click();
-    await page.waitForURL(/saved=1/);
-    const row = page.getByTestId("sso-row").filter({ hasText: "Smoke IdP" });
+    // The switch's checkbox sits under its drawing: click it as the label would.
+    await page.getByTestId("sso-enforce").dispatchEvent("click");
+    await expect(page.getByTestId("sso-enforce")).toBeChecked();
+    await page.getByTestId("sso-form-submit").click();
+    const row = rowOf("Smoke IdP");
     await expect(row).toBeVisible();
     await expect(row.getByTestId("sso-enforced")).toBeVisible();
-    const redirectUri = (await row.getByTestId("sso-redirect-uri").textContent())!.trim();
-    expect(redirectUri).toMatch(
-      /^https?:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.localhost:\d+\/api\/auth\/sso\/callback\/oi-/,
-    );
+    // What to give the provider: the redirect URI, built from the workspace's host.
+    const redirectUris = await page.getByTestId("sso-redirect-uri").allTextContents();
+    expect(
+      redirectUris.some((u) =>
+        /^https?:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.localhost:\d+\/api\/auth\/sso\/callback\/oi-/.test(
+          u.trim(),
+        ),
+      ),
+    ).toBe(true);
+    await expect(page.getByTestId("sso-sign-in-page")).toHaveText(/\/login$/);
 
     // The sign-in page now offers it; a password for the enforced domain is refused.
     await signOut(page);
@@ -83,43 +93,48 @@ test.describe("Single sign-on", () => {
     await expect(page.getByTestId("role-restricted")).toBeVisible();
     await signOut(page);
 
-    // The owner sees the new member as a viewer, and the audit line of the sign-in.
+    // The owner sees the new member as a viewer who signs in through SSO, and
+    // the audit line of the sign-in; the connection says when it was last used.
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/settings/members");
     const memberRow = page.locator(`[data-member-email="${idp.user.email}"]`);
     await expect(memberRow).toBeVisible();
     await expect(memberRow.locator("select")).toHaveValue("viewer");
+    await expect(memberRow.getByTestId("member-method")).toHaveText("SSO");
     await page.goto("/app/settings/audit");
     await expect(page.getByText(idp.user.email).first()).toBeVisible();
+    await page.goto("/app/settings/sso");
+    await expect(row).not.toContainText(/never used|jamais utilisée|noch nie benutzt/);
 
     // A SAML connection from a certificate and an entry point; the SP metadata is served.
-    await page.goto("/app/settings/sso");
     await page.getByTestId("sso-add").click();
-    await page.getByTestId("sso-kind").selectOption("saml");
     const saml = page.getByTestId("sso-form");
+    await saml.getByText("SAML 2.0", { exact: true }).click();
     await saml.locator('input[name="label"]').fill("Mock SAML");
     await saml.locator('input[name="entityId"]').fill("https://idp.smoke.example/saml");
     await saml.locator('input[name="entryPoint"]').fill("https://idp.smoke.example/saml/sso");
     await saml.locator('textarea[name="cert"]').fill(SMOKE_CERT);
-    await page.getByTestId("sso-save").click();
-    await page.waitForURL(/saved=1/);
-    const samlRow = page.getByTestId("sso-row").filter({ hasText: "Mock SAML" });
-    const metadataUrl = (await samlRow.getByTestId("sso-metadata-url").getAttribute("href"))!;
-    const anon = await request.newContext({ baseURL: BASE_URL });
+    await page.getByTestId("sso-form-submit").click();
+    const samlRow = rowOf("Mock SAML");
+    await expect(samlRow).toBeVisible();
+    const metadataUrl = (await page.getByTestId("sso-metadata-url").first().textContent())!.trim();
+    const anon = await request.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
     const meta = await anon.get(metadataUrl);
     expect(meta.status(), await meta.text()).toBe(200);
     const xml = await meta.text();
     expect(xml).toContain("EntityDescriptor");
     expect(xml).toContain("/api/auth/sso/saml2/sp/acs/");
 
-    // Removal: the buttons leave the sign-in page, and the workspace is as found.
+    // Removal: the owner still has a password, so nothing locks them out; the
+    // buttons leave the sign-in page, and the workspace is as found.
     await samlRow.getByTestId("sso-remove").click();
-    await page.waitForURL(/removed=1/);
+    await expect(samlRow).toHaveCount(0);
     await row.getByTestId("sso-remove").click();
-    await page.waitForURL(/removed=1/);
-    await expect(
-      page.getByTestId("sso-row").filter({ hasText: /Smoke IdP|Mock SAML/ }),
-    ).toHaveCount(0);
+    await expect(row).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByTestId("sso-row").filter({ hasText: /Smoke IdP|Mock SAML/ })).toHaveCount(
+      0,
+    );
   });
 });
 

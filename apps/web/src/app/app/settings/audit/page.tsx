@@ -1,144 +1,149 @@
-import { desc, eq } from "drizzle-orm";
-import { auditEvents, withTenant } from "@openincident/db";
+import Link from "next/link";
 import { getT } from "@/i18n/server";
 import { requireMember } from "@/lib/session";
+import { entitlementsFor } from "@/lib/entitlements";
+import {
+  FilterLinks,
+  ListCard,
+  ListItem,
+  SettingsPage,
+  listActionStyle,
+} from "@/components/settings/template";
+import { EmptyRow } from "../api/empty-row";
+import { auditCounts, auditLines, parseArea } from "./data";
+import { ExportButton } from "./export-button";
+import { actorGlyph, areaLabel, present, whenLabel } from "./present";
+import { AREAS, CORE_AREAS } from "./sentence";
+
+const PAGE_SIZE = 50;
 
 /**
- * Settings → Audit log: who did what, when — readable by a human. Each line is
- * a category chip and a sentence rendered from the stored action and target;
- * the actor's name is the snapshot taken when the line was written. CSV export
- * and SIEM forwarding land with the platform milestone.
+ * Settings › Audit log (design V2): who did what, when — each line a
+ * sentence a person reads, the actor's square (Atlas in violet), the area as
+ * a chip, the time. Filtered by area (?area=atlas), fifty lines a page, and
+ * exported as CSV with the filter applied.
+ *
+ * Lines are append-only: nothing on this screen, or anywhere in the product,
+ * edits or deletes one.
  */
-export default async function AuditPage() {
+export default async function AuditPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ area?: string; page?: string }>;
+}) {
   const { tenant } = await requireMember();
   const t = await getT();
-  const rows = await withTenant(tenant.id, (tx) =>
-    tx
-      .select()
-      .from(auditEvents)
-      .where(eq(auditEvents.tenantId, tenant.id))
-      .orderBy(desc(auditEvents.createdAt))
-      .limit(200),
+  const q = await searchParams;
+  const area = parseArea(q.area);
+  const page = Math.max(1, Math.floor(Number(q.page ?? "1")) || 1);
+  const counts = await auditCounts(tenant.id);
+  const shown = area ? counts.byArea[area] : counts.total;
+  const rows = await auditLines(
+    tenant.id,
+    area ? counts.keysOf[area] : null,
+    (page - 1) * PAGE_SIZE,
+    PAGE_SIZE,
   );
-  const tone: Record<string, { bg: string; ink: string; label: string }> = {
-    config: { bg: "var(--brand-t)", ink: "var(--brand)", label: t("audit.category.config") },
-    security: { bg: "var(--viol-t)", ink: "var(--viol)", label: t("audit.category.security") },
-    members: { bg: "var(--open-t)", ink: "var(--open)", label: t("audit.category.members") },
-    data: { bg: "var(--wait-t)", ink: "var(--wait)", label: t("audit.category.data") },
+  const pages = Math.max(1, Math.ceil(shown / PAGE_SIZE));
+  const entitled = entitlementsFor(tenant).auditLogAdvanced;
+  const href = (p: { area?: string | null; page?: number }) => {
+    const s = new URLSearchParams();
+    if (p.area) s.set("area", p.area);
+    if (p.page && p.page > 1) s.set("page", String(p.page));
+    const qs = s.toString();
+    return `/app/settings/audit${qs ? `?${qs}` : ""}`;
   };
-  const s = (v: unknown) => (typeof v === "string" || typeof v === "number" ? String(v) : "—");
-  const sentence = (row: (typeof rows)[number]): string => {
-    const tg = row.target;
-    const a = row.actorName;
-    switch (row.action) {
-      case "workspace.updated":
-        return t("audit.workspaceUpdated", { actor: a });
-      case "member.invited":
-        return t("audit.memberInvited", {
-          actor: a,
-          email: s(tg.email),
-          role: t(`member.role.${s(tg.role) as "owner" | "admin" | "responder" | "viewer"}`),
-        });
-      case "member.role_changed":
-        return t("audit.memberRoleChanged", {
-          actor: a,
-          member: s(tg.member),
-          from: t(`member.role.${s(tg.from) as "owner" | "admin" | "responder" | "viewer"}`),
-          to: t(`member.role.${s(tg.to) as "owner" | "admin" | "responder" | "viewer"}`),
-        });
-      case "member.disabled":
-        return t("audit.memberDisabled", { actor: a, member: s(tg.member) });
-      case "member.reactivated":
-        return t("audit.memberReactivated", { actor: a, member: s(tg.member) });
-      case "member.invite_revoked":
-        return t("audit.inviteRevoked", { actor: a, email: s(tg.email) });
-      case "severity.updated":
-        return t("audit.severityUpdated", { actor: a, name: s(tg.to) });
-      case "incident_status.updated":
-        return t("audit.statusUpdated", { actor: a, name: s(tg.to) });
-      case "api_key.created":
-        return t("audit.apiKeyCreated", {
-          actor: a,
-          hint: s(tg.hint),
-          scopes: Array.isArray(tg.scopes) ? (tg.scopes as string[]).join(", ") : "—",
-        });
-      case "session.sso_signed_in":
-        return t("audit.ssoSignedIn", { provider: s(tg.provider), email: s(tg.email) });
-      case "announcement_template.updated":
-        return t("audit.announcementTemplateUpdated", { actor: a, name: s(tg.name) });
-      case "escalation_path.published":
-        return t("audit.escalationPathPublished", {
-          actor: a,
-          name: s(tg.name),
-          version: s(tg.version),
-        });
-      case "status_page.subscribers_imported":
-        return t("audit.subscribersImported", { actor: a, count: Number(tg.count ?? 0) });
-      default:
-        return `${a} — ${row.action}`;
-    }
-  };
+  const visibleAreas = AREAS.filter(
+    (a) => CORE_AREAS.includes(a) || counts.byArea[a] > 0 || a === area,
+  );
 
   return (
-    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div className="oi-head">
-        <h1 className="oi-title" style={{ margin: 0 }}>
-          {t("settings.audit.title")}
-        </h1>
-        <span className="oi-subtitle">{t("settings.audit.subtitle")}</span>
-      </div>
-      <div className="oi-panel" style={{ overflow: "hidden" }}>
-        {rows.map((row) => {
-          const c = tone[row.category] ?? tone.config!;
-          return (
-            <div
-              key={row.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "11px 16px",
-                borderBottom: "1px solid var(--line-2)",
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--ink-3)",
-                  width: 118,
-                  flex: "none",
-                }}
-                title={t.fmt.dateLong(row.createdAt)}
-              >
-                {t.fmt.messageTime(row.createdAt)}
+    <SettingsPage
+      home={t("settingsV2.home")}
+      crumb={t("settingsV2.group.platform")}
+      title={t("settingsV2.entry.audit")}
+      lead={t("settingsV2.audit.lead")}
+      testId="settings-audit"
+      actions={
+        <ExportButton
+          href={`/app/settings/audit/export${area ? `?area=${area}` : ""}`}
+          entitled={entitled}
+        />
+      }
+    >
+      <FilterLinks
+        testId="audit-filters"
+        items={[
+          {
+            key: "all",
+            label: t("settingsV2.audit.area.all"),
+            count: counts.total,
+            href: href({}),
+            active: !area,
+          },
+          ...visibleAreas.map((a) => ({
+            key: a,
+            label: areaLabel(t, a),
+            count: counts.byArea[a],
+            href: href({ area: a }),
+            active: area === a,
+          })),
+        ]}
+      />
+      <ListCard
+        title={t("settingsV2.audit.events", { count: shown })}
+        testId="audit-list"
+        action={
+          pages > 1 ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                {t("settingsV2.audit.pageOf", { page, pages })}
               </span>
-              <span
-                style={{
-                  padding: "2px 8px",
-                  borderRadius: 6,
-                  background: c.bg,
-                  color: c.ink,
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  flex: "none",
-                }}
-              >
-                {c.label}
-              </span>
-              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: "var(--ink-2)" }}>
-                {sentence(row)}
-              </span>
+              {page > 1 && (
+                <Link
+                  href={href({ area, page: page - 1 })}
+                  className="oi-hover"
+                  style={listActionStyle}
+                >
+                  {t("settingsV2.audit.newer")}
+                </Link>
+              )}
+              {page < pages && (
+                <Link
+                  href={href({ area, page: page + 1 })}
+                  data-testid="audit-older"
+                  className="oi-hover"
+                  style={listActionStyle}
+                >
+                  {t("settingsV2.audit.older")}
+                </Link>
+              )}
             </div>
+          ) : undefined
+        }
+        foot={t("settingsV2.audit.foot")}
+      >
+        {rows.map((r) => {
+          const p = present(t, r);
+          return (
+            <ListItem
+              key={r.id}
+              testId="audit-row"
+              data={{ area: p.area, action: r.action }}
+              glyph={actorGlyph(r)}
+              title={p.sentence}
+              titleWeight={500}
+              chips={[{ label: areaLabel(t, p.area), tone: "mute" }]}
+              right={
+                <time dateTime={r.createdAt.toISOString()} title={t.fmt.dateLong(r.createdAt)}>
+                  {whenLabel(t, r.createdAt)}
+                </time>
+              }
+            />
           );
         })}
-        {rows.length === 0 && (
-          <div style={{ padding: 28, textAlign: "center", color: "var(--ink-3)", fontSize: 13.5 }}>
-            {t("settings.audit.empty")}
-          </div>
-        )}
-      </div>
-      <div className="oi-note">{t("settings.audit.note")}</div>
-    </div>
+        {rows.length === 0 && <EmptyRow>{t("settingsV2.audit.empty")}</EmptyRow>}
+      </ListCard>
+    </SettingsPage>
   );
 }

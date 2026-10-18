@@ -26,8 +26,9 @@ test.describe("Issue trackers", () => {
     await form.locator('input[name="repo"]').fill("skylark/ops");
     await form.locator('input[name="secret"]').fill("bad-token-000");
     await page.getByTestId("tracker-save").click();
-    await page.waitForURL(/error=test/);
-    await expect(page.getByRole("alert")).toBeVisible();
+    // Refused by the tool: the dialog stays open and the toast says why.
+    await expect(page.getByTestId("settings-toast")).toBeVisible();
+    await expect(page.getByTestId("tracker-form")).toBeVisible();
 
     await page.getByTestId("tracker-form").locator('input[name="repo"]').fill("skylark/ops");
     await page
@@ -35,10 +36,10 @@ test.describe("Issue trackers", () => {
       .locator('input[name="secret"]')
       .fill("ghp_mock_token_123456");
     await page.getByTestId("tracker-save").click();
-    await page.waitForURL(/saved=github/);
-    await expect(
-      page.getByTestId("integration-card").filter({ hasText: "GitHub Issues" }),
-    ).toContainText("skylark/ops");
+    await expect(page.getByTestId("tracker-form")).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.getByTestId("integration-card").filter({ hasText: "GitHub" })).toContainText(
+      "skylark/ops",
+    );
 
     // A fresh follow-up on INC-217, exported from its row.
     await page.goto("/app/incidents/217?tab=follow-ups");
@@ -67,8 +68,7 @@ test.describe("Issue trackers", () => {
     await fetch(`http://127.0.0.1:3199/_close/${issueNumber}`, { method: "POST" });
     await page.goto("/app/settings/integrations?connect=github");
     await page.getByTestId("tracker-sync").click();
-    await page.waitForURL(/synced=/);
-    await expect(page.getByRole("status")).toContainText(/1/);
+    await expect(page.getByTestId("settings-toast")).toContainText(/1/);
     await page.goto("/app/incidents/217?tab=follow-ups");
     await expect(
       page
@@ -87,19 +87,19 @@ test.describe("Issue trackers", () => {
     await jira.locator('input[name="email"]').fill("amelie@skylark.dev");
     await jira.locator('input[name="secret"]').fill("jira-api-token-mock");
     await page.getByTestId("tracker-save").click();
-    await page.waitForURL(/saved=jira/);
+    await expect(page.getByTestId("tracker-form")).toHaveCount(0, { timeout: 30_000 });
     await page.goto("/app/settings/integrations?connect=gitlab");
     const gitlab = page.getByTestId("tracker-form");
     await gitlab.locator('input[name="project"]').fill("skylark/ops");
     await gitlab.locator('input[name="secret"]').fill("glpat-mock-token-123");
     await page.getByTestId("tracker-save").click();
-    await page.waitForURL(/saved=gitlab/);
+    await expect(page.getByTestId("tracker-form")).toHaveCount(0, { timeout: 30_000 });
     await page.goto("/app/settings/integrations?connect=linear");
     const linear = page.getByTestId("tracker-form");
     await linear.locator('input[name="teamKey"]').fill("OPS");
     await linear.locator('input[name="secret"]').fill("lin_api_mock_key");
     await page.getByTestId("tracker-save").click();
-    await page.waitForURL(/saved=linear/);
+    await expect(page.getByTestId("tracker-form")).toHaveCount(0, { timeout: 30_000 });
     await expect(page.getByTestId("integration-card").filter({ hasText: "Linear" })).toContainText(
       "OPS",
     );

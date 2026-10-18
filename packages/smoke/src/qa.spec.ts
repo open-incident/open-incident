@@ -36,7 +36,6 @@ test.describe("QA", () => {
       expect(await page.getByTestId("qa-failure").count()).toBeGreaterThan(0);
     }
     await page.goto("/app/settings/qa");
-    await expect(page.getByTestId("qa-run-row").first()).toBeVisible();
     await expect(page.getByTestId("qa-suite-format").getByTestId("qa-last-status")).toBeVisible();
   });
 

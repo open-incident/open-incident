@@ -45,6 +45,26 @@ export function hasScope(scopes: ApiScope[], needed: ApiScope): boolean {
   return false;
 }
 
+/** The resource family of an API path; null: reachable only by a key scoped to everything. */
+const RESOURCE_OF_SEGMENT: Record<string, string> = {
+  incidents: "incidents",
+  "follow-ups": "incidents",
+  monitors: "monitors",
+  heartbeats: "monitors",
+  slos: "monitors",
+  services: "services",
+  teams: "services",
+  runbooks: "services",
+  "change-events": "services",
+  "status-pages": "status_pages",
+};
+
+export function keyReaches(resources: readonly string[], pathname: string): boolean {
+  const segment = pathname.match(/^\/api\/v1\/([^/?]+)/)?.[1] ?? "";
+  const resource = RESOURCE_OF_SEGMENT[segment];
+  return resource !== undefined && resources.includes(resource);
+}
+
 export async function apiAuth(
   request: Request,
   needed: ApiScope,
@@ -99,6 +119,14 @@ export async function apiAuth(
     return {
       ok: false,
       response: apiError(401, "unknown_key", "This API key is unknown or has been revoked."),
+    };
+  if (row.expiresAt && row.expiresAt.getTime() <= Date.now())
+    return { ok: false, response: apiError(401, "key_expired", "This API key has expired.") };
+  // A key limited to some resources (Settings › API & webhooks › Scope) reaches only them.
+  if (row.resources && !keyReaches(row.resources, new URL(request.url).pathname))
+    return {
+      ok: false,
+      response: apiError(403, "out_of_scope", "This key's scope does not cover this resource."),
     };
   if (!hasScope(row.scopes, needed)) {
     return {

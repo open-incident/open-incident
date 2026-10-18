@@ -1,52 +1,89 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { issueScimToken, setScimEnabled, updateScimOptions } from "@openincident/ee-web/scim";
+import {
+  getScimSettings,
+  issueScimToken,
+  setScimEnabled,
+  updateScimOptions,
+} from "@openincident/ee-web/scim";
 import { withTenant } from "@openincident/db";
+import { getT } from "@/i18n/server";
 import { recordAudit } from "@/lib/audit";
 import { entitlementsFor } from "@/lib/entitlements";
 import { requireManager } from "@/lib/session";
+import type { DialogResult } from "@/components/settings/dialog";
+import type { FormResult } from "@/components/settings/settings-form";
 
-/* The licence seam: each action is a line that hands the work to ee/web. */
+/* The licence seam: each action hands the work to ee/web; the app keeps the audit. */
 
+const PATH = "/app/settings/scim";
 const roleSchema = z.enum(["admin", "responder", "viewer"]).catch("responder");
 
-export async function issueScim(
+async function current() {
+  const c = await requireManager();
+  if (!entitlementsFor(c.tenant).sso) throw new Error("forbidden: sso");
+  return c;
+}
+
+/**
+ * Issues the endpoint's token — the first one, or a rotation that kills the
+ * previous one at once. The plain token goes back once, to the dialog's
+ * "shown once" panel, and is never stored anywhere but as its hash.
+ */
+export async function issueScim(_prev: DialogResult, _formData: FormData): Promise<DialogResult> {
+  const c = await current();
+  const t = await getT();
+  const settings = await getScimSettings(c.tenant.id);
+  const { token, rotated } = await issueScimToken(c.tenant.id, {
+    defaultRole: settings?.defaultRole ?? "responder",
+    sendInvites: settings?.sendInvites ?? true,
+    actorMemberId: c.member.id,
+  });
+  await withTenant(c.tenant.id, (tx) =>
+    recordAudit(tx, c, "security", rotated ? "scim.token_rotated" : "scim.enabled", {}),
+  );
+  revalidatePath(PATH);
+  return {
+    ok: true,
+    secret: token,
+    secretNote: t("settingsV2.scim.dialog.secretNote"),
+    secretDone: t("settingsV2.scim.dialog.secretDone"),
+  };
+}
+
+/** Disable closes the door (401 on every call); Enable opens it again. Nothing else changes. */
+export async function toggleScim(
   formData: FormData,
-): Promise<{ token: string } | { error: string }> {
-  const current = await requireManager();
-  if (!entitlementsFor(current.tenant).sso) return { error: "unavailable" };
-  const { token, rotated } = await issueScimToken(current.tenant.id, {
-    defaultRole: roleSchema.parse(formData.get("defaultRole")),
-    sendInvites: formData.get("sendInvites") === "on",
-    actorMemberId: current.member.id,
-  });
-  await withTenant(current.tenant.id, (tx) =>
-    recordAudit(tx, current, "security", rotated ? "scim.token_rotated" : "scim.enabled", {}),
-  );
-  revalidatePath("/app/settings/scim");
-  return { token };
-}
-
-export async function toggleScim(formData: FormData): Promise<void> {
-  const current = await requireManager();
+): Promise<{ ok: true; enabled: boolean } | { ok: false; error: string }> {
+  const c = await current();
+  const t = await getT();
+  if (!(await getScimSettings(c.tenant.id)))
+    return { ok: false, error: t("settingsV2.error.invalid") };
   const enabled = formData.get("enabled") === "on";
-  await setScimEnabled(current.tenant.id, enabled);
-  await withTenant(current.tenant.id, (tx) =>
-    recordAudit(tx, current, "security", enabled ? "scim.enabled" : "scim.disabled", {}),
+  await setScimEnabled(c.tenant.id, enabled);
+  await withTenant(c.tenant.id, (tx) =>
+    recordAudit(tx, c, "security", enabled ? "scim.enabled" : "scim.disabled", {}),
   );
-  revalidatePath("/app/settings/scim");
-  redirect("/app/settings/scim");
+  revalidatePath(PATH);
+  return { ok: true, enabled };
 }
 
-export async function saveScimOptions(formData: FormData): Promise<void> {
-  const current = await requireManager();
-  await updateScimOptions(current.tenant.id, {
+/** "Provisioned members": the role a provider-created member gets, and the invitation email. */
+export async function saveScimOptions(_prev: FormResult, formData: FormData): Promise<FormResult> {
+  const c = await current();
+  const t = await getT();
+  if (!(await getScimSettings(c.tenant.id)))
+    return { ok: false, error: t("settingsV2.error.invalid") };
+  const input = {
     defaultRole: roleSchema.parse(formData.get("defaultRole")),
     sendInvites: formData.get("sendInvites") === "on",
-  });
-  revalidatePath("/app/settings/scim");
-  redirect("/app/settings/scim?saved=1");
+  };
+  await updateScimOptions(c.tenant.id, input);
+  await withTenant(c.tenant.id, (tx) =>
+    recordAudit(tx, c, "security", "scim.options_updated", input),
+  );
+  revalidatePath(PATH);
+  return { ok: true };
 }

@@ -47,7 +47,11 @@ export async function runQaSuite(formData: FormData): Promise<void> {
     );
   }
   revalidatePath("/app/settings/qa");
-  redirect(suites.length === 1 && firstId ? `/app/settings/qa/${firstId}` : "/app/settings/qa");
+  redirect(
+    suites.length === 1 && firstId
+      ? `/app/settings/qa/${firstId}`
+      : `/app/settings/qa?queued=${suites.length}`,
+  );
 }
 
 export async function cancelQaRun(formData: FormData): Promise<void> {

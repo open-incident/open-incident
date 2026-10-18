@@ -2,14 +2,14 @@
 title: Alert settings
 section: configuration
 order: 15
-summary: Rules, priorities and attributes — the Alerts group of the settings — and where the sources went.
+summary: Rules, alert severities and labels — the Alerts group of the settings — and where the sources went.
 ---
 
 ## Two entries
 
-The Alerts group holds what an administrator decides about alerts and nothing else: **Rules**, and **Severities & attributes** — the vocabulary the rules read. Sources are not a setting; they are read, created and configured under **Alerts → Sources**, where the alerts they produce are. Heartbeats are not a setting either; they live under **Monitors → Heartbeats**, beside the other thing that watches by waiting.
+The Alerts group holds what an administrator decides about alerts and nothing else: **Rules**, **Alert severities** and **Labels** — the vocabulary the rules read. Sources are not a setting; they are read, created and configured under **Alerts → Sources**, where the alerts they produce are. Heartbeats are not a setting either; they live under **Monitors → Heartbeats**, beside the other thing that watches by waiting.
 
-Nothing has to be declared beforehand. Every new workspace starts with three priorities (P1–P3 with the usual aliases), five attributes (service, team, environment, region, the tool's severity) and one rule — **Every alert** — that catches everything and opens a triage incident when the priority pages. The welcome screen's **Who should we page?** step names who to page, and it is live.
+Nothing has to be declared beforehand. Every new workspace starts with its alert severities (P1 and down, with the names the tools usually give them), a reading of the usual labels (service, team, environment, region) and the defaults every source starts from — open a triage incident when an alert wakes people. The welcome screen's **Who should we page?** step names who to page, and it is live.
 
 ## Alert sources
 
@@ -44,37 +44,49 @@ Each source has a page — **Configure** — with everything about it:
 
 Adding a dedicated tool is a parser plus default mappings, not a connector — that is how the long tail is covered; and any tool is one HTTP source away.
 
-## Attributes
-
-**Settings → Severities & attributes → Attributes** is the vocabulary every source maps its payload onto and every rule reasons about — so a rule says _environment is production_ without knowing which tool said `env=prod`. Each attribute has a **key** (fixed once created), a label, a **type** — text, list, alert priority, **service** or **team** — whether it is **required** on every alert (sources missing it are flagged, alerts lacking it say so in their history), and what a **repeat** of the same alert does to its value: first wins, last wins, accumulate (lists), highest priority wins. The **coverage** column says how many of the last 200 alerts carry it and how many sources map it.
-
-**Service** and **team** are the two types that name a real row: the value is matched against the workspace's services and teams, and a rule can then page _the path that row leads to_. Every other attribute — environment, region, tier, customer — is a plain label: a rule reads it, a screen filters on it, and nothing else is stored about it.
-
-## Priorities
-
-The first tab of **Settings → Severities & attributes**. Priorities qualify the alert and choose the urgency of the page (high pages now; low notifies quietly). Each has a name, a colour, a description, **aliases** — what the tools call it, `critical`, `sev1`, `warning`… matched case-insensitively — and one is the **default**, given to alerts nothing names. Escalation paths branch on priority.
-
-![Priorities](img/settings-priorities.png "Four priorities, their colour, their aliases and which one is the default.")
-
 ## Rules
 
-![Rules](img/settings-rules.png "Ordered rules, each in one line — what it catches, what it does.")
+![Rules](img/settings-rules.png "The rules in order, each one a sentence — what it catches, then what it does.")
 
 **Settings → Rules** holds the exceptions to what your sources already decide. Every source carries three choices of its own — who to page, whether an incident opens, whether recovery closes it — and an alert that matches no rule follows them. That is why a workspace with no rule at all still pages somebody.
 
-Rules are tried **in order** and the **first matching rule wins**. A rule with no condition catches everything it sees, which makes it a default rather than an exception: anything below it never runs for those alerts, and the screen marks it _default_ and says so. A new workspace starts with exactly one, **Every alert**; the arrows on the list reorder them. Each row carries **Edit** and **Deactivate**; **Duplicate** and **Delete** wait behind the row's **⋯**.
+Rules are tried **in order** and the **first matching rule wins**. Each one reads as a sentence — _If source is Datadog and severity is P1 or P2 and label environment = production_ — and, under it, what it does: _→ page Platform · open an incident at SEV2_. A rule is something written to apply to some alerts: a condition, or a chosen source. On the right, how many alerts the rule decided over the last seven days; a rule that has decided none yet says who added it and when, read from the audit log.
 
-Each rule is edited on a page of its own:
+- **+ New rule** opens the rule as the four lines of a sentence: **If source is** (any source, or one), **and severity is** (any, one level, _P1 or P2_, _P3 or lower_…), **and label** (`key = value`, or `key != value`, optional), **then** — page a team (its escalation policy), page the service's owner, open an incident at a severity, **✦ let Atlas handle it**, **✦ never let Atlas act**, or **mute** (nobody paged, no incident). **Add at the end** puts it after the last rule. A rule needs at least a source, a severity or a label: without one it would catch every alert.
+- **Edit** opens the same dialog for a rule it can hold. Changing **then** changes only that part — a rule that pages Platform and opens an incident at SEV2 keeps paging Platform when you set it to open the incident at SEV1 — and the dialog says what stays. **More options…** opens the rule on its own page with the full editor.
+- **Move a rule** by dragging its row, or from the keyboard: focus its number and press ↑ or ↓. The new order is saved at once, and the audit log records it — _moved rule 2 above rule 3_.
+- **Preview on the last 50 alerts** replays the rules as they stand on the alerts that arrived: how many a rule catches, and how many would now be handled differently from the way they were when they arrived. Nothing is sent.
+
+The two **✦ Atlas** choices are read by Atlas on every incident the rule's alerts open: **never let Atlas act** stops it from doing anything but reading, whatever the service's level; **let Atlas handle it** lets it try first, within the level the service already allows — it never raises one.
+
+The rule's own page — **More options…** — is the full editor:
 
 - **Sources**: every source, or only some.
-- **Which alerts**: conditions on any attribute, or on the source, its name, the priority, the title — _is, is not, is one of, is none of, contains, matches (regex), is set, is missing_. Lines in a group are ANDed; groups are ORed. No condition catches everything.
-- **Who to page**: rules that stack. **Page a path** names one; **Page from an attribute** follows a `service` or `team` attribute to the escalation path it leads to — the service's owner team, or the team itself — with a fallback when the chain does not resolve. **Page me**, a schedule or a colleague make a published one-level path in one click.
-- **Incident**: never, always, or when the priority pages; the type, whether it starts in triage or active, the severity (from the priority, fixed, or none), private or not, custom fields filled from attributes, and whether a triage incident is declined when the alert resolves.
-- **Grouping**: the attributes the key is built from, the window in minutes — fixed, or restarting at each alert that joins — what a joining alert does to paging (nothing, page again, page again if the priority rises), and a grace before the first page.
-- **Slack channel**: where every alert this rule catches is posted, with its attributes and the way in.
-- **Options**: a priority when the source decides none, an urgency override, a wait before the first page, whether the escalation is cancelled when the alert resolves, **test mode** (logs everything, pages nobody, opens no incident), active.
+- **Which alerts**: conditions on any label, or on the source, its name, the severity, the title — _is, is not, is one of, is none of, contains, matches (regex), is set, is missing_. Lines in a group are ANDed; groups are ORed.
+- **Who to page**: steps that stack. **Page a policy** names one; **page from a label** follows a `service` or `team` label to the escalation policy it leads to — the service's owner team, or the team itself — with a fallback when the chain does not resolve. **Page me**, a schedule or a colleague make a published one-level policy in one click.
+- **Incident**: never, always, or when the alert wakes people; the type, whether it starts in triage or active, the severity (from the alert's, fixed, or none), private or not, custom fields filled from labels, and whether a triage incident is declined when the alert resolves.
+- **Grouping**: the labels the key is built from, the window in minutes — fixed, or restarting at each alert that joins — what a joining alert does to paging (nothing, page again, page again if the severity rises), and a grace before the first page.
+- **Slack channel**: where every alert this rule catches is posted.
+- **Options**: a severity when the source names none, an urgency override, a wait before the first page, whether the escalation is cancelled when the alert resolves, **test mode** (logs everything, pages nobody, opens no incident), active.
+- **Against the last alerts** previews the draft before it is saved; **Delete this rule**, in the page's header, asks first.
 
-On the right, **Against the last alerts** previews the draft: which recent alerts it would catch and who it would page — before saving. The list also says how many alerts each rule matched over the last ninety days, which is how a rule nobody needs any more becomes visible.
+The foot of the list leads to **what every source starts from**: not a rule, but the grouping, urgency and options every alert begins with when no rule matches.
+
+## Alert severities
+
+![Alert severities](img/settings-priorities.png "Four levels, their colour and what each does on its own.")
+
+**Settings → Alert severities** — P1 to P4 — is what an alert is worth, and what each level does on its own. A level that **wakes people** calls the person on call (chat and push at once, a call after a minute without acknowledgement) and, unless a rule says otherwise, opens an incident at the incident severity of the same rank — P1 opens a SEV1. A **silent** level sends a silent push and the 09:00 email **digest**, and opens no incident by itself.
+
+**Edit** changes a level's name, its label (_P1 — Critical_), whether it wakes people, the names the tools give it — `critical`, `sev1`, `warning`…, matched case-insensitively — its colour, and whether it is the level of an alert that names none. The change applies to new alerts only. A source maps its own levels to these; rules can raise or lower them.
+
+## Labels
+
+**Settings → Labels** lists the keys seen in your alerts over the last ninety days — observed, never declared: whatever a source sends is a label as soon as it arrives. Each row says the key, its values (or how many there are), and how many alerts carried it. The keys the product writes itself on every alert — the source, the severity — are not listed. A label that stops appearing for 90 days leaves the list; rules that read it keep working.
+
+Two marks say what the product does with a key: **ties alerts to Services and their owners** on the key that names a service — its value is matched against the workspace's services, and the owner team is filled in, which is what lets a rule page the owner — and **redacted before Atlas** on a key whose values the redaction applied before any model call rewrites (email addresses, phone numbers, IP addresses, internal hosts, secrets).
+
+A manager clicks a label to say how the pipeline reads it: the name screens show it under, whether it names a **service**, a **team**, an alert severity, a list or plain text, whether every alert is **expected** to carry it (sources that do not send it are flagged on their page), and what a repeat of the same alert does to its value — keep the first, keep the last, collect every value, keep the highest severity. A key read as more than plain text, or expected on every alert, stays on the list even while no alert carries it.
 
 ## Heartbeats
 

@@ -3,7 +3,7 @@ import { BASE_URL, STATUS_BASE_URL } from "../playwright.config";
 import { MEMBERS, signIn } from "./helpers";
 
 /**
- * Brand and appearance: a logo uploaded in the settings is served by the
+ * Brand and appearance: a logo uploaded in Settings › Brand is served by the
  * product (sandboxed), reaches the public status page, and goes away when
  * removed; a member's theme choice is stamped on the document before paint.
  */
@@ -12,16 +12,18 @@ test.describe("Brand & appearance", () => {
     page,
   }) => {
     await signIn(page, MEMBERS.owner);
-    await page.goto("/app/settings/general");
-    const upload = page.getByTestId("logo-upload");
-    test.skip((await upload.count()) === 0, "object storage not configured on this instance");
+    await page.goto("/app/settings/brand");
+    const file = page.getByTestId("logo-file");
+    test.skip((await file.count()) === 0, "object storage not configured on this instance");
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="11" fill="#B4552D"/><script>alert(1)</script></svg>`;
-    await page
-      .getByTestId("logo-file")
-      .setInputFiles({ name: "logo.svg", mimeType: "image/svg+xml", buffer: Buffer.from(svg) });
-    await upload.click();
-    await page.waitForURL(/saved=1/);
-    await expect(page.getByTestId("logo-remove")).toBeVisible();
+    // Picking the file sends it at once — there is nothing to save afterwards.
+    await file.setInputFiles({
+      name: "logo.svg",
+      mimeType: "image/svg+xml",
+      buffer: Buffer.from(svg),
+    });
+    await expect(page.getByTestId("logo-remove")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("logo-tile-light").locator("img")).toBeVisible();
 
     const api = await request.newContext({ baseURL: BASE_URL });
     const res = await api.get("/brand/logo");
@@ -34,10 +36,9 @@ test.describe("Brand & appearance", () => {
     await page.goto(STATUS_BASE_URL);
     await expect(page.locator('header img[src*="/brand/logo"]')).toBeVisible();
 
-    await page.goto("/app/settings/general");
+    await page.goto("/app/settings/brand");
     await page.getByTestId("logo-remove").click();
-    await page.waitForURL(/saved=1/);
-    await expect(page.getByTestId("logo-remove")).toHaveCount(0);
+    await expect(page.getByTestId("logo-remove")).toHaveCount(0, { timeout: 30_000 });
     expect((await api.get("/brand/logo")).status()).toBe(404);
     await api.dispose();
   });

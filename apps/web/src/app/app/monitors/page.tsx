@@ -187,7 +187,7 @@ export default async function MonitorsPage({
           rather than a region nobody configured.
         */}
         <Link
-          href="/app/settings/probes"
+          href="/app/docs/monitors"
           className="oi-hover"
           data-testid="monitors-checked-from"
           style={{

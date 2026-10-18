@@ -2,39 +2,117 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { useT } from "@/i18n/client";
 
 /**
- * The secondary navigation of the administration: four groups, a 10.5 px
- * uppercase label each, 13 px items, the current one in brand ink on a brand
- * tint.
+ * The settings navigation (design V2): "Settings" — the overview — then
+ * "Find a setting", then five groups of entries, one entry per screen.
  *
- * An entry stands for one screen, or for a family of screens the entry's own
- * tabs then separate — `paths` lists every path that counts as current. The
- * groups are built on the server, already filtered by permission; nothing
+ * The search reads what a person would type: an entry's name, the line that
+ * says where it stands, and its group — "okta", "expire", "slack" all land.
+ * An enterprise screen the instance lacks wears "EE"; an entry whose state
+ * wants a look carries a dot in that state's colour.
+ *
+ * The groups arrive built and filtered by permission on the server; nothing
  * about who may see what is decided here.
  */
-export type NavItem = {
+export type NavEntry = {
+  key: string;
   href: string;
   label: string;
-  /** Every path this entry is current for; the href's own path when absent. */
-  paths?: string[];
+  status: string;
+  tone?: "wait" | "dang";
+  locked?: boolean;
+  paths: string[];
 };
-export type NavGroup = { title: string; items: NavItem[] };
+export type NavGroup = { key: string; title: string; entries: NavEntry[] };
 
 export function SettingsNav({ groups, label }: { groups: NavGroup[]; label: string }) {
+  const t = useT();
   const pathname = usePathname();
-  const isCurrent = (i: NavItem) =>
-    (i.paths ?? [i.href.split("?")[0]!]).some(
-      (path) => pathname === path || pathname.startsWith(`${path}/`),
-    );
+  const [q, setQ] = useState("");
+  const home = pathname === "/app/settings";
+  const query = q.trim().toLowerCase();
+  const isCurrent = (e: NavEntry) =>
+    e.paths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+  const shown = groups
+    .map((g) => ({
+      ...g,
+      entries: g.entries.filter(
+        (e) => !query || `${e.label} ${e.status} ${g.title}`.toLowerCase().includes(query),
+      ),
+    }))
+    .filter((g) => g.entries.length > 0);
 
   return (
     <nav
       aria-label={label}
-      style={{ display: "flex", flexDirection: "column", gap: 1, position: "sticky", top: 0 }}
+      data-testid="settings-nav"
+      style={{
+        position: "sticky",
+        top: 0,
+        display: "flex",
+        flexDirection: "column",
+        gap: 1,
+        paddingTop: 2,
+      }}
     >
-      {groups.map((g) => (
-        <div key={g.title} style={{ display: "contents" }}>
+      <Link
+        href="/app/settings"
+        aria-current={home ? "page" : undefined}
+        className="oi-hover"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "7px 10px",
+          borderRadius: 9,
+          cursor: "pointer",
+          background: home ? "var(--brand-t)" : "transparent",
+          fontSize: 13.5,
+          fontWeight: 600,
+          color: home ? "var(--brand)" : "var(--ink)",
+          textDecoration: "none",
+        }}
+      >
+        {t("settingsV2.home")}
+      </Link>
+      <div style={{ position: "relative", margin: "6px 0 2px" }}>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={t("settingsV2.nav.find")}
+          aria-label={t("settingsV2.nav.find")}
+          data-testid="settings-find"
+          className="oi-field"
+          style={{
+            width: "100%",
+            height: 32,
+            border: "1px solid var(--line)",
+            borderRadius: 9,
+            padding: "0 10px 0 30px",
+            fontSize: 12.5,
+            background: "var(--panel)",
+            outline: "none",
+          }}
+        />
+        <span
+          aria-hidden
+          style={{
+            position: "absolute",
+            left: 11,
+            top: 10,
+            width: 11,
+            height: 11,
+            border: "1.6px solid var(--ink-3)",
+            borderRadius: "50%",
+            pointerEvents: "none",
+          }}
+        />
+      </div>
+      {shown.map((g) => (
+        <div key={g.key} style={{ display: "contents" }}>
           <div
             style={{
               fontSize: 10.5,
@@ -42,36 +120,82 @@ export function SettingsNav({ groups, label }: { groups: NavGroup[]; label: stri
               letterSpacing: ".1em",
               textTransform: "uppercase",
               color: "var(--ink-3)",
-              padding: "12px 10px 5px",
+              padding: "12px 10px 4px",
             }}
           >
             {g.title}
           </div>
-          {g.items.map((i) => {
-            const active = isCurrent(i);
+          {g.entries.map((e) => {
+            const on = isCurrent(e);
             return (
               <Link
-                key={i.href}
-                href={i.href}
-                aria-current={active ? "page" : undefined}
-                className={active ? undefined : "oi-hover"}
+                key={e.key}
+                href={e.href}
+                data-entry={e.key}
+                aria-current={on ? "page" : undefined}
+                className="oi-hover"
                 style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
                   padding: "6px 10px",
                   borderRadius: 8,
+                  cursor: "pointer",
                   fontSize: 13,
-                  fontWeight: active ? 600 : 400,
-                  color: active ? "var(--brand)" : "var(--ink-2)",
-                  background: active ? "var(--brand-t)" : "transparent",
+                  fontWeight: on ? 600 : 400,
+                  color: on ? "var(--brand)" : "var(--ink-2)",
+                  background: on ? "var(--brand-t)" : "transparent",
                   textDecoration: "none",
-                  display: "block",
                 }}
               >
-                {i.label}
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {e.label}
+                </span>
+                {e.locked && (
+                  <span
+                    style={{
+                      fontSize: 9.5,
+                      fontWeight: 700,
+                      letterSpacing: ".06em",
+                      color: "var(--ink-3)",
+                      border: "1px solid var(--line)",
+                      borderRadius: 5,
+                      padding: "0 5px",
+                    }}
+                  >
+                    {t("settingsV2.nav.ee")}
+                  </span>
+                )}
+                {e.tone && (
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: "50%",
+                      background: e.tone === "dang" ? "var(--dang)" : "var(--wait)",
+                      flex: "none",
+                    }}
+                  />
+                )}
               </Link>
             );
           })}
         </div>
       ))}
+      {shown.length === 0 && (
+        <div style={{ fontSize: 12, color: "var(--ink-3)", padding: 10 }}>
+          {t("settingsV2.nav.noMatch", { q: q.trim() })}
+        </div>
+      )}
     </nav>
   );
 }

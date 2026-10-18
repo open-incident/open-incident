@@ -1,300 +1,194 @@
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   announcementRules,
   announcementTemplates,
   incidentTypes,
-  incidents,
+  integrationInstalls,
   severities,
   withTenant,
 } from "@openincident/db";
 import { getT } from "@/i18n/server";
-import { requireMember } from "@/lib/session";
-import { NewRuleDialog, NewTemplateDialog } from "./dialogs";
-import { deleteRule, deleteTemplate, toggleRule } from "./actions";
+import { isManager, requireMember } from "@/lib/session";
+import { TEMPLATE_VARIABLES } from "@/lib/announcements";
+import { ListCard, ListItem, SettingsPage } from "@/components/settings/template";
+import { NewRuleButton, RuleRow, TemplateDialog } from "./dialogs";
+import { ruleSentence, severityPhrase } from "./sentence";
+
+type ChatConfig = { announceChannelId?: string | null; announceChannelName?: string | null };
 
 /**
- * Settings → Announcements: templates on the left (name, body with its
- * variables), rules on the right (name, active chip, condition chips → audience
- * and template chips, how often it fired). Each rule is a wired automation with
- * one writer — lib/announcements.ts — traced in the timeline.
+ * Settings › Announcements (design V2): the rules, as sentences — "When an
+ * incident is declared at SEV1 or SEV2 → Post in Slack #incidents and Teams ›
+ * Incidents · template “Declared”" — then the templates with their message.
+ *
+ * Every matching rule posts its own living post (lib/announcements.ts): it is
+ * written when an incident becomes active and matches, edited in place at
+ * every change, closed at resolution, and mirrored in the announcement
+ * channel chosen in Slack & Teams — the same for every rule. Where a rule
+ * posts is read from those installs, never assumed.
  */
-export default async function AnnouncementsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ saved?: string; error?: string }>;
-}) {
-  const { tenant } = await requireMember();
+export default async function AnnouncementsPage() {
+  const { tenant, member } = await requireMember();
   const t = await getT();
-  const { saved, error } = await searchParams;
-  const data = await withTenant(tenant.id, async (tx) => {
-    const templates = await tx
+  const manages = isManager(member);
+  const data = await withTenant(tenant.id, async (tx) => ({
+    templates: await tx
       .select()
       .from(announcementTemplates)
       .where(eq(announcementTemplates.tenantId, tenant.id))
-      .orderBy(asc(announcementTemplates.position));
-    const rules = await tx
+      .orderBy(asc(announcementTemplates.position), asc(announcementTemplates.createdAt)),
+    rules: await tx
       .select()
       .from(announcementRules)
       .where(eq(announcementRules.tenantId, tenant.id))
-      .orderBy(desc(announcementRules.createdAt));
-    const sevs = await tx
-      .select()
+      .orderBy(asc(announcementRules.createdAt)),
+    sevs: await tx
+      .select({ rank: severities.rank, name: severities.name })
       .from(severities)
       .where(eq(severities.tenantId, tenant.id))
-      .orderBy(asc(severities.rank));
-    const types = await tx
-      .select()
+      .orderBy(asc(severities.rank)),
+    types: await tx
+      .select({ id: incidentTypes.id, name: incidentTypes.name })
       .from(incidentTypes)
       .where(eq(incidentTypes.tenantId, tenant.id))
-      .orderBy(asc(incidentTypes.position));
-    const lastIds = rules.map((r) => r.lastIncidentId).filter((x): x is string => Boolean(x));
-    const lastIncidents = lastIds.length
-      ? await tx
-          .select({ id: incidents.id, number: incidents.number })
-          .from(incidents)
-          .where(inArray(incidents.id, lastIds))
-      : [];
-    return { templates, rules, sevs, types, lastIncidents };
-  });
-  const audienceLabel = (a: string) =>
-    t(`settings.announcements.audience.${a as "workspace" | "owner_team" | "role_holders"}`);
-  const mono: React.CSSProperties = {
-    fontFamily: "var(--font-mono)",
-    fontSize: 10.5,
-    background: "var(--sunk)",
-    borderRadius: 999,
-    padding: "2px 8px",
+      .orderBy(asc(incidentTypes.position), asc(incidentTypes.createdAt)),
+    installs: await tx
+      .select({
+        kind: integrationInstalls.kind,
+        externalId: integrationInstalls.externalId,
+        config: integrationInstalls.config,
+      })
+      .from(integrationInstalls)
+      .where(
+        and(
+          eq(integrationInstalls.tenantId, tenant.id),
+          eq(integrationInstalls.status, "active"),
+          inArray(integrationInstalls.kind, ["slack", "teams"]),
+        ),
+      ),
+  }));
+
+  // Where every rule posts: the announcement channel of each connected tool.
+  const channel = (kind: "slack" | "teams") => {
+    const row = data.installs.find((i) => i.kind === kind && i.externalId);
+    const config = (row?.config ?? {}) as ChatConfig;
+    if (!config.announceChannelId) return null;
+    if (kind === "slack")
+      return config.announceChannelName
+        ? `#${config.announceChannelName}`
+        : config.announceChannelId;
+    return config.announceChannelName ?? config.announceChannelId;
   };
-  const brandChip: React.CSSProperties = {
-    ...mono,
-    background: "var(--brand-t)",
-    color: "var(--brand)",
+  const slack = channel("slack");
+  const teams = channel("teams");
+  const parts = [
+    slack ? t("settingsV2.ann.slack", { channel: slack }) : null,
+    teams ? t("settingsV2.ann.teams", { channel: teams }) : null,
+  ].filter((x): x is string => Boolean(x));
+  const where =
+    parts.length === 2
+      ? t("settingsV2.ann.and", { a: parts[0]!, b: parts[1]! })
+      : (parts[0] ?? null);
+
+  const vars = TEMPLATE_VARIABLES.map((v) => `{${v}}`).join(", ");
+  const choices = {
+    types: data.types,
+    severities: data.sevs
+      .slice(0, -1)
+      .map((s) => ({ rank: s.rank, label: severityPhrase(t, data.sevs, s.rank) ?? s.name })),
+    templates: data.templates.map((x) => ({ id: x.id, name: x.name })),
+    where,
   };
 
   return (
-    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div className="oi-head">
-        <h1 className="oi-title" style={{ margin: 0 }}>
-          {t("settings.announcements.title")}
-        </h1>
-        <span className="oi-subtitle">{t("settings.announcements.subtitle")}</span>
-        <span style={{ flex: 1 }} />
-        {saved === "1" && (
-          <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
-            {t("common.saved")}
-          </span>
-        )}
-        {error && (
-          <span role="alert" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--dang)" }}>
-            {error === "duplicate"
-              ? t("settings.announcements.errorDuplicate")
-              : t("settings.fields.errorInvalid")}
-          </span>
-        )}
-      </div>
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}
+    <SettingsPage
+      home={t("settingsV2.home")}
+      crumb={t("settingsV2.group.incidents")}
+      title={t("settingsV2.entry.announcements")}
+      lead={t("settingsV2.ann.lead")}
+      actions={
+        manages ? (
+          <>
+            <TemplateDialog vars={vars} />
+            <NewRuleButton {...choices} />
+          </>
+        ) : null
+      }
+      testId="settings-announcements"
+    >
+      <ListCard
+        title={t("settingsV2.ann.rules")}
+        hint={t("settingsV2.ann.rulesHint")}
+        testId="ann-rules"
       >
-        <div className="oi-panel" style={{ overflow: "hidden" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              padding: "12px 16px",
-              borderBottom: "1px solid var(--line)",
-            }}
-          >
-            <span style={{ fontSize: 14, fontWeight: 600 }}>
-              {t("settings.announcements.templates")}
-            </span>
-            <span style={{ flex: 1 }} />
-            <NewTemplateDialog />
-          </div>
-          {data.templates.map((tpl, i) => (
-            <div
-              key={tpl.id}
-              data-testid="template-row"
-              style={{
-                padding: "12px 16px",
-                borderBottom: i < data.templates.length - 1 ? "1px solid var(--line-2)" : undefined,
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
+        {data.rules.map((r, i) => {
+          const template = data.templates.find((x) => x.id === r.templateId)?.name ?? "—";
+          const sentence = ruleSentence(t, data.sevs, {
+            minSeverityRank: r.minSeverityRank,
+            typeName: r.typeId ? (data.types.find((x) => x.id === r.typeId)?.name ?? null) : null,
+          });
+          return (
+            <RuleRow
+              key={r.id}
+              {...choices}
+              canManage={manages}
+              rule={{
+                id: r.id,
+                n: i + 1,
+                sentence,
+                sub: where
+                  ? t("settingsV2.ann.postIn", { where, template })
+                  : t("settingsV2.ann.nowhere", { template }),
+                active: r.active,
+                typeId: r.typeId,
+                minSeverityRank: r.minSeverityRank,
+                templateId: r.templateId,
               }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{tpl.name}</div>
-                <div style={{ fontSize: 11.5, color: "var(--ink-3)", marginTop: 2 }}>
-                  « {tpl.body} » · {audienceLabel(tpl.audience)}
-                </div>
-              </div>
-              <form action={deleteTemplate}>
-                <input type="hidden" name="id" value={tpl.id} />
-                <button
-                  type="submit"
-                  aria-label={t("common.delete")}
-                  className="oi-hover-dang"
-                  style={{
-                    height: 24,
-                    width: 24,
-                    border: 0,
-                    borderRadius: 6,
-                    background: "transparent",
-                    color: "var(--ink-3)",
-                    cursor: "pointer",
-                    fontSize: 12,
-                  }}
-                >
-                  ✕
-                </button>
-              </form>
-            </div>
-          ))}
-          {data.templates.length === 0 && (
-            <div style={{ padding: 16, fontSize: 12.5, color: "var(--ink-3)" }}>
-              {t("settings.announcements.noTemplates")}
-            </div>
-          )}
-        </div>
-        <div className="oi-panel" style={{ overflow: "hidden" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              padding: "12px 16px",
-              borderBottom: "1px solid var(--line)",
-            }}
-          >
-            <span style={{ fontSize: 14, fontWeight: 600 }}>
-              {t("settings.announcements.rules")}
-            </span>
-            <span style={{ flex: 1 }} />
-            <NewRuleDialog
-              templates={data.templates.map((x) => ({ id: x.id, name: x.name }))}
-              severities={data.sevs.map((s) => ({ rank: s.rank, name: s.name }))}
-              types={data.types.map((x) => ({ id: x.id, name: x.name }))}
             />
-          </div>
-          {data.rules.map((r, i) => {
-            const tpl = data.templates.find((x) => x.id === r.templateId);
-            const sev =
-              r.minSeverityRank === null
-                ? null
-                : data.sevs.find((s) => s.rank === r.minSeverityRank);
-            const type = r.typeId ? data.types.find((x) => x.id === r.typeId) : null;
-            const last = r.lastIncidentId
-              ? data.lastIncidents.find((x) => x.id === r.lastIncidentId)
-              : null;
-            return (
-              <div
-                key={r.id}
-                data-testid="rule-row"
-                style={{
-                  padding: "12px 16px",
-                  borderBottom: i < data.rules.length - 1 ? "1px solid var(--line-2)" : undefined,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 7,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</span>
-                  <span
-                    style={{
-                      padding: "2px 8px",
-                      borderRadius: 999,
-                      background: r.active ? "var(--ok-t)" : "var(--sunk)",
-                      color: r.active ? "var(--ok)" : "var(--ink-3)",
-                      fontSize: 10.5,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {r.active
-                      ? t("settings.announcements.active")
-                      : t("settings.announcements.inactive")}
-                  </span>
-                  <span style={{ flex: 1 }} />
-                  <form action={toggleRule}>
-                    <input type="hidden" name="id" value={r.id} />
-                    <button
-                      type="submit"
-                      className="oi-hover"
-                      style={{
-                        height: 24,
-                        padding: "0 9px",
-                        border: "1px solid var(--line)",
-                        borderRadius: 7,
-                        background: "var(--panel)",
-                        fontSize: 11,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {r.active
-                        ? t("settings.announcements.disable")
-                        : t("settings.announcements.enable")}
-                    </button>
-                  </form>
-                  <form action={deleteRule}>
-                    <input type="hidden" name="id" value={r.id} />
-                    <button
-                      type="submit"
-                      aria-label={t("common.delete")}
-                      className="oi-hover-dang"
-                      style={{
-                        height: 24,
-                        width: 24,
-                        border: 0,
-                        borderRadius: 6,
-                        background: "transparent",
-                        color: "var(--ink-3)",
-                        cursor: "pointer",
-                        fontSize: 12,
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </form>
-                </div>
-                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
-                  {sev ? (
-                    <span style={mono}>
-                      {t("settings.announcements.ifSeverity", { severity: sev.name })}
-                    </span>
-                  ) : (
-                    <span style={mono}>{t("settings.announcements.anySeverity")}</span>
-                  )}
-                  {type && (
-                    <span style={mono}>
-                      {t("settings.announcements.andType", { type: type.name })}
-                    </span>
-                  )}
-                  <span style={{ fontSize: 10.5, color: "var(--ink-3)", padding: "2px 0" }}>→</span>
-                  <span style={brandChip}>
-                    {t("settings.announcements.audienceChip", {
-                      audience: audienceLabel(r.audience),
-                    })}
-                  </span>
-                  <span style={brandChip}>
-                    {t("settings.announcements.templateChip", { template: tpl?.name ?? "—" })}
-                  </span>
-                </div>
-                <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                  {t("settings.announcements.triggered", { count: r.triggeredCount })}
-                  {last
-                    ? ` · ${t("settings.announcements.lastIncident", { number: `INC-${last.number}` })}`
-                    : ""}
-                </div>
-              </div>
-            );
-          })}
-          {data.rules.length === 0 && (
-            <div style={{ padding: 16, fontSize: 12.5, color: "var(--ink-3)" }}>
-              {t("settings.announcements.noRules")}
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="oi-note">{t("settings.announcements.note")}</div>
+          );
+        })}
+        {data.rules.length === 0 && <Empty>{t("settingsV2.ann.noRules")}</Empty>}
+      </ListCard>
+
+      <ListCard title={t("settingsV2.ann.templates")} testId="ann-templates">
+        {data.templates.map((tpl) => {
+          const usedBy = data.rules.filter((r) => r.templateId === tpl.id).length;
+          return (
+            <ListItem
+              key={tpl.id}
+              testId="template-row"
+              data={{ template: tpl.name }}
+              title={tpl.name}
+              sub={tpl.body}
+              button={
+                manages ? (
+                  <TemplateDialog
+                    vars={vars}
+                    usedBy={usedBy}
+                    template={{ id: tpl.id, name: tpl.name, body: tpl.body }}
+                  />
+                ) : undefined
+              }
+            />
+          );
+        })}
+        {data.templates.length === 0 && <Empty>{t("settingsV2.ann.noTemplates")}</Empty>}
+      </ListCard>
+    </SettingsPage>
+  );
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        padding: "11px 18px",
+        borderTop: "1px solid var(--line-2)",
+        fontSize: 12.5,
+        color: "var(--ink-3)",
+      }}
+    >
+      {children}
     </div>
   );
 }

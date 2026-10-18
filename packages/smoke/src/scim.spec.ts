@@ -15,9 +15,20 @@ test.describe("SCIM provisioning", () => {
     await expect(page.getByTestId("ee-unavailable")).toHaveCount(0);
     const base = (await page.getByTestId("scim-base-url").textContent())!.trim();
     expect(base).toBe(`${BASE_URL}/scim/v2`);
-    await page.getByTestId("scim-issue").click();
-    const token = (await page.getByTestId("scim-token").textContent())!.trim();
+    // The token comes out of the dialog once — the first one, or a rotation
+    // of whatever the workspace had.
+    const issue = async () => {
+      await page.getByTestId("scim-issue").click();
+      await page.getByTestId("scim-token-dialog-submit").click();
+      const value = (await page.getByTestId("settings-secret").textContent())!.trim();
+      await page.getByTestId("settings-secret-done").click();
+      await expect(page.getByTestId("settings-secret")).toHaveCount(0);
+      return value;
+    };
+    const token = await issue();
     expect(token).toMatch(/^oi_scim_[a-f0-9]{48}$/);
+    await expect(page.getByTestId("scim-state")).toHaveText(/Enabled|Activé|Aktiviert/);
+    await expect(page.getByTestId("scim-connection")).toContainText(token.slice(-6));
 
     const scim = await request.newContext({
       baseURL: BASE_URL,
@@ -137,16 +148,22 @@ test.describe("SCIM provisioning", () => {
     expect(gone.status()).toBe(200);
     expect(((await gone.json()) as { active: boolean }).active).toBe(false);
     await page.goto("/app/settings/members");
-    await expect(page.locator(`[data-member-email="${email}"]`)).toBeVisible();
+    const provisioned = page.locator(`[data-member-email="${email}"]`);
+    await expect(provisioned).toBeVisible();
+    await expect(provisioned).toHaveAttribute("data-status", "disabled");
+    // A member the provider owns is reactivated there, not here.
+    await expect(provisioned.getByTestId("member-managed")).toBeVisible();
+    await expect(provisioned.getByTestId("member-disable")).toHaveCount(0);
 
     // Rotation: the old token dies with the new one; disabling closes the door.
     await page.goto("/app/settings/scim");
-    await expect(page.getByTestId("scim-state")).not.toHaveText(
-      /Not enabled|Non activé|Nicht aktiviert/,
+    // The provider's calls show: the last one, and the user it deactivated.
+    await expect(page.getByTestId("scim-stats")).toContainText(
+      /user deactivated|utilisateur désactivé|Benutzer deaktiviert/,
     );
-    await page.getByTestId("scim-issue").click();
-    const token2 = (await page.getByTestId("scim-token").textContent())!.trim();
+    const token2 = await issue();
     expect(token2).not.toBe(token);
+    await expect(page.getByTestId("scim-connection")).toContainText(token2.slice(-6));
     expect((await scim.get("/scim/v2/Users")).status()).toBe(401);
     const scim2 = await request.newContext({
       baseURL: BASE_URL,

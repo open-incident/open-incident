@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import {
@@ -11,139 +10,134 @@ import {
   telemetrySettings,
   withTenant,
 } from "@openincident/db";
+import { getT } from "@/i18n/server";
 import { recordAudit } from "@/lib/audit";
 import { requireManager } from "@/lib/session";
+import { currentOrigin } from "@/lib/tenant";
+import type { FormResult } from "@/components/settings/settings-form";
+import type { DialogResult } from "@/components/settings/dialog";
+import { REDACTIONS, rumSnippet, withRedactions } from "./redaction";
 
 const PAGE = "/app/settings/observability";
 
+export type RowResult = { ok: boolean; message: string };
+
 /**
  * Retention is in days and bounded, because the two ends are both a promise
- * the instance cannot keep. Zero would mean "delete on arrival", and a year of
- * spans on a single-node ClickHouse is a disk that fills up quietly and then
- * stops accepting anything — which is worse than a shorter window somebody
- * chose on purpose.
+ * the instance cannot keep: zero would mean "delete on arrival", and more
+ * than thirteen months on a single-node column store is a disk that fills up
+ * quietly. A change applies to what arrives next — each row carries the
+ * expiry it was written with.
  */
 const schema = z.object({
-  retentionLogsDays: z.coerce.number().int().min(1).max(365),
-  retentionTracesDays: z.coerce.number().int().min(1).max(365),
-  retentionMetricsDays: z.coerce.number().int().min(1).max(365),
-  cardinalityBudget: z.coerce.number().int().min(1_000).max(10_000_000).optional(),
-  dailySoftCapGb: z.coerce.number().int().min(1).max(10_000).optional(),
-  exceptionRegressions: z.enum(["on", "off"]).default("off"),
-  exceptionRegressionSeverity: z.enum(["P1", "P2", "P3", "P4"]).default("P3"),
-  scrubRules: z.string().max(4_000).optional(),
+  retentionLogsDays: z.coerce.number().int().min(1).max(400),
+  retentionTracesDays: z.coerce.number().int().min(1).max(400),
+  retentionMetricsDays: z.coerce.number().int().min(1).max(400),
+  exceptionRegressionSeverity: z.enum(["P1", "P2", "P3", "P4"]),
 });
 
-export async function saveObservabilitySettings(form: FormData): Promise<void> {
+/**
+ * The screen's one save: retention, redaction, the exception rule.
+ *
+ * The redaction switches are named sets of patterns kept in the workspace's
+ * scrub rules — the list the ingestion service already applies to every log
+ * line, span attribute and exception before anything is written. A rule the
+ * workspace added by hand is kept as it is.
+ */
+export async function saveTelemetry(_prev: FormResult, form: FormData): Promise<FormResult> {
   const current = await requireManager();
+  const t = await getT();
   const parsed = schema.safeParse({
     retentionLogsDays: form.get("retentionLogsDays"),
     retentionTracesDays: form.get("retentionTracesDays"),
     retentionMetricsDays: form.get("retentionMetricsDays"),
-    cardinalityBudget: form.get("cardinalityBudget") || undefined,
-    dailySoftCapGb: form.get("dailySoftCapGb") || undefined,
-    exceptionRegressions: form.get("exceptionRegressions") === "on" ? "on" : "off",
     exceptionRegressionSeverity: form.get("exceptionRegressionSeverity") ?? "P3",
-    scrubRules: form.get("scrubRules") ?? "",
   });
-  if (!parsed.success) redirect(`${PAGE}?error=invalid`);
+  if (!parsed.success) return { ok: false, error: t("settingsV2.error.invalid") };
   const v = parsed.data;
+  const on = new Set(
+    REDACTIONS.filter((r) => r.fixed || form.get(`redact.${r.key}`) === "on").map((r) => r.key),
+  );
 
-  /*
-   * A scrub rule that does not compile is refused here rather than dropped at
-   * ingestion. The ingestion path does drop it — a bad rule must not stop a
-   * workspace's telemetry — but that means a typo would silently protect
-   * nothing, and somebody would believe their card numbers were being
-   * redacted. The place to say so is the form that accepted it.
-   */
-  const rules = (v.scrubRules ?? "")
-    .split("\n")
-    .map((r) => r.trim())
-    .filter(Boolean)
-    .slice(0, 50);
-  for (const rule of rules) {
-    try {
-      new RegExp(rule);
-    } catch {
-      redirect(`${PAGE}?error=regex&rule=${encodeURIComponent(rule.slice(0, 80))}`);
-    }
-  }
-
-  const values = {
-    retentionLogsDays: v.retentionLogsDays,
-    retentionTracesDays: v.retentionTracesDays,
-    retentionMetricsDays: v.retentionMetricsDays,
-    cardinalityBudget: v.cardinalityBudget ?? null,
-    dailySoftCapGb: v.dailySoftCapGb ?? null,
-    exceptionRegressions: v.exceptionRegressions === "on",
-    exceptionRegressionSeverity: v.exceptionRegressionSeverity,
-    scrubRules: rules,
-    updatedAt: new Date(),
-  };
-
-  await withTenant(current.tenant.id, async (tx) => {
+  const values = await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .select({ scrubRules: telemetrySettings.scrubRules })
+      .from(telemetrySettings)
+      .where(eq(telemetrySettings.tenantId, current.tenant.id));
+    const scrubRules = withRedactions(row?.scrubRules ?? [], on);
+    const set = {
+      retentionLogsDays: v.retentionLogsDays,
+      retentionTracesDays: v.retentionTracesDays,
+      retentionMetricsDays: v.retentionMetricsDays,
+      exceptionRegressions: form.get("exceptionRegressions") === "on",
+      exceptionRegressionSeverity: v.exceptionRegressionSeverity,
+      scrubRules,
+      updatedAt: new Date(),
+    };
     await tx
       .insert(telemetrySettings)
-      .values({ tenantId: current.tenant.id, ...values })
-      .onConflictDoUpdate({ target: telemetrySettings.tenantId, set: values });
+      .values({ tenantId: current.tenant.id, ...set })
+      .onConflictDoUpdate({ target: telemetrySettings.tenantId, set });
     await recordAudit(tx, current, "config", "telemetry.settings.saved", {
-      retentionLogsDays: values.retentionLogsDays,
-      retentionTracesDays: values.retentionTracesDays,
-      retentionMetricsDays: values.retentionMetricsDays,
-      dailySoftCapGb: values.dailySoftCapGb,
-      exceptionRegressions: values.exceptionRegressions,
-      scrubRules: rules.length,
+      retentionLogsDays: set.retentionLogsDays,
+      retentionTracesDays: set.retentionTracesDays,
+      retentionMetricsDays: set.retentionMetricsDays,
+      exceptionRegressions: set.exceptionRegressions,
+      exceptionRegressionSeverity: set.exceptionRegressionSeverity,
+      redaction: [...on],
+      scrubRules: scrubRules.length,
     });
+    return set;
   });
+  void values;
   revalidatePath(PAGE);
-  redirect(`${PAGE}?saved=1`);
+  return { ok: true };
 }
 
-/**
- * Creating a RUM application.
- *
- * The origins are the whole of the security here, so they are required and
- * validated: an application with none accepts nothing, and one with a typo
- * accepts nothing either — which is the right way round, because the failure
- * is visible on the first page load rather than being a table quietly filling
- * with somebody else's traffic.
- */
-const rumSchema = z.object({
-  name: z.string().trim().min(1).max(120),
-  origins: z.string().trim().min(1).max(2_000),
-  sampleRate: z.coerce.number().min(0.01).max(1).default(1),
-});
+/* ---------- Real user monitoring ---------- */
 
-export async function createRumApplication(form: FormData): Promise<void> {
-  const current = await requireManager();
-  const parsed = rumSchema.safeParse({
-    name: form.get("name"),
-    origins: form.get("origins"),
-    sampleRate: form.get("sampleRate") ?? 1,
-  });
-  if (!parsed.success) redirect(`${PAGE}?error=invalid`);
-  const v = parsed.data;
-
+function parseOrigins(raw: string): string[] | null {
   const origins: string[] = [];
-  for (const line of v.origins.split(/[\n,]/)) {
+  for (const line of raw.split(/[\n,]/)) {
     const text = line.trim().replace(/\/$/, "");
     if (!text) continue;
     let url: URL;
     try {
       url = new URL(text);
     } catch {
-      redirect(`${PAGE}?error=origin&rule=${encodeURIComponent(text.slice(0, 80))}`);
+      return null;
     }
-    // An origin is a scheme and a host and nothing else. A path here would
-    // never match what a browser sends, and the workspace would be left
-    // wondering why nothing arrives.
-    if (url!.pathname !== "/" || url!.search || url!.hash) {
-      redirect(`${PAGE}?error=origin&rule=${encodeURIComponent(text.slice(0, 80))}`);
-    }
-    origins.push(url!.origin);
+    // An origin is a scheme and a host and nothing else: a path would never
+    // match what a browser sends.
+    if (url.pathname !== "/" || url.search || url.hash) return null;
+    origins.push(url.origin);
   }
-  if (origins.length === 0) redirect(`${PAGE}?error=origin&rule=`);
+  return origins.length ? origins : null;
+}
 
+/**
+ * "+ Application": a browser application allowed to report. Its id is the
+ * public key the page carries; only the origins listed may send with it.
+ * The answer is the snippet to paste, shown in the dialog.
+ */
+export async function createRumApp(_prev: DialogResult, form: FormData): Promise<DialogResult> {
+  const current = await requireManager();
+  const t = await getT();
+  const parsed = z
+    .object({
+      name: z.string().trim().min(1).max(120),
+      origins: z.string().trim().min(1).max(2_000),
+      sampleRate: z.coerce.number().min(0.01).max(1),
+    })
+    .safeParse({
+      name: form.get("name"),
+      origins: form.get("origins"),
+      sampleRate: form.get("sampleRate") ?? 1,
+    });
+  if (!parsed.success) return { ok: false, error: t("settingsV2.error.invalid") };
+  const v = parsed.data;
+  const origins = parseOrigins(v.origins);
+  if (!origins) return { ok: false, error: t("settingsV2.tel.badOrigin") };
   const id = await withTenant(current.tenant.id, async (tx) => {
     const [row] = await tx
       .insert(rumApplications)
@@ -161,87 +155,73 @@ export async function createRumApplication(form: FormData): Promise<void> {
     });
     return row!.id;
   });
-  // The lookup is written outside the tenant transaction, like every other
-  // pre-tenant projection: the row it points at exists by now.
+  // A new application never records: replay is switched on later, on purpose.
   await registerRumApp({
     appId: id,
     tenantId: current.tenant.id,
     allowedOrigins: origins,
     sampleRate: v.sampleRate,
-    // A new application never records. Replay is turned on afterwards, on
-    // purpose, by somebody who read what it does.
     replayEnabled: false,
     replaySampleRate: 0.1,
     replayUnmask: [],
     mobileEnabled: false,
   });
   revalidatePath(PAGE);
-  redirect(`${PAGE}?created=${id}`);
+  return {
+    ok: true,
+    secret: rumSnippet(id, await currentOrigin()),
+    secretNote: t("settingsV2.tel.rumSecretNote"),
+    secretDone: t("settingsV2.done"),
+  };
 }
 
-/**
- * The two switches an application grows after it exists: replay, and mobile.
- *
- * Its own action rather than a field on the create form, because it is its own
- * decision and it is usually taken later: an application is added to get page
- * timings, and somebody decides months afterwards that an argument about what
- * a visitor saw needs settling.
- *
- * Everything is masked unless a selector here says otherwise. The form checks
- * the selectors lightly — a typo is worth catching where it is made — but the
- * browser checks them properly, because only a browser can, and it drops the
- * ones it cannot use rather than throwing into somebody's page.
- */
-const replaySchema = z.object({
-  id: z.string().uuid(),
-  replayEnabled: z.enum(["on", "off"]).default("off"),
-  mobileEnabled: z.enum(["on", "off"]).default("off"),
-  replaySampleRate: z.coerce.number().min(0.01).max(1).default(0.1),
-  replayUnmask: z.string().max(2_000).optional(),
-});
-
-export async function saveRumApplication(form: FormData): Promise<void> {
+/** An application's own switches: replay (with its rate and what it may show) and mobile. */
+export async function saveRumApp(_prev: DialogResult, form: FormData): Promise<DialogResult> {
   const current = await requireManager();
-  const parsed = replaySchema.safeParse({
-    id: form.get("id"),
-    replayEnabled: form.get("replayEnabled") === "on" ? "on" : "off",
-    mobileEnabled: form.get("mobileEnabled") === "on" ? "on" : "off",
-    replaySampleRate: form.get("replaySampleRate") ?? 0.1,
-    replayUnmask: form.get("replayUnmask") ?? "",
-  });
-  if (!parsed.success) redirect(`${PAGE}?error=invalid`);
+  const t = await getT();
+  const parsed = z
+    .object({
+      id: z.string().uuid(),
+      sampleRate: z.coerce.number().min(0.01).max(1),
+      replaySampleRate: z.coerce.number().min(0.01).max(1),
+      replayUnmask: z.string().max(2_000),
+      origins: z.string().trim().min(1).max(2_000),
+    })
+    .safeParse({
+      id: form.get("id"),
+      sampleRate: form.get("sampleRate") ?? 1,
+      replaySampleRate: form.get("replaySampleRate") ?? 0.1,
+      replayUnmask: form.get("replayUnmask") ?? "",
+      origins: form.get("origins") ?? "",
+    });
+  if (!parsed.success) return { ok: false, error: t("settingsV2.error.invalid") };
   const v = parsed.data;
-
+  const origins = parseOrigins(v.origins);
+  if (!origins) return { ok: false, error: t("settingsV2.tel.badOrigin") };
   const unmask: string[] = [];
-  for (const line of (v.replayUnmask ?? "").split(/[\n,]/)) {
+  for (const line of v.replayUnmask.split(/[\n,]/)) {
     const text = line.trim();
     if (!text) continue;
-    // A brace means somebody pasted a CSS rule rather than a selector, which
-    // matches nothing and would silently un-mask nothing at all.
-    if (text.length > 200 || /[{}]/.test(text)) {
-      redirect(`${PAGE}?error=selector&rule=${encodeURIComponent(text.slice(0, 80))}`);
-    }
+    // A brace means a pasted CSS rule rather than a selector: it would un-mask nothing.
+    if (text.length > 200 || /[{}]/.test(text))
+      return { ok: false, error: t("settingsV2.tel.badSelector", { rule: text.slice(0, 60) }) };
     unmask.push(text);
   }
   const values = {
-    replayEnabled: v.replayEnabled === "on",
-    mobileEnabled: v.mobileEnabled === "on",
+    allowedOrigins: origins,
+    sampleRate: v.sampleRate,
+    replayEnabled: form.get("replayEnabled") === "on",
+    mobileEnabled: form.get("mobileEnabled") === "on",
     replaySampleRate: v.replaySampleRate,
     replayUnmask: unmask.slice(0, 50),
     updatedAt: new Date(),
   };
-
   const app = await withTenant(current.tenant.id, async (tx) => {
     const [row] = await tx
       .update(rumApplications)
       .set(values)
       .where(and(eq(rumApplications.tenantId, current.tenant.id), eq(rumApplications.id, v.id)))
-      .returning({
-        id: rumApplications.id,
-        name: rumApplications.name,
-        allowedOrigins: rumApplications.allowedOrigins,
-        sampleRate: rumApplications.sampleRate,
-      });
+      .returning({ id: rumApplications.id, name: rumApplications.name });
     if (row)
       await recordAudit(tx, current, "config", "rum.application.changed", {
         name: row.name,
@@ -252,36 +232,37 @@ export async function saveRumApplication(form: FormData): Promise<void> {
       });
     return row;
   });
-  if (!app) redirect(`${PAGE}?error=invalid`);
-
+  if (!app) return { ok: false, error: t("settingsV2.error.generic") };
   await registerRumApp({
     appId: app.id,
     tenantId: current.tenant.id,
-    allowedOrigins: app.allowedOrigins,
-    sampleRate: app.sampleRate,
+    allowedOrigins: values.allowedOrigins,
+    sampleRate: values.sampleRate,
     replayEnabled: values.replayEnabled,
     replaySampleRate: values.replaySampleRate,
     replayUnmask: values.replayUnmask,
     mobileEnabled: values.mobileEnabled,
   });
   revalidatePath(PAGE);
-  redirect(`${PAGE}?saved=1`);
+  return { ok: true, message: t("settingsV2.tel.rumSaved", { name: app.name }) };
 }
 
-export async function deleteRumApplication(form: FormData): Promise<void> {
+export async function deleteRumApp(id: string): Promise<RowResult> {
   const current = await requireManager();
-  const id = z.string().uuid().parse(form.get("id"));
-  await withTenant(current.tenant.id, async (tx) => {
+  const t = await getT();
+  const appId = z.string().uuid().parse(id);
+  const name = await withTenant(current.tenant.id, async (tx) => {
     const [row] = await tx
       .delete(rumApplications)
-      .where(and(eq(rumApplications.tenantId, current.tenant.id), eq(rumApplications.id, id)))
+      .where(and(eq(rumApplications.tenantId, current.tenant.id), eq(rumApplications.id, appId)))
       .returning({ name: rumApplications.name });
     if (row)
       await recordAudit(tx, current, "config", "rum.application.deleted", { name: row.name });
+    return row?.name ?? null;
   });
-  // The lookup goes last: a page still holding the id stops being accepted the
-  // moment the row is gone, and an orphan lookup would keep accepting it.
-  await forgetRumApp(id);
+  // The lookup goes last: a page still holding the id stops being accepted now.
+  await forgetRumApp(appId);
   revalidatePath(PAGE);
-  redirect(PAGE);
+  if (!name) return { ok: false, message: t("settingsV2.error.generic") };
+  return { ok: true, message: t("settingsV2.tel.rumDeleted", { name }) };
 }

@@ -1,9 +1,8 @@
 /**
  * Everything the rule editor needs to render, loaded once.
  *
- * The editor opens in two places — inline on the rules list, where the design
- * draws it, and on its own URL, which the smoke suite and any bookmark still
- * reach — so the query block lives here rather than in either page.
+ * The editor opens on a rule's own page — what the rules dialog's "More
+ * options…" leads to, and where a bookmark lands.
  */
 import { and, eq } from "drizzle-orm";
 import {

@@ -1,7 +1,44 @@
 import type { ReactNode } from "react";
 
+/*
+ * The settings template of the V2 design lives in template.tsx (page header,
+ * form cards and rows, list cards, notes, the honest unavailable state),
+ * controls.tsx (switches, segments, copy, toast), settings-form.tsx (the one
+ * save bar, shown only when something changed) and dialog.tsx (creation
+ * dialogs, secrets shown once). They are re-exported here so a screen can
+ * import the whole template from one place.
+ *
+ * `Section` and `SaveBar` below are the previous layout — numbered sections,
+ * an always-visible Save. No settings screen of the V2 design uses them; they
+ * stay for the screens that have not moved yet.
+ */
+export * from "./template";
+export { SettingsForm, markChanged } from "./settings-form";
+export type { FormResult, SettingsAction } from "./settings-form";
+export {
+  SettingsDialog,
+  DialogField,
+  DialogReadOnly,
+  DialogToggle,
+  DialogSegmented,
+  dialogInputStyle,
+  dialogSelectStyle,
+  dialogTextareaStyle,
+} from "./dialog";
+export type { DialogResult, DialogAction } from "./dialog";
+export {
+  Toggle,
+  Switch,
+  Segmented,
+  CopyValue,
+  CodeLine,
+  CodeCard,
+  flash,
+  SettingsToaster,
+} from "./controls";
+
 /**
- * The reading layout of a settings form.
+ * The reading layout of a settings form (previous design).
  *
  * One form, numbered sections, one Save. A section explains itself on the
  * left — number, title, one sentence, and the longer reasoning folded under

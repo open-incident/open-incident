@@ -2,18 +2,16 @@
 title: Incident settings
 section: configuration
 order: 14
-summary: Types & lifecycle — the form, the statuses and the post-incident flow of each type; severities and custom fields; announcements — the Incidents group of the settings.
+summary: Types & lifecycle, Severities, Custom fields and Announcements — the Incidents group of the settings (Slack & Teams has its own chapter).
 ---
 
-## Types, severities & fields
+The **Incidents** group of the navigation holds one entry per screen: **Slack & Teams** (see [Slack](slack) and [Microsoft Teams](teams)), **Types & lifecycle**, **Severities**, **Custom fields** and **Announcements**. Each screen follows the settings template — rows of label and control, one save bar that appears only when something changed, creation in a dialog.
 
-![Types & lifecycle](img/settings-types.png "The type selector, then the sheet: the type, its declaration form, and its lifecycle — triage, active statuses, post-incident, closed.")
+## Types & lifecycle
 
-One entry, three tabs: **Types & lifecycle**, **Severities**, **Custom fields**.
+![Types & lifecycle](img/settings-types.png "The type switcher, the four phases on one line, then the rules of the selected type.")
 
-### Types & lifecycle
-
-Pick the type in the selector at the top — ★ marks the default type, and each type shows how many incidents it carried over ninety days. Below it, the type's sheet reads top to bottom, and one **Save**, which stays in view at the bottom, saves everything on it that is a value. What is a list — statuses, post-incident tasks — is changed on the spot, nothing to save.
+Pick the type in the switcher at the top — each type shows how many incidents it carried. Under it, the four phases of the lifecycle on one line — **Triage**, **Active** (the type's own statuses), **Post-incident**, **Closed** — then **Rules for** the type, saved with the save bar that is a value. What is a list — statuses, post-incident tasks — is changed on the spot, nothing to save.
 
 | Part                          | What you decide                                                                                                                                                                                                                                                                                                                     |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -26,17 +24,17 @@ Pick the type in the selector at the top — ★ marks the default type, and eac
 
 Each post-incident task has a title, a phase, a default assignee (the incident lead, the communication lead, nobody) and a deadline in days after entering the phase; a new task applies to incidents entering the flow from now on. The **post-mortem term** is the word the workspace uses — _post-mortem_, _retro_, _RCA_ — everywhere the product names it. The **template** is the list of sections a new post-mortem starts with, and what each should hold; documents already written keep theirs.
 
-### New types
+## New types
 
 **+ New type** inherits the statuses and form of the type it is based on — adjust afterwards on its sheet.
 
-### Severities
+## Severities
 
-Ordered and shared. Each carries a description, a colour, and the **post-incident entry** rule: _always_, _yes_, _opt-in at closure_, _no_. Changing a severity on an incident is a timeline event.
+**Severities** is its own screen (the old address `/app/settings/types?seg=severities` lands there). Ordered from the worst and shared by every type, each in a row with its colour, its description and chips for what it starts — **post-incident**, **status page proposed**; **+ Add severity** and **Edit** open a dialog. Each carries a description, a colour, and the **post-incident entry** rule: _always_, _yes_, _opt-in at closure_, _no_. Changing a severity on an incident is a timeline event.
 
 > Severity ≠ priority ≠ urgency. Severity qualifies the incident; priority qualifies the alert; urgency picks the notification channel.
 
-### Custom fields
+## Custom fields
 
 ![Custom fields](img/settings-fields.png "One row per field: API name, label, type, incident type, required or not.")
 
@@ -55,5 +53,5 @@ Deleting a field removes it from the forms; the values already recorded on past 
 
 Announcements are **living posts**: a rule publishes one when an active incident matches, keeps it updated at every status update and closes it at resolution. They are shown above the incidents list for their audience; with Slack or Teams connected, in the announcement channel as well. Test incidents never announce.
 
-- **Templates**: a name, an **audience** (whole workspace, owning team, role holders), a body with variables `{severity}`, `{title}`, `{status}`, `{next_update}`, `{reference}`, `{service}`, `{lead}`, `{summary}` — re-rendered at every update.
+- **Templates**: a name, a body where variables are written in brackets or braces — `[number]` and `{number}` mean the same, an unknown variable is refused — an **audience** (whole workspace, owning team, role holders), a body with variables `{severity}`, `{title}`, `{status}`, `{next_update}`, `{reference}`, `{service}`, `{lead}`, `{summary}` — re-rendered at every update.
 - **Rules**: _if severity ≥ SEV2_ and optionally _type = …_, _then publish template …_. Each rule shows how many times it triggered and the last incident.

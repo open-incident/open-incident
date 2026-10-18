@@ -19,11 +19,13 @@ Create keys in **Settings → API & webhooks**. A key is `oi_live_` followed by 
 | `write`           | Everything, including declaring and updating incidents and recording change events. Implies `read` and `incident:create`. |
 | `incident:create` | Declaring incidents only — the narrow scope for an ingestion script.                                                      |
 
+The dialog asks for the **access** (Read, or Read & write — the `read` and `write` scopes above), the **scope** — Incidents (incidents and follow-ups); Incidents and monitors (plus monitors, heartbeats, SLOs); Services (services, teams, runbooks, change events); Status pages; or Everything — and an **expiry** (30 days, 90 days, 1 year, never). Outside its scope a key gets `403 out_of_scope`; after its expiry, `401 key_expired`. Keys made before scopes existed reach everything and never expire.
+
 ## The contract
 
 - **Pagination**: `?limit=` (100 at most) and `?cursor=`; a list answers `{ data: […], next_cursor: "…" | null }`.
 - **Rate limit**: 600 requests per minute per key → `429 rate_limited`.
-- **Errors**: always `{ error: { code, message } }` — `401 unknown_key`, `403 missing_scope`, `403 workspace_suspended`, `404 not_found`, `422 invalid_body` / `unknown_service` / `unknown_type` / `missing_field`, `409` on conflicts.
+- **Errors**: always `{ error: { code, message } }` — `401 unknown_key`, `401 key_expired`, `403 missing_scope`, `403 out_of_scope`, `403 workspace_suspended`, `404 not_found`, `422 invalid_body` / `unknown_service` / `unknown_type` / `missing_field`, `409` on conflicts.
 - **OpenAPI**: `GET /api/v1/openapi.json`, served by the instance with its own URL.
 
 ## Endpoints

@@ -1,410 +1,241 @@
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
-import {
-  escalationPathVersions,
-  escalationPaths,
-  withTenant,
-  workingHoursSets,
-} from "@openincident/db";
+import { withTenant, workingHoursSets } from "@openincident/db";
 import { getT } from "@/i18n/server";
-import { requireMember } from "@/lib/session";
+import { isManager, requireMember } from "@/lib/session";
 import { TIMEZONES } from "@/lib/oncall";
-import { deleteWorkingHours, saveWorkingHours } from "./actions";
+import { Note, SettingsPage, cardStyle } from "@/components/settings/template";
+import { DeleteSetDialog, SetDialog } from "./set-dialog";
+import { setsUsage } from "./usage";
 
-/** Settings → Working hours: named sets, consumed by the "working hours" conditions of escalation paths. */
+const DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+
+/**
+ * Settings › Working hours (design V2): the named sets on the left, the one
+ * selected on the right as a week — a bar per day on a 24-hour axis — and
+ * the policies that read it. Policies page differently in and out of these
+ * hours; a set a policy reads cannot be deleted.
+ */
 export default async function WorkingHoursPage({
   searchParams,
 }: {
-  searchParams: Promise<Record<string, string | undefined>>;
+  searchParams: Promise<{ set?: string }>;
 }) {
-  const { tenant, workspace } = await requireMember();
+  const { tenant, workspace, member } = await requireMember();
   const t = await getT();
-  const q = await searchParams;
-  const data = await withTenant(tenant.id, async (tx) => {
-    const sets = await tx
+  const { set: selectedId } = await searchParams;
+  const manages = isManager(member);
+  const sets = await withTenant(tenant.id, (tx) =>
+    tx
       .select()
       .from(workingHoursSets)
       .where(eq(workingHoursSets.tenantId, tenant.id))
-      .orderBy(asc(workingHoursSets.createdAt));
-    const paths = await tx
-      .select({
-        id: escalationPaths.id,
-        name: escalationPaths.name,
-        currentVersionId: escalationPaths.currentVersionId,
-        draft: escalationPaths.draftGraph,
-      })
-      .from(escalationPaths)
-      .where(eq(escalationPaths.tenantId, tenant.id));
-    const versions = await tx
-      .select({ id: escalationPathVersions.id, graph: escalationPathVersions.graph })
-      .from(escalationPathVersions)
-      .where(eq(escalationPathVersions.tenantId, tenant.id));
-    const usage = new Map<string, number>();
-    for (const p of paths) {
-      const g = p.draft ?? versions.find((v) => v.id === p.currentVersionId)?.graph;
-      const ids = new Set<string>();
-      for (const n of g?.nodes ?? []) {
-        if (n.kind === "condition" && n.test.type === "working_hours") ids.add(n.test.setId);
-        if (n.kind === "delay" && n.untilWorkingHoursSetId) ids.add(n.untilWorkingHoursSetId);
-      }
-      for (const id of ids) usage.set(id, (usage.get(id) ?? 0) + 1);
-    }
-    return { sets, usage };
-  });
-  const editing = q.edit === "new" ? "new" : (data.sets.find((s) => s.id === q.edit) ?? null);
-  const r = editing === "new" ? null : editing;
-  const dayNames = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
-  const label: React.CSSProperties = {
-    fontSize: 11,
-    fontWeight: 600,
-    letterSpacing: ".1em",
-    textTransform: "uppercase",
-    color: "var(--ink-3)",
+      .orderBy(asc(workingHoursSets.createdAt)),
+  );
+  const usage = await setsUsage(tenant.id);
+  const current = sets.find((s) => s.id === selectedId) ?? sets[0];
+  const usedLine = (id: string) => {
+    const names = usage.get(id) ?? [];
+    return names.length
+      ? t("settingsV2.hours.usedBy", { count: names.length, names: names.join(", ") })
+      : t("settingsV2.hours.notUsed");
   };
-  const control: React.CSSProperties = {
-    height: 36,
-    padding: "0 11px",
-    border: "1px solid var(--line)",
-    borderRadius: 9,
-    outline: "none",
-    fontSize: 13,
-    background: "var(--panel)",
-    width: "100%",
+  const readers = current ? (usage.get(current.id) ?? []) : [];
+  const minutes = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return (h ?? 0) * 60 + (m ?? 0);
   };
-  const rangeLabel = (s: (typeof data.sets)[number]) => {
-    const ds = s.days.slice().sort();
-    const contiguous = ds.every((d, i) => i === 0 || d === ds[i - 1]! + 1);
-    const daysText =
-      contiguous && ds.length > 1
-        ? `${t(`oncall.day.${dayNames[ds[0]! - 1]!}`)} – ${t(`oncall.day.${dayNames[ds[ds.length - 1]! - 1]!}`)}`
-        : ds.map((d) => t(`oncall.day.${dayNames[d - 1]!}`)).join(", ");
-    return `${daysText} · ${s.startTime} – ${s.endTime} · ${s.timezone}`;
-  };
+
   return (
-    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div className="oi-head">
-        <h1 className="oi-title" style={{ margin: 0 }}>
-          {t("settings.hours.title")}
-        </h1>
-        <span className="oi-subtitle">{t("settings.hours.subtitle")}</span>
-        <span style={{ flex: 1 }} />
-        {q.saved === "1" && (
-          <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
-            {t("common.saved")}
-          </span>
-        )}
-        {q.error && (
-          <span role="alert" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--dang)" }}>
-            {t("settings.fields.errorInvalid")}
-          </span>
-        )}
-        <Link
-          href="/app/settings/working-hours?edit=new"
-          data-testid="hours-new"
-          style={{
-            height: 32,
-            padding: "0 14px",
-            borderRadius: 9,
-            background: "var(--brand)",
-            color: "var(--on-brand)",
-            display: "flex",
-            alignItems: "center",
-            fontSize: 12.5,
-            fontWeight: 600,
-            textDecoration: "none",
-          }}
-        >
-          {t("settings.hours.new")}
-        </Link>
-      </div>
-      {data.sets.map((s) => {
-        const used = data.usage.get(s.id) ?? 0;
-        return (
+    <SettingsPage
+      home={t("settingsV2.home")}
+      crumb={t("settingsV2.group.workspace")}
+      title={t("settingsV2.entry.hours")}
+      lead={t("settingsV2.hours.lead")}
+      testId="settings-hours"
+      actions={
+        manages ? (
+          <SetDialog timezones={[...TIMEZONES]} defaultTimezone={workspace.timezone} />
+        ) : undefined
+      }
+    >
+      {!current ? (
+        <Note>{t("settingsV2.hours.empty")}</Note>
+      ) : (
+        <div style={{ ...cardStyle, display: "flex", flexWrap: "wrap" }}>
           <div
-            key={s.id}
-            data-testid="hours-row"
-            className="oi-panel"
             style={{
-              padding: "15px 18px",
+              flex: "1 1 220px",
+              maxWidth: 290,
+              borderRight: "1px solid var(--line)",
+              padding: 8,
               display: "flex",
-              alignItems: "center",
-              gap: 12,
-              flexWrap: "wrap",
+              flexDirection: "column",
+              gap: 3,
             }}
           >
-            <div style={{ flex: 1, minWidth: 220 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600 }}>{s.name}</div>
-              <div style={{ fontSize: 12, color: "var(--ink-3)" }}>{rangeLabel(s)}</div>
-            </div>
-            <span
-              style={{
-                padding: "2px 9px",
-                borderRadius: 999,
-                background: used ? "var(--brand-t)" : "var(--sunk)",
-                color: used ? "var(--brand)" : "var(--ink-2)",
-                fontSize: 10.5,
-                fontWeight: 700,
-              }}
-            >
-              {used ? t("settings.hours.usedBy", { count: used }) : t("settings.hours.unused")}
-            </span>
-            <Link
-              href={`/app/settings/working-hours?edit=${s.id}`}
-              className="oi-hover"
-              style={{
-                height: 28,
-                padding: "0 11px",
-                border: "1px solid var(--line)",
-                borderRadius: 8,
-                display: "flex",
-                alignItems: "center",
-                fontSize: 12,
-                fontWeight: 600,
-                color: "inherit",
-                textDecoration: "none",
-              }}
-            >
-              {t("common.edit")}
-            </Link>
-            {!used && (
-              <form action={deleteWorkingHours}>
-                <input type="hidden" name="id" value={s.id} />
-                <button
-                  type="submit"
-                  aria-label={t("common.delete")}
-                  className="oi-hover-dang"
+            {sets.map((s) => {
+              const on = s.id === current.id;
+              return (
+                <Link
+                  key={s.id}
+                  href={`/app/settings/working-hours?set=${s.id}`}
+                  scroll={false}
+                  data-testid="hours-row"
+                  aria-current={on ? "true" : undefined}
+                  className={on ? undefined : "oi-hover"}
                   style={{
-                    width: 28,
-                    height: 28,
-                    border: "1px solid var(--line)",
-                    borderRadius: 8,
-                    background: "var(--panel)",
-                    color: "var(--dang)",
+                    padding: "10px 12px",
+                    borderRadius: 10,
                     cursor: "pointer",
-                    fontSize: 12,
+                    background: on ? "var(--brand-t)" : "transparent",
+                    border: `1px solid ${on ? "var(--brand-b)" : "transparent"}`,
+                    color: "inherit",
+                    textDecoration: "none",
                   }}
                 >
-                  ✕
-                </button>
-              </form>
-            )}
+                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>{s.name}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
+                    {`${s.timezone} · ${usedLine(s.id)}`}
+                  </div>
+                </Link>
+              );
+            })}
           </div>
-        );
-      })}
-      <div
-        style={{
-          background: "var(--sunk)",
-          borderRadius: 14,
-          padding: "13px 15px",
-          fontSize: 12.5,
-          color: "var(--ink-2)",
-          lineHeight: 1.55,
-        }}
-      >
-        {t("settings.hours.note")}
-      </div>
-      {editing && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "var(--scrim-dialog)",
-            display: "grid",
-            placeItems: "center",
-            padding: 24,
-            zIndex: 60,
-          }}
-        >
-          <form
-            action={saveWorkingHours}
-            data-testid="hours-form"
-            role="dialog"
-            className="oi-rise"
+          <div
+            data-testid="hours-week"
             style={{
-              width: 520,
-              maxWidth: "100%",
-              background: "var(--panel)",
-              borderRadius: 18,
-              boxShadow: "var(--shadow-modal)",
+              flex: "10 1 420px",
+              minWidth: 0,
+              padding: "14px 18px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
             }}
           >
-            <input type="hidden" name="id" value={r?.id ?? ""} />
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "16px 20px",
-                borderBottom: "1px solid var(--line)",
-              }}
-            >
-              <div style={{ fontFamily: "var(--font-title)", fontSize: 16.5, fontWeight: 600 }}>
-                {r ? t("settings.hours.editTitle", { name: r.name }) : t("settings.hours.newTitle")}
-              </div>
-              <Link
-                href="/app/settings/working-hours"
-                aria-label={t("common.close")}
-                style={{
-                  marginLeft: "auto",
-                  width: 30,
-                  height: 30,
-                  borderRadius: 8,
-                  display: "grid",
-                  placeItems: "center",
-                  color: "var(--ink-3)",
-                  fontSize: 14,
-                  textDecoration: "none",
-                }}
-              >
-                ✕
-              </Link>
-            </div>
-            <div
-              style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 13 }}
-            >
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={label}>{t("oncall.name")}</span>
-                  <input
-                    name="name"
-                    required
-                    minLength={2}
-                    maxLength={60}
-                    defaultValue={r?.name ?? ""}
-                    placeholder="EU business"
-                    className="oi-field"
-                    style={control}
-                  />
-                </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={label}>{t("oncall.timezone")}</span>
-                  <select
-                    name="timezone"
-                    defaultValue={r?.timezone ?? workspace.timezone ?? "Europe/Paris"}
-                    className="oi-field"
-                    style={control}
-                  >
-                    {[
-                      ...new Set(
-                        [r?.timezone, workspace.timezone, ...TIMEZONES].filter((x): x is string =>
-                          Boolean(x),
-                        ),
-                      ),
-                    ].map((z) => (
-                      <option key={z} value={z}>
-                        {z}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={label}>{t("settings.hours.days")}</span>
-                <div style={{ display: "flex", gap: 6 }}>
-                  {dayNames.map((d, i) => (
-                    <label
-                      key={d}
-                      style={{
-                        flex: 1,
-                        textAlign: "center",
-                        padding: "6px 0",
-                        border: "1px solid var(--line)",
-                        borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        name="days"
-                        value={i + 1}
-                        defaultChecked={r ? r.days.includes(i + 1) : i < 5}
-                      />{" "}
-                      {t(`oncall.day.${d}`)}
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={label}>{t("oncall.from")}</span>
-                  <input
-                    name="startTime"
-                    type="time"
-                    required
-                    defaultValue={r?.startTime ?? "09:00"}
-                    className="oi-field"
-                    style={control}
-                  />
-                </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={label}>{t("oncall.to")}</span>
-                  <input
-                    name="endTime"
-                    type="time"
-                    required
-                    defaultValue={r?.endTime ?? "18:00"}
-                    className="oi-field"
-                    style={control}
-                  />
-                </label>
-              </div>
-              <div
-                className="oi-note"
-                style={{ borderRadius: 11, padding: "11px 13px", fontSize: 12 }}
-              >
-                {t("settings.hours.formNote")}
-              </div>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "14px 20px",
-                borderTop: "1px solid var(--line)",
-              }}
-            >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{current.name}</span>
+              <span style={{ fontSize: 12, color: "var(--ink-3)" }}>{current.timezone}</span>
               <span style={{ flex: 1 }} />
-              <Link
-                href="/app/settings/working-hours"
-                className="oi-hover"
-                style={{
-                  height: 34,
-                  padding: "0 13px",
-                  border: "1px solid var(--line)",
-                  borderRadius: 9,
-                  background: "var(--panel)",
-                  display: "flex",
-                  alignItems: "center",
-                  fontSize: 12.5,
-                  color: "inherit",
-                  textDecoration: "none",
-                }}
-              >
-                {t("common.cancel")}
-              </Link>
-              <button
-                type="submit"
-                style={{
-                  height: 34,
-                  padding: "0 16px",
-                  borderRadius: 9,
-                  background: "var(--brand)",
-                  color: "var(--on-brand)",
-                  border: 0,
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                {r ? t("common.save") : t("common.create")}
-              </button>
+              {manages && !readers.length && (
+                <DeleteSetDialog id={current.id} name={current.name} />
+              )}
+              {manages && (
+                <SetDialog
+                  key={current.id}
+                  set={{
+                    id: current.id,
+                    name: current.name,
+                    days: current.days,
+                    startTime: current.startTime,
+                    endTime: current.endTime,
+                    timezone: current.timezone,
+                  }}
+                  timezones={[...TIMEZONES]}
+                  defaultTimezone={workspace.timezone}
+                />
+              )}
             </div>
-          </form>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "40px minmax(0,1fr) 104px",
+                gap: 10,
+                fontFamily: "var(--mono)",
+                fontSize: 10,
+                color: "var(--ink-3)",
+              }}
+            >
+              <span />
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                {["00", "06", "12", "18", "24"].map((h) => (
+                  <span key={h}>{h}</span>
+                ))}
+              </div>
+              <span />
+            </div>
+            {DAY_KEYS.map((d, i) => {
+              const on = current.days.includes(i + 1);
+              const from = minutes(current.startTime);
+              const to = minutes(current.endTime);
+              return (
+                <div
+                  key={d}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "40px minmax(0,1fr) 104px",
+                    gap: 10,
+                    alignItems: "center",
+                  }}
+                >
+                  <span style={{ fontSize: 12.5, fontWeight: 600 }}>
+                    {t(`settingsV2.hours.${d}`)}
+                  </span>
+                  <div
+                    style={{
+                      position: "relative",
+                      height: 20,
+                      borderRadius: 6,
+                      background: "var(--sunk)",
+                    }}
+                  >
+                    {on &&
+                      // An end at or before the start runs past midnight: two segments.
+                      (to > from
+                        ? [[from, to]]
+                        : [
+                            [from, 1440],
+                            [0, to],
+                          ]
+                      ).map(([a, b], k) => (
+                        <span
+                          key={k}
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            bottom: 0,
+                            left: `${(a! / 1440) * 100}%`,
+                            width: `${((b! - a!) / 1440) * 100}%`,
+                            borderRadius: 6,
+                            background: "var(--brand)",
+                          }}
+                        />
+                      ))}
+                  </div>
+                  <span
+                    style={{
+                      fontFamily: "var(--mono)",
+                      fontSize: 11.5,
+                      color: on ? "var(--ink)" : "var(--ink-3)",
+                      textAlign: "right",
+                    }}
+                  >
+                    {on ? `${current.startTime} – ${current.endTime}` : t("settingsV2.hours.off")}
+                  </span>
+                </div>
+              );
+            })}
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--ink-3)",
+                borderTop: "1px solid var(--line-2)",
+                paddingTop: 9,
+                marginTop: 2,
+              }}
+            >
+              {readers.length
+                ? t("settingsV2.hours.readBy", {
+                    count: readers.length,
+                    names:
+                      readers.length === 1 ? readers[0]! : readers.map((n) => `“${n}”`).join(", "),
+                  })
+                : t("settingsV2.hours.readByNone")}
+            </div>
+          </div>
         </div>
       )}
-    </div>
+      <Note>{t("settingsV2.hours.note")}</Note>
+    </SettingsPage>
   );
 }

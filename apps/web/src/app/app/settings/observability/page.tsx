@@ -1,73 +1,59 @@
 import { asc, eq } from "drizzle-orm";
-import Link from "next/link";
 import { rumApplications, telemetrySettings, withTenant } from "@openincident/db";
-import { isManagerRole } from "@openincident/config";
+import { rumApps } from "@openincident/telemetry";
 import { getT } from "@/i18n/server";
-import { Why } from "@/components/settings/why";
-import { SaveBar, Section } from "@/components/settings/form";
-import { requireMember } from "@/lib/session";
-import { currentOrigin } from "@/lib/tenant";
-import { telemetryInstalled } from "@/lib/telemetry";
+import { isManager, requireMember } from "@/lib/session";
+import { telemetryInstalled } from "@/lib/telemetry-module";
 import {
-  createRumApplication,
-  deleteRumApplication,
-  saveObservabilitySettings,
-  saveRumApplication,
-} from "./actions";
+  FormCard,
+  ListCard,
+  Row,
+  SettingsPage,
+  Unavailable,
+  selectStyle,
+} from "@/components/settings/template";
+import { Toggle } from "@/components/settings/controls";
+import { SettingsForm } from "@/components/settings/settings-form";
+import { EmptyRow } from "../api/empty-row";
+import { saveTelemetry } from "./actions";
+import { REDACTIONS, redactionsOn } from "./redaction";
+import { NewRumDialog, RumRow } from "./rum";
 
-const CARD: React.CSSProperties = {
-  background: "var(--panel)",
-  border: "1px solid var(--line)",
-  borderRadius: "var(--radius-card)",
-  boxShadow: "var(--shadow-card)",
-  padding: "16px 18px",
-  display: "flex",
-  flexDirection: "column",
-  gap: 14,
-};
-
-const CONTROL: React.CSSProperties = {
-  height: 36,
-  padding: "0 11px",
-  border: "1px solid var(--line)",
-  borderRadius: 9,
-  outline: "none",
-  fontSize: 13,
-  background: "var(--panel)",
-  width: "100%",
-};
-
-const LABEL: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 600,
-  letterSpacing: ".08em",
-  textTransform: "uppercase",
-  color: "var(--ink-3)",
-};
-
-const HINT: React.CSSProperties = { fontSize: 11.5, color: "var(--ink-3)", lineHeight: 1.5 };
+const TRACES = [3, 7, 14, 30];
+const LOGS = [7, 14, 30, 90];
+const METRICS = [30, 90, 395];
 
 /**
- * Settings → Observability: how long the telemetry is kept, what is redacted
- * before it is written, and whether a bug appearing raises an alert.
+ * Settings › Telemetry (design V2): how long traces, logs and metrics are
+ * kept, what is removed before anything is stored, what an exception that
+ * comes back does — one form, one save — and the browser applications that
+ * report real user monitoring.
  *
- * These three had no screen at all until now. They were columns with sensible
- * defaults that nobody could see or change, which for a retention window and a
- * redaction rule is the wrong kind of invisible: one decides a disk bill and
- * the other decides whether a connection string ends up in a log line.
+ * Without the telemetry module (no column store configured) the screen says
+ * so and shows nothing else: these settings would act on nothing.
  */
-export default async function ObservabilitySettingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ saved?: string; error?: string; rule?: string; created?: string }>;
-}) {
+export default async function TelemetrySettingsPage() {
   const { tenant, member } = await requireMember();
   const t = await getT();
-  const q = await searchParams;
-  const manages = isManagerRole(member);
-  // The instance's own address, so the snippet is one somebody can paste
-  // rather than one they have to finish.
-  const origin = await currentOrigin();
+  const manages = isManager(member);
+  const page = {
+    home: t("settingsV2.home"),
+    crumb: t("settingsV2.group.platform"),
+    title: t("settingsV2.entry.telemetry"),
+    testId: "settings-telemetry",
+  };
+
+  if (!telemetryInstalled())
+    return (
+      <SettingsPage {...page} lead={t("settingsV2.tel.leadOff")}>
+        <Unavailable
+          testId="telemetry-not-installed"
+          title={t("settingsV2.tel.notInstalled")}
+          text={t("settingsV2.tel.notInstalledText")}
+          code="CLICKHOUSE_URL=http://clickhouse:8123"
+        />
+      </SettingsPage>
+    );
 
   const data = await withTenant(tenant.id, async (tx) => ({
     settings: (
@@ -79,172 +65,82 @@ export default async function ObservabilitySettingsPage({
       .where(eq(rumApplications.tenantId, tenant.id))
       .orderBy(asc(rumApplications.name)),
   }));
-  const row = data.settings;
-  const installed = telemetryInstalled();
+  // Sessions per application over thirty days, from the column store; a store
+  // that does not answer leaves the figure out rather than inventing one.
+  const sessions = data.apps.length ? await rumApps(tenant.id, 30 * 24).catch(() => null) : [];
+  const s = data.settings;
+  const traces = s?.retentionTracesDays ?? 15;
+  const logs = s?.retentionLogsDays ?? 15;
+  const metrics = s?.retentionMetricsDays ?? 30;
+  const on = redactionsOn(s?.scrubRules ?? []);
+
+  const days = (n: number) =>
+    n === 395 ? t("settingsV2.tel.months13") : t("settingsV2.tel.days", { count: n });
+  const retention = (name: string, label: string, value: number, opts: number[]) => (
+    <Row label={label}>
+      <select
+        name={name}
+        defaultValue={String(value)}
+        disabled={!manages}
+        aria-label={label}
+        className="oi-field"
+        style={selectStyle}
+      >
+        {(opts.includes(value) ? opts : [...opts, value].sort((a, b) => a - b)).map((d) => (
+          <option key={d} value={d}>
+            {days(d)}
+          </option>
+        ))}
+      </select>
+    </Row>
+  );
 
   return (
-    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div>
-        <h1 className="oi-title" style={{ margin: 0 }}>
-          {t("settings.nav.observability")}
-        </h1>
-        <p className="oi-lead" style={{ marginTop: 6 }}>
-          {t("settings.telemetry.intro")}
-        </p>
-      </div>
-
-      {/*
-        The module is optional, and these settings are still worth showing
-        without it: they are what the instance will do once it is installed.
-        Saying so beats a screen that looks broken.
-      */}
-      {!installed && (
-        <div
-          style={{
-            ...CARD,
-            padding: "12px 14px",
-            borderColor: "var(--wait)",
-            background: "var(--wait-t)",
-            fontSize: 12.5,
-            color: "var(--ink)",
-          }}
-        >
-          {t("settings.telemetry.notInstalled")}
-        </div>
-      )}
-
-      <form action={saveObservabilitySettings} style={{ display: "flex", flexDirection: "column" }}>
-        <Section
-          n={1}
-          title={t("settings.telemetry.retention")}
-          hint={t("settings.telemetry.retentionShort")}
-          more={<Why label={t("common.why")}>{t("settings.telemetry.retentionHint")}</Why>}
-        >
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-            {(
-              [
-                ["retentionLogsDays", row?.retentionLogsDays ?? 15, "settings.telemetry.logs"],
-                [
-                  "retentionTracesDays",
-                  row?.retentionTracesDays ?? 15,
-                  "settings.telemetry.traces",
-                ],
-                [
-                  "retentionMetricsDays",
-                  row?.retentionMetricsDays ?? 30,
-                  "settings.telemetry.metrics",
-                ],
-              ] as const
-            ).map(([name, value, label]) => (
-              <label key={name} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <span style={LABEL}>{t(label)}</span>
-                <input
-                  name={name}
-                  type="number"
-                  min={1}
-                  max={365}
-                  defaultValue={value}
-                  disabled={!manages}
-                  style={{ ...CONTROL, fontFamily: "var(--mono)" }}
+    <SettingsPage {...page} lead={t("settingsV2.tel.lead")}>
+      <SettingsForm action={saveTelemetry} testId="telemetry-form">
+        <FormCard title={t("settingsV2.tel.retention")} hint={t("settingsV2.tel.retentionHint")}>
+          {retention("retentionTracesDays", t("settingsV2.tel.traces"), traces, TRACES)}
+          {retention("retentionLogsDays", t("settingsV2.tel.logs"), logs, LOGS)}
+          {retention("retentionMetricsDays", t("settingsV2.tel.metrics"), metrics, METRICS)}
+        </FormCard>
+        <FormCard title={t("settingsV2.tel.redaction")} hint={t("settingsV2.tel.redactionHint")}>
+          {REDACTIONS.map((r) => {
+            const label = t(`settingsV2.tel.redact.${r.key}`);
+            return (
+              <Row
+                key={r.key}
+                label={label}
+                help={r.fixed ? t("settingsV2.tel.redactFixed") : undefined}
+              >
+                <Toggle
+                  name={`redact.${r.key}`}
+                  defaultChecked={on.has(r.key)}
+                  label={label}
+                  disabled={!manages || r.fixed}
+                  testId={`redact-${r.key}`}
                 />
-              </label>
-            ))}
-          </div>
-        </Section>
-
-        <Section
-          n={2}
-          title={t("settings.telemetry.scrub")}
-          hint={t("settings.telemetry.scrubShort")}
-          more={<Why label={t("common.why")}>{t("settings.telemetry.scrubHint")}</Why>}
-        >
-          <textarea
-            name="scrubRules"
-            rows={5}
-            disabled={!manages}
-            defaultValue={(row?.scrubRules ?? []).join("\n")}
-            placeholder={"\\b4[0-9]{12}(?:[0-9]{3})?\\b\ninternal-token-[a-z0-9]+"}
-            style={{
-              ...CONTROL,
-              height: "auto",
-              padding: "9px 10px",
-              fontFamily: "var(--mono)",
-              fontSize: 12,
-              lineHeight: 1.5,
-              resize: "vertical",
-            }}
-          />
-        </Section>
-
-        <Section
-          n={3}
-          title={t("settings.telemetry.budget")}
-          hint={t("settings.telemetry.budgetShort")}
-          more={
-            <Why label={t("common.why")}>
-              <p style={{ margin: 0 }}>{t("settings.telemetry.budgetHint")}</p>
-              <p style={{ margin: "6px 0 0" }}>{t("settings.telemetry.softCapHint")}</p>
-            </Why>
-          }
-        >
-          <label style={{ display: "flex", flexDirection: "column", gap: 5, maxWidth: 240 }}>
-            <span style={LABEL}>{t("settings.telemetry.series")}</span>
-            <input
-              name="cardinalityBudget"
-              type="number"
-              min={1000}
-              max={10_000_000}
-              step={1000}
-              defaultValue={row?.cardinalityBudget ?? ""}
-              placeholder="50000"
-              disabled={!manages}
-              style={{ ...CONTROL, fontFamily: "var(--mono)" }}
-            />
-          </label>
-
-          <label style={{ display: "flex", flexDirection: "column", gap: 5, maxWidth: 240 }}>
-            <span style={LABEL}>{t("settings.telemetry.softCap")}</span>
-            <input
-              name="dailySoftCapGb"
-              type="number"
-              min={1}
-              max={10_000}
-              step={1}
-              defaultValue={row?.dailySoftCapGb ?? ""}
-              placeholder="—"
-              disabled={!manages}
-              style={{ ...CONTROL, fontFamily: "var(--mono)" }}
-            />
-          </label>
-        </Section>
-
-        <Section
-          n={4}
-          title={t("settings.telemetry.regressionsTitle")}
-          hint={t("settings.telemetry.regressionsShort")}
-        >
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13 }}>
-            <input
-              type="checkbox"
+              </Row>
+            );
+          })}
+        </FormCard>
+        <FormCard title={t("settingsV2.tel.exception")}>
+          <Row label={t("settingsV2.tel.regress")} help={t("settingsV2.tel.regressHelp")}>
+            <Toggle
               name="exceptionRegressions"
-              defaultChecked={row?.exceptionRegressions ?? true}
+              defaultChecked={s?.exceptionRegressions ?? true}
+              label={t("settingsV2.tel.regress")}
               disabled={!manages}
-              style={{ marginTop: 3 }}
+              testId="exception-regressions"
             />
-            <span style={{ flex: 1, lineHeight: 1.5 }}>
-              {t("settings.telemetry.regressions")}
-              <span style={{ display: "block", ...HINT }}>
-                {t("settings.telemetry.regressionsHint")}
-              </span>
-            </span>
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 5, maxWidth: 240 }}>
-            <span style={LABEL}>{t("settings.telemetry.regressionSeverity")}</span>
+          </Row>
+          <Row label={t("settingsV2.tel.regressSeverity")}>
             <select
               name="exceptionRegressionSeverity"
-              defaultValue={row?.exceptionRegressionSeverity ?? "P3"}
+              defaultValue={s?.exceptionRegressionSeverity ?? "P3"}
               disabled={!manages}
-              style={CONTROL}
+              aria-label={t("settingsV2.tel.regressSeverity")}
+              className="oi-field"
+              style={selectStyle}
             >
               {(["P1", "P2", "P3", "P4"] as const).map((p) => (
                 <option key={p} value={p}>
@@ -252,282 +148,45 @@ export default async function ObservabilitySettingsPage({
                 </option>
               ))}
             </select>
-          </label>
-          <span style={HINT}>
-            <Link href="/app/telemetry?tab=exceptions" style={{ color: "var(--brand)" }}>
-              {t("settings.telemetry.seeExceptions")}
-            </Link>
-          </span>
-        </Section>
+          </Row>
+        </FormCard>
+      </SettingsForm>
 
-        {manages && (
-          <SaveBar
-            label={t("common.save")}
-            testId="observability-save"
-            status={q.saved ? t("settings.telemetry.saved") : undefined}
-            error={
-              q.error
-                ? q.error === "regex"
-                  ? t("settings.telemetry.badRegex", { rule: q.rule ?? "" })
-                  : q.error === "origin"
-                    ? t("settings.rum.badOrigin", { rule: q.rule ?? "" })
-                    : t("settings.telemetry.invalid")
-                : undefined
-            }
-          />
-        )}
-      </form>
-
-      {/*
-        Outside the settings form on purpose: an application is a thing that is
-        created and deleted, not a value that is saved, and putting it inside
-        would make "Save" mean two different things.
-      */}
-      <Section
-        n={5}
-        title={t("settings.rum.title")}
-        hint={t("settings.rum.intro")}
+      <ListCard
+        title={t("settingsV2.tel.rum")}
+        hint={t("settingsV2.tel.rumHint")}
+        action={manages ? <NewRumDialog /> : undefined}
         testId="rum-applications"
       >
-        {q.created && (
-          <div
-            style={{
-              border: "1px solid var(--ok)",
-              background: "var(--ok-t)",
-              borderRadius: 9,
-              padding: "10px 12px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-            }}
-          >
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
-              {t("settings.rum.created")}
-            </span>
-            <pre
-              style={{
-                fontFamily: "var(--mono)",
-                fontSize: 11.5,
-                margin: 0,
-                overflowX: "auto",
-                lineHeight: 1.5,
+        {data.apps.map((a) => {
+          const n = sessions?.find((x) => x.app_id === a.id);
+          return (
+            <RumRow
+              key={a.id}
+              manages={manages}
+              app={{
+                id: a.id,
+                name: a.name,
+                sub: t("settingsV2.tel.rumSub", {
+                  tail: a.id.slice(-4),
+                  pct: `${Math.round(a.sampleRate * 100)} %`,
+                }),
+                right:
+                  sessions === null
+                    ? ""
+                    : t("settingsV2.tel.rumSessions", { count: Number(n?.sessions ?? 0) }),
+                origins: a.allowedOrigins.join(", "),
+                sampleRate: a.sampleRate,
+                replayEnabled: a.replayEnabled,
+                replaySampleRate: a.replaySampleRate,
+                replayUnmask: a.replayUnmask.join(", "),
+                mobileEnabled: a.mobileEnabled,
               }}
-            >
-              {snippet(q.created, origin)}
-            </pre>
-          </div>
-        )}
-
-        {data.apps.length === 0 && !q.created && (
-          <span className="oi-subtitle">{t("settings.rum.none")}</span>
-        )}
-
-        {data.apps.map((a) => (
-          <div
-            key={a.id}
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              gap: 10,
-              padding: "8px 0",
-              borderTop: "1px solid var(--line-2)",
-              fontSize: 12.5,
-              flexWrap: "wrap",
-            }}
-          >
-            <span style={{ fontWeight: 600, minWidth: 140 }}>{a.name}</span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--ink-3)" }}>
-              {a.id}
-            </span>
-            <span style={{ fontSize: 11.5, color: "var(--ink-2)" }}>
-              {a.allowedOrigins.join(", ")}
-              {a.sampleRate < 1 ? ` · ${Math.round(a.sampleRate * 100)} %` : ""}
-            </span>
-            <span style={{ flex: 1 }} />
-            {a.mobileEnabled && (
-              <span
-                style={{
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  padding: "1px 7px",
-                  borderRadius: 999,
-                  background: "var(--open-t)",
-                  color: "var(--open)",
-                }}
-              >
-                {t("settings.rum.mobileOn")}
-              </span>
-            )}
-            {a.replayEnabled && (
-              <span
-                style={{
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  padding: "1px 7px",
-                  borderRadius: 999,
-                  background: "var(--viol-t)",
-                  color: "var(--viol)",
-                }}
-              >
-                {t("settings.rum.replayOn", { pct: Math.round(a.replaySampleRate * 100) })}
-              </span>
-            )}
-            {manages && (
-              <form action={deleteRumApplication}>
-                <input type="hidden" name="id" value={a.id} />
-                <button
-                  type="submit"
-                  className="oi-hover-dang"
-                  style={{
-                    border: "1px solid var(--line)",
-                    background: "var(--panel)",
-                    borderRadius: 7,
-                    padding: "3px 9px",
-                    fontSize: 11.5,
-                    color: "var(--dang)",
-                    cursor: "pointer",
-                  }}
-                >
-                  {t("common.delete")}
-                </button>
-              </form>
-            )}
-            {manages && (
-              <form
-                action={saveRumApplication}
-                data-testid={`rum-replay-${a.id}`}
-                style={{
-                  flexBasis: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  flexWrap: "wrap",
-                  paddingTop: 6,
-                }}
-              >
-                <input type="hidden" name="id" value={a.id} />
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
-                  <input
-                    type="checkbox"
-                    name="replayEnabled"
-                    defaultChecked={a.replayEnabled}
-                    data-testid="replay-enabled"
-                  />
-                  {t("settings.rum.replay")}
-                </label>
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5 }}>
-                  <input
-                    type="checkbox"
-                    name="mobileEnabled"
-                    defaultChecked={a.mobileEnabled}
-                    data-testid="mobile-enabled"
-                  />
-                  {t("settings.rum.mobile")}
-                </label>
-                <input
-                  name="replaySampleRate"
-                  type="number"
-                  min={0.01}
-                  max={1}
-                  step={0.01}
-                  defaultValue={a.replaySampleRate}
-                  title={t("settings.rum.replayRate")}
-                  style={{ ...CONTROL, width: 78, fontFamily: "var(--mono)", fontSize: 11.5 }}
-                />
-                <input
-                  name="replayUnmask"
-                  defaultValue={a.replayUnmask.join(", ")}
-                  placeholder={t("settings.rum.replayUnmask")}
-                  title={t("settings.rum.replayUnmaskHint")}
-                  style={{ ...CONTROL, flex: 1, minWidth: 180, fontSize: 11.5 }}
-                />
-                <button
-                  type="submit"
-                  className="oi-hover-brand-2"
-                  style={{
-                    border: "1px solid var(--line)",
-                    background: "var(--panel)",
-                    borderRadius: 7,
-                    padding: "3px 10px",
-                    fontSize: 11.5,
-                    cursor: "pointer",
-                  }}
-                >
-                  {t("common.save")}
-                </button>
-                <span style={{ ...HINT, flexBasis: "100%" }}>{t("settings.rum.replayHint")}</span>
-              </form>
-            )}
-          </div>
-        ))}
-
-        {manages && (
-          <form
-            action={createRumApplication}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr) 110px auto",
-              gap: 8,
-              alignItems: "end",
-              borderTop: "1px solid var(--line-2)",
-              paddingTop: 12,
-            }}
-          >
-            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <span style={LABEL}>{t("settings.rum.name")}</span>
-              <input name="name" required className="oi-field" style={CONTROL} />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <span style={LABEL}>{t("settings.rum.origins")}</span>
-              <input
-                name="origins"
-                required
-                placeholder="https://shop.example.com, https://www.example.com"
-                className="oi-field"
-                style={{ ...CONTROL, fontFamily: "var(--mono)", fontSize: 12 }}
-              />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <span style={LABEL}>{t("settings.rum.sample")}</span>
-              <select name="sampleRate" defaultValue="1" style={CONTROL}>
-                <option value="1">100 %</option>
-                <option value="0.5">50 %</option>
-                <option value="0.1">10 %</option>
-                <option value="0.01">1 %</option>
-              </select>
-            </label>
-            <button
-              type="submit"
-              data-testid="rum-create"
-              className="oi-hover-brand-2"
-              style={{
-                height: 32,
-                padding: "0 13px",
-                borderRadius: 9,
-                background: "var(--brand)",
-                color: "var(--on-brand)",
-                border: 0,
-                fontSize: 12.5,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              {t("settings.rum.add")}
-            </button>
-          </form>
-        )}
-        <span style={HINT}>{t("settings.rum.originsHint")}</span>
-      </Section>
-    </div>
-  );
-}
-
-/** The two lines somebody pastes into a page, with the id already in them. */
-function snippet(appId: string, origin: string): string {
-  return (
-    `<script src="${origin}/rum/oi-rum.js"\n` +
-    `        data-app="${appId}"\n` +
-    `        data-endpoint="${process.env.TELEMETRY_PUBLIC_ORIGIN || "https://otlp.<your workspace host>"}"\n` +
-    `        defer></script>`
+            />
+          );
+        })}
+        {data.apps.length === 0 && <EmptyRow>{t("settingsV2.tel.rumNone")}</EmptyRow>}
+      </ListCard>
+    </SettingsPage>
   );
 }

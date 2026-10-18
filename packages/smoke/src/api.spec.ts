@@ -15,10 +15,14 @@ test.describe("API & webhooks", () => {
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/settings/api");
     await page.getByTestId("key-open").click();
-    await page.locator('form[data-testid="key-form"] input[name="name"]').fill("Smoke key");
-    await page.locator('form[data-testid="key-form"] input[value="write"]').check();
-    await page.locator('form[data-testid="key-form"] button[type=submit]').click();
-    const key = (await page.getByTestId("secret-value").textContent())?.trim() ?? "";
+    const dialog = page.getByTestId("key-dialog");
+    await dialog.locator('input[name="name"]').fill("Smoke key");
+    // Read & write, on incidents, for 90 days — the dialog's segments and selects.
+    await dialog.locator('input[name="access"][value="write"]').check({ force: true });
+    await dialog.locator('select[name="scope"]').selectOption("incidents");
+    await page.getByTestId("key-dialog-submit").click();
+    // Shown once, in the dialog.
+    const key = (await page.getByTestId("settings-secret").textContent())?.trim() ?? "";
     expect(key).toMatch(/^oi_live_[a-f0-9]{32}$/);
     await page.keyboard.press("Escape");
     await page.reload();
@@ -37,6 +41,11 @@ test.describe("API & webhooks", () => {
     });
     expect(bad.status()).toBe(401);
     expect((await bad.json()).error.code).toBe("unknown_key");
+
+    // Scoped to incidents: the services are out of its reach.
+    const outside = await api.get("/api/v1/services");
+    expect(outside.status()).toBe(403);
+    expect((await outside.json()).error.code).toBe("out_of_scope");
 
     const list = await api.get("/api/v1/incidents?limit=5");
     expect(list.status()).toBe(200);
@@ -154,9 +163,9 @@ test.describe("API & webhooks", () => {
       await signIn(page, MEMBERS.owner);
       await page.goto("/app/settings/api");
       await page.getByTestId("webhook-open").click();
-      await page.locator('form[data-testid="webhook-form"] input[name="url"]').fill(url);
-      await page.locator('form[data-testid="webhook-form"] button[type=submit]').click();
-      const secret = (await page.getByTestId("secret-value").textContent())?.trim() ?? "";
+      await page.getByTestId("webhook-dialog").locator('input[name="url"]').fill(url);
+      await page.getByTestId("webhook-dialog-submit").click();
+      const secret = (await page.getByTestId("settings-secret").textContent())?.trim() ?? "";
       expect(secret).toMatch(/^whsec_[a-f0-9]{48}$/);
       await page.keyboard.press("Escape");
       await page.reload();
@@ -198,19 +207,11 @@ test.describe("API & webhooks", () => {
       // The delivery is listed, and the endpoint can be deleted.
       await page.goto("/app/settings/api");
       const row = page.getByTestId("webhook-row").filter({ hasText: url });
-      await row.getByRole("link", { name: /Deliveries|Livraisons|Zustellungen/ }).click();
-      await expect(
-        page
-          .getByTestId("webhook-row")
-          .filter({ hasText: url })
-          .getByText("incident.created")
-          .first(),
-      ).toBeVisible();
-      await page
-        .getByTestId("webhook-row")
-        .filter({ hasText: url })
-        .getByRole("button", { name: /^(Delete|Supprimer|Löschen)$/ })
-        .click();
+      // The row opens the endpoint: its deliveries, Delete, Disable.
+      await row.click();
+      const endpoint = page.getByTestId("endpoint-dialog");
+      await expect(endpoint.getByText("incident.created").first()).toBeVisible();
+      await endpoint.getByTestId("endpoint-delete").click();
       await expect(page.getByTestId("webhook-row").filter({ hasText: url })).toHaveCount(0);
       await signOut(page);
     } finally {

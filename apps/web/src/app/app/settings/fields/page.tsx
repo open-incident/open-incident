@@ -1,23 +1,20 @@
 import { asc, eq } from "drizzle-orm";
 import { incidentFields, incidentTypes, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
-import { requireMember } from "@/lib/session";
-import { NewFieldDialog } from "./new-field";
-import { deleteField } from "./actions";
+import { isManager, requireMember } from "@/lib/session";
+import { ListCard, ListItem, SettingsPage, type ChipSpec } from "@/components/settings/template";
+import { FieldDialog } from "./field-dialog";
 
 /**
- * Settings → Custom fields: one row per field — key in mono, the type as a
- * tinted chip, description, and the type it belongs to. A field carried by a
- * type's form is required or optional there; the form is what reads it.
+ * Settings › Custom fields (design V2): one list — each field's name, its
+ * kind and options, whether declaring asks for it, and the types it belongs
+ * to. "+ New field" and "Edit" share one dialog; a field exists to be read,
+ * and the declaration form of its types is its first reader.
  */
-export default async function FieldsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ saved?: string; error?: string }>;
-}) {
-  const { tenant } = await requireMember();
+export default async function FieldsPage() {
+  const { tenant, member } = await requireMember();
   const t = await getT();
-  const { saved, error } = await searchParams;
+  const manages = isManager(member);
   const data = await withTenant(tenant.id, async (tx) => ({
     fields: await tx
       .select()
@@ -28,152 +25,91 @@ export default async function FieldsPage({
       .select()
       .from(incidentTypes)
       .where(eq(incidentTypes.tenantId, tenant.id))
-      .orderBy(asc(incidentTypes.position)),
+      .orderBy(asc(incidentTypes.position), asc(incidentTypes.createdAt)),
   }));
-  const tone: Record<string, [string, string]> = {
-    text: ["var(--sunk)", "var(--ink-2)"],
-    long_text: ["var(--sunk)", "var(--ink-2)"],
-    select: ["var(--open-t)", "var(--open)"],
-    number: ["var(--viol-t)", "var(--viol)"],
-    link: ["var(--wait-t)", "var(--wait)"],
-    // A field of the retired kind is still listed, greyed and named for what
-    // it is: its stored value points at rows the product no longer keeps.
-    catalog_entry: ["var(--sunk)", "var(--ink-3)"],
-  };
-  const typeLabel = (k: string) =>
-    t(
-      `settings.fields.type.${k as "text" | "long_text" | "select" | "number" | "link" | "catalog_entry"}`,
-    );
+  const typeOptions = data.types.map((ty) => ({ id: ty.id, name: ty.name }));
+  const list = (names: string[]) =>
+    new Intl.ListFormat(t.locale.tag, { type: "conjunction" }).format(names);
 
   return (
-    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div className="oi-head">
-        <h1 className="oi-title" style={{ margin: 0 }}>
-          {t("settings.fields.title")}
-        </h1>
-        <span className="oi-subtitle">{t("settings.fields.subtitle")}</span>
-        <span style={{ flex: 1 }} />
-        {saved === "1" && (
-          <span role="status" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ok)" }}>
-            {t("common.saved")}
-          </span>
-        )}
-        {error && (
-          <span role="alert" style={{ fontSize: 12.5, fontWeight: 600, color: "var(--dang)" }}>
-            {error === "duplicate"
-              ? t("settings.fields.errorDuplicate")
-              : error === "options"
-                ? t("settings.fields.errorOptions")
-                : t("settings.fields.errorInvalid")}
-          </span>
-        )}
-        <NewFieldDialog
-          types={data.types.map((ty) => ({ id: ty.id, name: ty.name, isDefault: ty.isDefault }))}
-        />
-      </div>
-      <div className="oi-panel" style={{ overflow: "hidden" }}>
-        {data.fields.map((f, i) => {
-          const [bg, ink] = tone[f.type] ?? tone.text!;
-          const owner = data.types.find((ty) => ty.id === f.incidentTypeId);
-          const inForm = owner?.declareForm.find((x) => x.key === f.key);
-          const desc = [
-            f.description,
-            f.type === "select" ? f.options.join(", ") : null,
-            inForm
-              ? inForm.required
-                ? t("settings.fields.requiredAtDeclare")
-                : t("common.optional")
-              : t("settings.fields.notInForm"),
-          ]
-            .filter(Boolean)
-            .join(" · ");
+    <SettingsPage
+      home={t("settingsV2.home")}
+      crumb={t("settingsV2.group.incidents")}
+      title={t("settingsV2.entry.fields")}
+      lead={t("settingsV2.fields.lead")}
+      actions={manages ? <FieldDialog types={typeOptions} /> : null}
+      testId="settings-fields"
+    >
+      <ListCard
+        title={t("settingsV2.fields.count", { count: data.fields.length })}
+        testId="fields-list"
+      >
+        {data.fields.map((f) => {
+          const owner = f.incidentTypeId
+            ? data.types.find((ty) => ty.id === f.incidentTypeId)
+            : undefined;
+          // The types that may ask for it, and how each of their forms does.
+          const covered = owner ? [owner] : data.types;
+          const asks = covered.map((ty) => ({
+            type: ty.name,
+            entry: ty.declareForm.find((x) => x.key === f.key),
+          }));
+          const requiredBy = asks.filter((a) => a.entry?.required).map((a) => a.type);
+          const asked = asks.some((a) => a.entry);
+          const need: ChipSpec =
+            requiredBy.length && requiredBy.length === asks.length
+              ? { label: t("settingsV2.fields.required"), tone: "wait" }
+              : requiredBy.length
+                ? {
+                    label: t("settingsV2.fields.requiredFor", { types: list(requiredBy) }),
+                    tone: "wait",
+                  }
+                : asked
+                  ? { label: t("settingsV2.fields.optional") }
+                  : { label: t("settingsV2.fields.notAsked") };
+          const kind = t(`settingsV2.fields.kind.${f.type}`);
+          const detail = f.type === "select" ? f.options.join(", ") : f.description;
           return (
-            <div
+            <ListItem
               key={f.id}
-              data-testid="field-row"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "11px 16px",
-                borderBottom: i < data.fields.length - 1 ? "1px solid var(--line-2)" : undefined,
-              }}
-            >
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12.5,
-                  fontWeight: 500,
-                  width: 150,
-                  flex: "none",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {f.key}
-              </span>
-              <span
-                style={{
-                  padding: "2px 8px",
-                  borderRadius: 6,
-                  background: bg,
-                  color: ink,
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  flex: "none",
-                }}
-              >
-                {typeLabel(f.type)}
-              </span>
-              <span
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  fontSize: 12,
-                  color: "var(--ink-2)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {desc}
-              </span>
-              <span style={{ fontSize: 11.5, color: "var(--ink-3)", whiteSpace: "nowrap" }}>
-                {owner
-                  ? t("settings.fields.ofType", { type: owner.name })
-                  : t("settings.fields.allTypes")}
-              </span>
-              <form action={deleteField}>
-                <input type="hidden" name="id" value={f.id} />
-                <button
-                  type="submit"
-                  className="oi-hover-dang"
-                  style={{
-                    height: 28,
-                    padding: "0 11px",
-                    border: "1px solid var(--line)",
-                    borderRadius: 8,
-                    background: "var(--panel)",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "var(--dang)",
-                    cursor: "pointer",
-                  }}
-                >
-                  {t("common.delete")}
-                </button>
-              </form>
-            </div>
+              testId="field-row"
+              data={{ key: f.key }}
+              title={f.label}
+              sub={detail ? `${kind} · ${detail}` : kind}
+              muted={f.type === "catalog_entry"}
+              chips={[need, { label: owner ? owner.name : t("settingsV2.fields.allTypes") }]}
+              button={
+                manages ? (
+                  <FieldDialog
+                    types={typeOptions}
+                    field={{
+                      id: f.id,
+                      key: f.key,
+                      name: f.label,
+                      kind: f.type,
+                      options: f.options,
+                      required: requiredBy.length > 0 && requiredBy.length === asks.length,
+                      typeId: f.incidentTypeId,
+                    }}
+                  />
+                ) : undefined
+              }
+            />
           );
         })}
         {data.fields.length === 0 && (
-          <div style={{ padding: 20, fontSize: 12.5, color: "var(--ink-3)" }}>
-            {t("settings.fields.empty")}
+          <div
+            style={{
+              padding: "11px 18px",
+              borderTop: "1px solid var(--line-2)",
+              fontSize: 12.5,
+              color: "var(--ink-3)",
+            }}
+          >
+            {t("settingsV2.fields.empty")}
           </div>
         )}
-      </div>
-      <div className="oi-note">{t("settings.fields.note")}</div>
-    </div>
+      </ListCard>
+    </SettingsPage>
   );
 }

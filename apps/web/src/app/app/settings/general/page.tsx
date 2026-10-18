@@ -1,139 +1,85 @@
+import { getEdition } from "@openincident/config";
 import { getT } from "@/i18n/server";
 import { LOCALES } from "@/i18n/locales";
-import { requireMember } from "@/lib/session";
-import { getEdition } from "@openincident/config";
-import { WorkspaceMark } from "@/components/shell/mark";
+import { isManager, requireMember } from "@/lib/session";
+import {
+  FormCard,
+  ReadOnly,
+  Row,
+  SettingsPage,
+  fieldStyle,
+  rowButtonStyle,
+  selectStyle,
+} from "@/components/settings/template";
+import { CodeCard } from "@/components/settings/controls";
+import { SettingsForm } from "@/components/settings/settings-form";
+import { goPortal } from "../billing/actions";
 import { saveGeneral } from "./actions";
-import { SaveBar, Section } from "@/components/settings/form";
-import { removeLogo, uploadLogo } from "./logo-actions";
-import { storageConfigured } from "@openincident/storage";
 
 /**
- * Settings → General & brand: identity (name, immutable slug, language,
- * timezone) and brand (accent, logo). The logo needs object storage: without
- * S3_* on the instance the row says so, and the square shows the initial on
- * the accent, which is what every screen uses.
+ * Settings › General (design V2): the workspace's name, its fixed slug, its
+ * language and its default timezone — one card of rows, one save bar that
+ * appears when something changed.
  *
  * The danger zone tells the truth of the edition: on a self-hosted instance
- * deleting a workspace is the operator's command, not a button in the product
- * — the row says which command. Suspension is a control-plane act and is not
- * offered here.
+ * deleting a workspace is the operator's command, printed to copy; in the
+ * cloud it is done from the subscription, in the console.
  */
-export default async function GeneralSettingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ saved?: string; error?: string }>;
-}) {
+export default async function GeneralSettingsPage() {
   const { tenant, workspace, member } = await requireMember();
   const t = await getT();
-  const { saved, error } = await searchParams;
-  const storage = storageConfigured();
-  const label: React.CSSProperties = {
-    fontSize: 11,
-    fontWeight: 600,
-    letterSpacing: ".1em",
-    textTransform: "uppercase",
-    color: "var(--ink-3)",
-  };
-  const control: React.CSSProperties = {
-    height: 36,
-    padding: "0 11px",
-    border: "1px solid var(--line)",
-    borderRadius: 9,
-    outline: "none",
-    fontSize: 13,
-    background: "var(--panel)",
-    width: "100%",
-  };
-  const smallBtn: React.CSSProperties = {
-    height: 28,
-    padding: "0 11px",
-    border: "1px solid var(--line)",
-    borderRadius: 8,
-    background: "var(--panel)",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    color: "inherit",
-    textDecoration: "none",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    whiteSpace: "nowrap",
-  };
+  const cloud = getEdition() === "cloud";
+  const manages = isManager(member);
 
   return (
-    <form
-      action={saveGeneral}
-      className="oi-rise"
-      style={{ display: "flex", flexDirection: "column" }}
+    <SettingsPage
+      home={t("settingsV2.home")}
+      crumb={t("settingsV2.group.workspace")}
+      title={t("settingsV2.entry.general")}
+      lead={t("settingsV2.general.lead")}
+      testId="settings-general"
     >
-      <div className="oi-head" style={{ marginBottom: 6 }}>
-        <h1 className="oi-title" style={{ margin: 0 }}>
-          {t("settings.general.title")}
-        </h1>
-        <span className="oi-subtitle">{t("settings.general.subtitle")}</span>
-      </div>
-
-      <Section
-        n={1}
-        title={t("settings.general.identityTitle")}
-        hint={t("settings.general.identityHint")}
-      >
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={label}>{t("settings.general.name")}</span>
+      <SettingsForm action={saveGeneral} testId="general-form">
+        <FormCard title={t("settingsV2.general.identity")}>
+          <Row label={t("settingsV2.general.name")}>
             <input
               name="name"
               defaultValue={workspace.name}
               required
               maxLength={120}
+              disabled={!manages}
+              aria-label={t("settingsV2.general.name")}
               className="oi-field"
-              style={control}
+              style={fieldStyle()}
             />
-          </label>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={label}>{t("settings.general.slug")}</span>
-            <div
-              style={{
-                ...control,
-                background: "var(--sunk)",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                fontFamily: "var(--font-mono)",
-                fontSize: 12.5,
-                color: "var(--ink-2)",
-              }}
-            >
-              {tenant.slug}
-              <span style={{ fontFamily: "var(--font-ui)", fontSize: 11, color: "var(--ink-3)" }}>
-                · {t("settings.general.numbering")}
-              </span>
-            </div>
-          </div>
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={label}>{t("settings.general.locale")}</span>
+          </Row>
+          <Row label={t("settingsV2.general.slug")} help={t("settingsV2.general.slugHelp")}>
+            <ReadOnly mono>{tenant.slug}</ReadOnly>
+          </Row>
+          <Row label={t("settingsV2.general.language")} help={t("settingsV2.general.languageHelp")}>
             <select
               name="locale"
               defaultValue={workspace.locale}
+              disabled={!manages}
+              aria-label={t("settingsV2.general.language")}
               className="oi-field"
-              style={control}
+              style={selectStyle}
             >
               {LOCALES.map((l) => (
                 <option key={l.code} value={l.code}>
-                  {l.nativeName} — {t("settings.general.localeOverride")}
+                  {l.nativeName}
                 </option>
               ))}
             </select>
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={label}>{t("settings.general.timezone")}</span>
+          </Row>
+          <Row label={t("settingsV2.general.timezone")} help={t("settingsV2.general.timezoneHelp")}>
             <select
               name="timezone"
               defaultValue={workspace.timezone}
+              disabled={!manages}
+              aria-label={t("settingsV2.general.timezone")}
               className="oi-field"
-              style={control}
+              style={selectStyle}
             >
               {Intl.supportedValuesOf("timeZone").map((tz) => (
                 <option key={tz} value={tz}>
@@ -141,138 +87,30 @@ export default async function GeneralSettingsPage({
                 </option>
               ))}
             </select>
-          </label>
-        </div>
-      </Section>
+          </Row>
+        </FormCard>
+      </SettingsForm>
 
-      <Section n={2} title={t("settings.general.brand")} hint={t("settings.general.brandHint")}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <WorkspaceMark
-            name={workspace.name}
-            accent={workspace.branding.accentColor}
-            logoUrl={workspace.branding.logoUrl}
-            size={40}
-          />
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{t("settings.general.logo")}</div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-              {storage ? t("settings.general.logoHint") : t("settings.general.logoUnavailable")}
-            </div>
-          </div>
-          {storage && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <label style={smallBtn} title={t("settings.general.logoLight")}>
-                {t("settings.general.logoLight")}
-                <input
-                  type="file"
-                  name="logo"
-                  accept="image/svg+xml,image/png"
-                  data-testid="logo-file"
-                  style={{ width: 118, fontSize: 11 }}
-                />
-              </label>
-              <label style={smallBtn} title={t("settings.general.logoDark")}>
-                {t("settings.general.logoDark")}
-                <input
-                  type="file"
-                  name="logoDark"
-                  accept="image/svg+xml,image/png"
-                  style={{ width: 118, fontSize: 11 }}
-                />
-              </label>
-              <button
-                type="submit"
-                formAction={uploadLogo}
-                data-testid="logo-upload"
-                style={{ ...smallBtn, fontWeight: 600, cursor: "pointer" }}
-              >
-                {workspace.branding.logoUrl
-                  ? t("settings.general.logoReplace")
-                  : t("settings.general.logoUpload")}
-              </button>
-              {workspace.branding.logoUrl && (
-                <button
-                  type="submit"
-                  formAction={removeLogo}
-                  data-testid="logo-remove"
-                  style={{ ...smallBtn, color: "var(--dang)", cursor: "pointer" }}
-                >
-                  {t("settings.general.logoRemove")}
+      {cloud ? (
+        <FormCard title={t("settingsV2.general.danger")} hint={t("settingsV2.general.dangerCloud")}>
+          <Row label={t("settingsV2.general.delete")} help={t("settingsV2.general.deleteHelp")}>
+            {member.role === "owner" && (
+              <form action={goPortal}>
+                <button type="submit" className="oi-hover" style={rowButtonStyle(true)}>
+                  {t("settingsV2.general.deleteBtn")}
                 </button>
-              )}
-            </div>
-          )}
-        </div>
-        {error && ["storage", "nofile", "logotype"].includes(error) && (
-          <div role="alert" style={{ fontSize: 12.5, color: "var(--dang)" }}>
-            {t(`settings.general.logoError.${error as "storage" | "nofile" | "logotype"}`)}
-          </div>
-        )}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 11,
-              background: workspace.branding.accentColor ?? "var(--brand)",
-              flex: "none",
-              border: "1px solid var(--line)",
-            }}
-          />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{t("settings.general.accent")}</div>
-            <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-              {t("settings.general.accentHint")}
-            </div>
-          </div>
-          <input
-            name="accentColor"
-            defaultValue={workspace.branding.accentColor ?? ""}
-            pattern="^#[0-9a-fA-F]{6}$"
-            placeholder="#B4552D"
-            aria-label={t("settings.general.accent")}
-            className="oi-field"
-            style={{
-              height: 30,
-              padding: "0 12px",
-              border: "1px solid var(--line)",
-              borderRadius: 8,
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              width: 120,
-              outline: "none",
-            }}
-          />
-        </div>
-      </Section>
-
-      <Section
-        n={3}
-        title={t("settings.general.dangerTitle")}
-        hint={
-          getEdition() === "cloud"
-            ? t("settings.general.dangerCloud")
-            : t("settings.general.dangerSelfHosted")
-        }
-      >
-        {getEdition() !== "cloud" && member.role === "owner" ? (
-          <code
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11.5,
-              background: "var(--sunk)",
-              borderRadius: 8,
-              padding: "8px 11px",
-              color: "var(--ink-2)",
-              alignSelf: "flex-start",
-            }}
-          >
-            pnpm workspace:delete -- --slug {tenant.slug}
-          </code>
-        ) : null}
-      </Section>
-
-      <SaveBar label={t("common.save")} status={saved === "1" ? t("common.saved") : undefined} />
-    </form>
+              </form>
+            )}
+          </Row>
+        </FormCard>
+      ) : (
+        <CodeCard
+          title={t("settingsV2.general.danger")}
+          hint={t("settingsV2.general.dangerSelfHosted")}
+          code={`pnpm workspace:delete -- --slug ${tenant.slug}`}
+          testId="general-danger"
+        />
+      )}
+    </SettingsPage>
   );
 }

@@ -1,29 +1,40 @@
-import Link from "next/link";
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
-import { apiKeys, webhookDeliveries, webhookEndpoints, withTenant } from "@openincident/db";
-import { WEBHOOK_EVENTS, FUTURE_WEBHOOK_EVENTS } from "@openincident/webhooks";
+import {
+  apiKeys,
+  members,
+  webhookDeliveries,
+  webhookEndpoints,
+  withTenant,
+} from "@openincident/db";
 import { getT } from "@/i18n/server";
-import { requireMember } from "@/lib/session";
-import { NewKeyDialog, NewWebhookDialog } from "./dialogs";
-import { deleteWebhook, resendWebhookFailures, revokeApiKey, toggleWebhook } from "./actions";
+import { isManager, requireMember } from "@/lib/session";
+import { currentOrigin } from "@/lib/tenant";
+import { CodeCard } from "@/components/settings/controls";
+import { ListCard, SettingsPage, type ChipSpec } from "@/components/settings/template";
+import { EmptyRow } from "./empty-row";
+import { EndpointRow, KeyRow, NewEndpointDialog, NewKeyDialog } from "./dialogs";
+import { EVENT_CHOICES, eventsSummary, expiryOf, scopeKey } from "./shape";
 
 /**
- * Settings → API & webhooks, the design's two columns: the keys and the
- * contract on the left, the outbound endpoints on the right. A key is shown
- * once, at creation; an endpoint's secret likewise. Every control acts.
+ * Settings › API & webhooks (design V2): the keys that call Open Incident and
+ * the endpoints it calls. A key says what it may do, on which part of the
+ * API, who made it, when it was last used and when it stops; an endpoint
+ * says what it receives and how its last delivery went, and "Send test"
+ * delivers one now. Secrets are shown once, in the creation dialog, and
+ * never again.
  */
-export default async function ApiSettingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ deliveries?: string }>;
-}) {
-  const { tenant } = await requireMember();
+export default async function ApiSettingsPage() {
+  const { tenant, member } = await requireMember();
   const t = await getT();
-  const { deliveries: showDeliveries } = await searchParams;
+  const manages = isManager(member);
+  const origin = await currentOrigin();
+  const now = Date.now();
+
   const data = await withTenant(tenant.id, async (tx) => {
     const keys = await tx
-      .select()
+      .select({ key: apiKeys, by: members.name })
       .from(apiKeys)
+      .leftJoin(members, eq(members.id, apiKeys.createdByMemberId))
       .where(and(eq(apiKeys.tenantId, tenant.id), isNull(apiKeys.revokedAt)))
       .orderBy(asc(apiKeys.createdAt));
     const hooks = await tx
@@ -36,391 +47,186 @@ export default async function ApiSettingsPage({
           .select()
           .from(webhookDeliveries)
           .where(
-            inArray(
-              webhookDeliveries.endpointId,
-              hooks.map((h) => h.id),
+            and(
+              eq(webhookDeliveries.tenantId, tenant.id),
+              inArray(
+                webhookDeliveries.endpointId,
+                hooks.map((h) => h.id),
+              ),
             ),
           )
           .orderBy(desc(webhookDeliveries.createdAt))
-          .limit(200)
+          .limit(300)
       : [];
     return { keys, hooks, deliveries };
   });
-  const lastDelivery = (id: string) => data.deliveries.find((d) => d.endpointId === id);
-  const failedCount = (id: string) =>
-    data.deliveries.filter(
-      (d) => d.endpointId === id && (d.httpStatus === null || d.httpStatus >= 300),
-    ).length;
-  const chip = (tone: "ok" | "dang" | "mute", label: string) => (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        padding: "2px 9px 2px 7px",
-        borderRadius: 999,
-        background:
-          tone === "ok" ? "var(--ok-t)" : tone === "dang" ? "var(--dang-t)" : "var(--sunk)",
-        color: tone === "ok" ? "var(--ok)" : tone === "dang" ? "var(--dang)" : "var(--ink-2)",
-        fontSize: 10.5,
-        fontWeight: 700,
-      }}
-    >
-      <span style={{ width: 4, height: 4, borderRadius: "50%", background: "currentColor" }} />
-      {label}
-    </span>
-  );
-  const ghost: React.CSSProperties = {
-    height: 28,
-    padding: "0 11px",
-    border: "1px solid var(--line)",
-    borderRadius: 8,
-    background: "var(--panel)",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    color: "inherit",
-    textDecoration: "none",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    whiteSpace: "nowrap",
+
+  /* ---------- Keys ---------- */
+
+  const accessLabel = (scopes: string[]) =>
+    scopes.includes("write")
+      ? t("settingsV2.api.accessWrite")
+      : scopes.includes("read")
+        ? t("settingsV2.api.accessRead")
+        : t("settingsV2.api.accessCreate");
+  const scopeLabel = (resources: string[] | null) => {
+    switch (scopeKey(resources)) {
+      case "all":
+        return t("settingsV2.api.subEverything");
+      case "incidents":
+        return t("settingsV2.api.subIncidents");
+      case "incidents,monitors":
+        return t("settingsV2.api.subIncidentsMonitors");
+      case "services":
+        return t("settingsV2.api.subServices");
+      case "status_pages":
+        return t("settingsV2.api.subStatusPages");
+      default:
+        return (resources ?? []).join(", ");
+    }
   };
+  const expiryChip = (expiresAt: Date | null): ChipSpec => {
+    const e = expiryOf(expiresAt, now);
+    switch (e.kind) {
+      case "never":
+        return { label: t("settingsV2.api.neverExpires"), tone: "mute", testId: "key-expiry" };
+      case "expired":
+        return { label: t("settingsV2.api.expired"), tone: "dang", testId: "key-expiry" };
+      case "today":
+        return { label: t("settingsV2.api.expiresToday"), tone: "wait", testId: "key-expiry" };
+      case "days":
+        return {
+          label: t("settingsV2.api.expiresDays", { count: e.n }),
+          tone: e.n < 30 ? "wait" : "mute",
+          testId: "key-expiry",
+        };
+      case "months":
+        return {
+          label: t("settingsV2.api.expiresMonths", { count: e.n }),
+          tone: "mute",
+          testId: "key-expiry",
+        };
+    }
+  };
+  const keyRows = data.keys.map(({ key: k, by }) => {
+    const parts = [accessLabel(k.scopes), scopeLabel(k.resources ?? null)];
+    if (by) parts.push(t("settingsV2.api.createdBy", { name: by }));
+    parts.push(
+      k.lastUsedAt
+        ? t("settingsV2.api.lastUsed", { when: t.fmt.relative(k.lastUsedAt) })
+        : t("settingsV2.api.neverUsed"),
+    );
+    return { id: k.id, name: k.name, sub: parts.join(" · "), chip: expiryChip(k.expiresAt) };
+  });
+
+  /* ---------- Endpoints ---------- */
+
+  const at = (d: Date) =>
+    new Date(d).toDateString() === new Date().toDateString()
+      ? t.fmt.time(d, t.timeZone)
+      : t.fmt.dateTime(d, t.timeZone);
+  const statusOf = (s: number | null) => (s === null ? t("settingsV2.api.noAnswer") : String(s));
+  const hookRows = data.hooks.map((h) => {
+    const mine = data.deliveries.filter((d) => d.endpointId === h.id);
+    const last = mine[0];
+    const off = !h.active || Boolean(h.disabledAt);
+    const failing = Boolean(h.failingSince) && !off;
+    const failed = mine.filter((d) => d.httpStatus === null || d.httpStatus >= 300);
+    const streak = h.failingSince ? failed.filter((d) => d.createdAt >= h.failingSince!).length : 0;
+    const events = eventsSummary(h.events) ?? t("settingsV2.api.everyEvent");
+    let sub: string;
+    let chip: ChipSpec;
+    if (off) {
+      sub = t("settingsV2.api.subOff", { events });
+      chip = { label: t("settingsV2.api.chipDisabled"), tone: "mute", testId: "hook-state" };
+    } else if (!last) {
+      sub = t("settingsV2.api.subNone", { events });
+      chip = { label: t("settingsV2.api.chipNew"), tone: "mute", testId: "hook-state" };
+    } else if (failing) {
+      sub = t("settingsV2.api.subFailing", {
+        events,
+        status: statusOf(last.httpStatus),
+        count: Math.max(1, streak),
+        since: at(h.failingSince!),
+      });
+      chip = { label: t("settingsV2.api.chipFailing"), tone: "dang", testId: "hook-state" };
+    } else {
+      sub = t("settingsV2.api.subOk", {
+        events,
+        status: statusOf(last.httpStatus),
+        when: t.fmt.relative(last.createdAt),
+      });
+      chip = { label: t("settingsV2.api.chipDelivered"), tone: "ok", testId: "hook-state" };
+    }
+    return {
+      id: h.id,
+      url: h.url,
+      sub,
+      chip,
+      off,
+      events,
+      failed: failed.length,
+      signing: t("settingsV2.api.signingValue"),
+      deliveries: mine.slice(0, 10).map((d) => ({
+        id: d.id,
+        at: at(d.createdAt),
+        event: d.event,
+        status: statusOf(d.httpStatus),
+        ok: d.httpStatus !== null && d.httpStatus < 300,
+        ms: d.latencyMs !== null ? `${t.fmt.number(d.latencyMs)} ms` : "",
+      })),
+    };
+  });
+
+  const choices = EVENT_CHOICES.map((c) => ({
+    key: c.key,
+    label: c.key === "everything" ? t("settingsV2.api.everything") : c.key,
+  }));
 
   return (
-    <div className="oi-rise" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div className="oi-head">
-        <h1 className="oi-title" style={{ margin: 0 }}>
-          {t("settings.api.title")}
-        </h1>
-        <span className="oi-subtitle">{t("settings.api.subtitle")}</span>
-      </div>
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}
+    <SettingsPage
+      home={t("settingsV2.home")}
+      crumb={t("settingsV2.group.platform")}
+      title={t("settingsV2.entry.api")}
+      lead={t("settingsV2.api.lead")}
+      testId="settings-api"
+      actions={
+        manages ? (
+          <>
+            <NewEndpointDialog choices={choices} />
+            <NewKeyDialog />
+          </>
+        ) : undefined
+      }
+    >
+      <ListCard
+        title={t("settingsV2.api.keys")}
+        hint={t("settingsV2.api.keysHint")}
+        testId="api-keys"
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div className="oi-panel" style={{ overflow: "hidden" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                padding: "12px 16px",
-                borderBottom: "1px solid var(--line)",
-              }}
-            >
-              <span style={{ fontSize: 14, fontWeight: 600 }}>{t("settings.api.keys")}</span>
-              <span style={{ flex: 1 }} />
-              <NewKeyDialog />
-            </div>
-            {data.keys.map((k, i) => (
-              <div
-                key={k.id}
-                data-testid="api-key-row"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 11,
-                  padding: "12px 16px",
-                  borderBottom: i < data.keys.length - 1 ? "1px solid var(--line-2)" : undefined,
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500 }}>
-                    {k.prefix}…{k.lastFour}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                    {k.name} · {t("settings.api.scopes")} {k.scopes.join(", ")} ·{" "}
-                    {k.lastUsedAt
-                      ? t("settings.api.usedAgo", { when: t.fmt.relative(k.lastUsedAt) })
-                      : t("settings.api.neverUsed")}
-                  </div>
-                </div>
-                {chip("ok", t("settings.api.active"))}
-                <form action={revokeApiKey}>
-                  <input type="hidden" name="id" value={k.id} />
-                  <button
-                    type="submit"
-                    className="oi-hover-dang"
-                    style={{ ...ghost, color: "var(--dang)" }}
-                  >
-                    {t("settings.api.revoke")}
-                  </button>
-                </form>
-              </div>
-            ))}
-            {data.keys.length === 0 && (
-              <div style={{ padding: "16px", fontSize: 12.5, color: "var(--ink-3)" }}>
-                {t("settings.api.noKeys")}
-              </div>
-            )}
-          </div>
-          <div className="oi-panel" style={{ overflow: "hidden" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                padding: "12px 16px",
-                borderBottom: "1px solid var(--line)",
-              }}
-            >
-              <span style={{ fontSize: 14, fontWeight: 600 }}>{t("settings.api.contract")}</span>
-              <span style={{ flex: 1 }} />
-              <Link
-                href="/api/v1/openapi.json"
-                target="_blank"
-                className="oi-link"
-                style={{ fontSize: 12, fontWeight: 600 }}
-              >
-                openapi.json →
-              </Link>
-            </div>
-            <pre
-              style={{
-                margin: 0,
-                padding: "14px 16px",
-                background: "var(--topbar-dark)",
-                fontFamily: "var(--font-mono)",
-                fontSize: 11.5,
-                lineHeight: 1.65,
-                color: "var(--code-blue)",
-                overflowX: "auto",
-              }}
-            >
-              {`GET   /api/v1/incidents?cursor=…&limit=100
-POST  /api/v1/incidents
-PATCH /api/v1/incidents/:number
-POST  /api/v1/incidents/:number/updates
-GET   /api/v1/incidents/:number/timeline
-POST  /api/v1/incidents/:number/follow-ups
-GET   /api/v1/follow-ups · /change-events · /status-pages
-{ "error": { "code": "missing_scope", "message": "…" } }`}
-            </pre>
-            <div
-              style={{ padding: "10px 16px", fontSize: 12, color: "var(--ink-3)", lineHeight: 1.5 }}
-            >
-              Bearer{" "}
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>
-                oi_live_[a-f0-9]{"{32}"}
-              </span>{" "}
-              · {t("settings.api.contractNote")}
-            </div>
-          </div>
-        </div>
+        {keyRows.map((k) => (
+          <KeyRow key={k.id} k={k} manages={manages} />
+        ))}
+        {keyRows.length === 0 && <EmptyRow>{t("settingsV2.api.noKeys")}</EmptyRow>}
+      </ListCard>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <div className="oi-panel" style={{ overflow: "hidden" }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                padding: "12px 16px",
-                borderBottom: "1px solid var(--line)",
-              }}
-            >
-              <span style={{ fontSize: 14, fontWeight: 600 }}>{t("settings.api.webhooks")}</span>
-              <span style={{ flex: 1 }} />
-              <NewWebhookDialog
-                events={[...WEBHOOK_EVENTS]}
-                future={FUTURE_WEBHOOK_EVENTS.map((f) => ({
-                  event: f.event,
-                  label: f.milestone === "oncall" ? t("nav.soonOnCall") : t("nav.soonStatusPages"),
-                }))}
-              />
-            </div>
-            {data.hooks.map((h, i) => {
-              const last = lastDelivery(h.id);
-              const off = !h.active || Boolean(h.disabledAt);
-              const failing = Boolean(h.failingSince) && !off;
-              const shown = showDeliveries === h.id;
-              return (
-                <div
-                  key={h.id}
-                  data-testid="webhook-row"
-                  style={{
-                    padding: "12px 16px",
-                    borderBottom: i < data.hooks.length - 1 ? "1px solid var(--line-2)" : undefined,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 6,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        fontWeight: 500,
-                        flex: 1,
-                        minWidth: 0,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {h.url}
-                    </span>
-                    {off
-                      ? chip("mute", t("settings.api.disabled"))
-                      : failing
-                        ? chip(
-                            "dang",
-                            t("settings.api.failingFor", {
-                              duration: t.fmt
-                                .relative(h.failingSince!)
-                                .replace(/^il y a |^vor |ago$/g, ""),
-                            }),
-                          )
-                        : chip("ok", t("settings.api.healthy"))}
-                  </div>
-                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                    {h.events.slice(0, 4).map((e) => (
-                      <span
-                        key={e}
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 10.5,
-                          background: "var(--sunk)",
-                          borderRadius: 999,
-                          padding: "2px 8px",
-                        }}
-                      >
-                        {e}
-                      </span>
-                    ))}
-                    {h.events.length > 4 && (
-                      <span style={{ fontSize: 10.5, color: "var(--ink-3)", padding: "2px 2px" }}>
-                        {t("settings.api.moreEvents", { count: h.events.length - 4 })}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: "var(--ink-3)" }}>
-                    {off
-                      ? t("settings.api.disabledNote")
-                      : failing
-                        ? t("settings.api.failingNote")
-                        : t("settings.api.signatureNote")}
-                    {last &&
-                      ` · ${t("settings.api.lastDelivery", { when: t.fmt.relative(last.createdAt), status: last.httpStatus === null ? t("settings.api.noResponse") : String(last.httpStatus) })}`}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {failedCount(h.id) > 0 && !off && (
-                      <form action={resendWebhookFailures}>
-                        <input type="hidden" name="id" value={h.id} />
-                        <button
-                          type="submit"
-                          className="oi-hover"
-                          style={{ ...ghost, fontWeight: 600 }}
-                        >
-                          {t("settings.api.resendFailures", { count: failedCount(h.id) })}
-                        </button>
-                      </form>
-                    )}
-                    <Link
-                      href={shown ? "/app/settings/api" : `/app/settings/api?deliveries=${h.id}`}
-                      className="oi-hover"
-                      style={{ ...ghost, textDecoration: "none", color: "inherit" }}
-                    >
-                      {shown ? t("settings.api.hideDeliveries") : t("settings.api.viewDeliveries")}
-                    </Link>
-                    <form action={toggleWebhook}>
-                      <input type="hidden" name="id" value={h.id} />
-                      <button type="submit" className="oi-hover" style={ghost}>
-                        {off ? t("settings.api.enable") : t("settings.api.disable")}
-                      </button>
-                    </form>
-                    <form action={deleteWebhook}>
-                      <input type="hidden" name="id" value={h.id} />
-                      <button
-                        type="submit"
-                        className="oi-hover-dang"
-                        style={{ ...ghost, color: "var(--dang)" }}
-                      >
-                        {t("settings.api.delete")}
-                      </button>
-                    </form>
-                  </div>
-                  {shown && (
-                    <div
-                      style={{
-                        marginTop: 4,
-                        border: "1px solid var(--line-2)",
-                        borderRadius: 10,
-                        overflow: "hidden",
-                      }}
-                    >
-                      {data.deliveries
-                        .filter((d) => d.endpointId === h.id)
-                        .slice(0, 20)
-                        .map((d) => (
-                          <div
-                            key={d.id}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 10,
-                              padding: "7px 10px",
-                              borderBottom: "1px solid var(--line-2)",
-                              fontSize: 11.5,
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontFamily: "var(--font-mono)",
-                                color: "var(--ink-3)",
-                                width: 92,
-                                flex: "none",
-                              }}
-                            >
-                              {t.fmt.messageTime(d.createdAt)}
-                            </span>
-                            <span
-                              style={{
-                                fontFamily: "var(--font-mono)",
-                                flex: 1,
-                                minWidth: 0,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {d.event}
-                            </span>
-                            <span
-                              style={{
-                                fontFamily: "var(--font-mono)",
-                                fontWeight: 600,
-                                color:
-                                  d.httpStatus !== null && d.httpStatus < 300
-                                    ? "var(--ok)"
-                                    : "var(--dang)",
-                              }}
-                            >
-                              {d.httpStatus === null ? "—" : d.httpStatus}
-                            </span>
-                            <span style={{ color: "var(--ink-3)", width: 56, textAlign: "right" }}>
-                              {d.latencyMs !== null ? `${d.latencyMs} ms` : ""}
-                            </span>
-                          </div>
-                        ))}
-                      {data.deliveries.filter((d) => d.endpointId === h.id).length === 0 && (
-                        <div style={{ padding: "8px 10px", fontSize: 11.5, color: "var(--ink-3)" }}>
-                          {t("settings.api.noDeliveries")}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {data.hooks.length === 0 && (
-              <div style={{ padding: 16, fontSize: 12.5, color: "var(--ink-3)" }}>
-                {t("settings.api.noWebhooks")}
-              </div>
-            )}
-          </div>
-          <div className="oi-note">{t("settings.api.emissionNote")}</div>
-        </div>
-      </div>
-    </div>
+      <ListCard
+        title={t("settingsV2.api.hooks")}
+        hint={t("settingsV2.api.hooksHint")}
+        testId="api-hooks"
+      >
+        {hookRows.map((h) => (
+          <EndpointRow key={h.id} h={h} manages={manages} />
+        ))}
+        {hookRows.length === 0 && <EmptyRow>{t("settingsV2.api.noHooks")}</EmptyRow>}
+      </ListCard>
+
+      <CodeCard
+        title={t("settingsV2.api.try")}
+        hint={t("settingsV2.api.tryHint")}
+        code={`curl -H "Authorization: Bearer $OI_KEY" ${origin}/api/v1/incidents?phase=active`}
+        testId="api-try"
+      />
+    </SettingsPage>
   );
 }

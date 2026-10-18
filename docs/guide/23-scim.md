@@ -7,15 +7,17 @@ summary: One SCIM 2.0 endpoint per workspace behind a bearer token; users mapped
 
 ## Enabling the endpoint
 
-![Provisioning](img/settings-scim.png "The base URL, the token issued once, the options for provisioned members.")
+![Provisioning](img/settings-scim.png "Where the endpoint stands, the address and the token to give the provider, what a provisioned member starts with.")
 
-**Settings → Members & access → Provisioning (SCIM) → Enable and issue a token**. The screen shows:
+**Settings › People & access › Provisioning** reads top to bottom:
 
-- the **SCIM base URL**: `https://<workspace host>/scim/v2`;
-- the **bearer token** `oi_scim_…`, **shown once** — copy it into the provider now. Only its hash is stored; a lost token is rotated, never recovered;
-- the options for **provisioned members**: their **role** unless the provider says otherwise (`admin`, `responder`, `viewer`), and whether to **email the invitation** when no single sign-on lets them in.
+- four figures: the **Status** (_Enabled_, _Disabled_ or _Not set up_), the **Last call** the provider made and the last change it wrote (_user deactivated · 3 days ago_), the members it **provisioned** and how many of them are deactivated, and the **groups** it keeps in step with **teams**, by name;
+- **Connection**: the **SCIM base URL**, `https://<workspace host>/scim/v2`, with **Copy**; and the **Bearer token** — its last characters, when it was issued and by whom;
+- **Provisioned members**: their **role** unless the provider says otherwise (Responder, Viewer, Admin), and whether to **email the invitation** when no single sign-on lets them in. Saved with the save bar.
 
-**Rotate the token** kills the old one at once; **Disable** closes the endpoint (401 on every call) without losing anything.
+The first time, **Issue a token…** opens the endpoint: the dialog shows the token `oi_scim_…` **once** — copy it into the provider now. Only its hash is stored; a lost token is rotated, never recovered.
+
+**Rotate…** issues a new token and kills the old one at once — paste the new one in the provider right away, provisioning pauses until you do. **Disable** in the header closes the endpoint (401 on every call) without losing anything; **Enable** opens it again.
 
 ## In Okta
 
@@ -39,9 +41,9 @@ Enterprise applications → your app → **Provisioning** → mode _Automatic_: 
 
 ## What happens on the product side
 
-- A provisioned member appears in **Members & roles** with the source _scim_. If the workspace has an SSO connection, the member is **active** at once and signs in through it; otherwise the member is **invited** and receives the invitation email when the option is on.
+- A provisioned member appears in **Members** like the others. If the workspace has an SSO connection, the member is **active** at once and signs in through it; otherwise the member is **invited** and receives the invitation email when the option is on.
 - An **owner** cannot be deactivated or demoted through SCIM; the call answers `403`.
-- Deactivation is what a directory removal becomes: the member is refused at the door, and everything they did stays attributed.
+- Deactivation is what a directory removal becomes: the member is refused at the door, and everything they did stays attributed. In **Members** the row says when the provider removed them and offers no **Reactivate**: _Managed by Okta_ — reactivate them in the provider, which owns them.
 - Every change is an audit line attributed to _SCIM provisioning_.
 - The endpoint answers with `application/scim+json` and the standard error envelope (`urn:ietf:params:scim:api:messages:2.0:Error`).
 

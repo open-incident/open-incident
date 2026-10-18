@@ -2,10 +2,11 @@ import { expect, test } from "@playwright/test";
 import { MEMBERS, signIn, signOut } from "./helpers";
 
 /**
- * The Response-milestone settings: a custom field lands in the declaration
- * form, a post-incident task and the post-mortem term are saved, an
- * announcement rule publishes above the incidents list, a new type is a copy
- * of its base.
+ * Settings › Incidents (V2 screens): a custom field lands in the
+ * declaration form, a post-incident task and the post-mortem term are saved
+ * from Types & lifecycle, an announcement rule is added, switched off and
+ * deleted, a new type is a copy of its base, and the old severities address
+ * lands on its own screen.
  */
 test.describe("Settings — Response", () => {
   const stamp = new Date().toISOString().slice(11, 19).replace(/:/g, "");
@@ -15,71 +16,77 @@ test.describe("Settings — Response", () => {
     await page.goto("/app/settings/fields");
     await expect(page.getByTestId("field-row").first()).toBeVisible();
     await page.getByTestId("field-open").click();
-    const key = `smoke_${stamp}`;
-    await page.locator('form[data-testid="field-form"] input[name="key"]').fill(key);
-    await page.locator('form[data-testid="field-form"] input[name="label"]').fill("Smoke ticket");
-    await page.locator('form[data-testid="field-form"] [role=radio]').nth(3).click(); // link
-    await page.locator('form[data-testid="field-form"] button[type=submit]').click();
-    await expect(page.getByTestId("field-row").filter({ hasText: key })).toBeVisible();
+    const name = `Smoke ticket ${stamp}`;
+    const dialog = page.getByTestId("field-form");
+    await dialog.locator('input[name="name"]').fill(name);
+    await dialog.locator('select[name="kind"]').selectOption("link");
+    await page.getByTestId("field-form-submit").click();
+    const row = page.getByTestId("field-row").filter({ hasText: name });
+    await expect(row).toBeVisible();
 
     await page.goto("/app/incidents/new");
     // Optional fields are folded under "+ N more fields", after the design's three questions.
     await page.getByTestId("declare-details").click();
-    await expect(page.locator(`[name="field.${key}"]`)).toBeVisible();
+    await expect(page.getByText(name).first()).toBeVisible();
 
     await page.goto("/app/settings/fields");
-    await page.getByTestId("field-row").filter({ hasText: key }).getByRole("button").click();
-    await expect(page.getByTestId("field-row").filter({ hasText: key })).toHaveCount(0);
+    await page.getByTestId("field-row").filter({ hasText: name }).getByTestId("field-edit").click();
+    await page.getByTestId("field-delete").click();
+    await expect(page.getByTestId("field-row").filter({ hasText: name })).toHaveCount(0);
     await signOut(page);
   });
 
   test("the post-incident flow takes a task and the post-mortem term", async ({ page }) => {
     await signIn(page, MEMBERS.owner);
+    // The old address opens Types & lifecycle on its post-incident tasks.
     await page.goto("/app/settings/post-incident");
-    await expect(page.getByTestId("task-def-row").first()).toBeVisible();
-    await page.getByTestId("task-open-reviewing").click();
+    await expect(page).toHaveURL(/\/app\/settings\/types/);
+    const tasks = page.getByTestId("tasks-dialog");
+    await expect(tasks.getByTestId("task-def-row").first()).toBeVisible();
     const title = `Smoke task ${stamp}`;
-    await page.locator('form[data-testid="task-form"] input[name="title"]').fill(title);
-    await page.locator('form[data-testid="task-form"] button[type=submit]').click();
-    await expect(page.getByTestId("task-def-row").filter({ hasText: title })).toBeVisible();
-    await page.getByTestId("task-def-row").filter({ hasText: title }).getByRole("button").click();
-    await expect(page.getByTestId("task-def-row").filter({ hasText: title })).toHaveCount(0);
+    await tasks.getByTestId("task-form").locator('input[name="title"]').fill(title);
+    await tasks.getByTestId("task-add").click();
+    const added = tasks.getByTestId("task-def-row").filter({ hasText: title });
+    await expect(added).toBeVisible();
+    await added.getByTestId("task-delete").click();
+    await expect(tasks.getByTestId("task-def-row").filter({ hasText: title })).toHaveCount(0);
 
-    // Leave the "saved" URL of the previous step first, or the wait below would resolve at once.
-    await page.goto("/app/settings/post-incident");
-    await page.locator('input[name="term"]').fill("Retex");
-    await page.locator('input[name="term"]').press("Enter");
-    await page.waitForURL(/saved=1/);
-    await expect(page.locator('input[name="term"]')).toHaveValue("Retex");
+    // The post-mortem term, in its dialog.
+    await page.goto("/app/settings/types");
+    await page.getByTestId("pm-template-edit").click();
+    await page.getByTestId("pm-template-dialog").locator('input[name="term"]').fill("Retex");
+    await page.getByTestId("pm-template-dialog-submit").click();
+    await expect(page.getByTestId("pm-template-dialog")).toHaveCount(0, { timeout: 30_000 });
     await page.goto("/app/incidents/217?tab=post-incident");
     await expect(page.getByText("Retex").first()).toBeVisible();
-    await page.goto("/app/settings/post-incident");
-    await page.locator('input[name="term"]').fill("");
-    await page.locator('input[name="term"]').press("Enter");
-    await page.waitForURL(/saved=1/);
-    await expect(page.locator('input[name="term"]')).toHaveValue("");
+    await page.goto("/app/settings/types");
+    await page.getByTestId("pm-template-edit").click();
+    await page.getByTestId("pm-template-dialog").locator('input[name="term"]').fill("");
+    await page.getByTestId("pm-template-dialog-submit").click();
+    await expect(page.getByTestId("pm-template-dialog")).toHaveCount(0, { timeout: 30_000 });
     await signOut(page);
   });
 
-  test("the seeded rule shows a living announcement above the list; a rule can be added and removed", async ({
-    page,
-  }) => {
+  test("an announcement rule is added, switched off and deleted", async ({ page }) => {
     await signIn(page, MEMBERS.owner);
-    // The V2 list has no banner above the rows: the announcement goes to the
-    // chat channels the rule names, and the rule itself is what is checked here.
     await page.goto("/app/settings/announcements");
     await expect(page.getByTestId("template-row").first()).toBeVisible();
-    await expect(page.getByTestId("rule-row").first()).toBeVisible();
+    const rows = page.getByTestId("rule-row");
+    await expect(rows.first()).toBeVisible();
+    const before = await rows.count();
     await page.getByTestId("rule-open").click();
-    const name = `Smoke rule ${stamp}`;
-    await page.locator('form[data-testid="rule-form"] input[name="name"]').fill(name);
-    await page.locator('form[data-testid="rule-form"] button[type=submit]').click();
-    const row = page.getByTestId("rule-row").filter({ hasText: name });
-    await expect(row).toBeVisible();
-    await row.getByRole("button", { name: /Disable|Désactiver|Deaktivieren/ }).click();
-    await expect(row.getByText(/inactive|inaktiv/)).toBeVisible();
-    await row.getByRole("button", { name: /^(Delete|Supprimer|Löschen)$/ }).click();
-    await expect(row).toHaveCount(0);
+    await page.getByTestId("rule-form-submit").click();
+    await expect(rows).toHaveCount(before + 1);
+
+    // The newest rule is the last: switched off from its dialog, then deleted.
+    await rows.last().click();
+    await page.getByTestId("rule-active").uncheck({ force: true });
+    await page.getByTestId("rule-edit-dialog-submit").click();
+    await expect(page.getByTestId("rule-edit-dialog")).toHaveCount(0);
+    await rows.last().click();
+    await expect(page.getByTestId("rule-active")).not.toBeChecked();
+    await page.getByTestId("rule-delete").click();
+    await expect(rows).toHaveCount(before);
     await signOut(page);
   });
 
@@ -88,22 +95,23 @@ test.describe("Settings — Response", () => {
     await page.goto("/app/settings/types");
     await page.getByTestId("type-open").click();
     const name = `Smoke type ${stamp}`;
-    await page.locator('form[data-testid="type-form"] input[name="name"]').fill(name);
-    await page.locator('form[data-testid="type-form"] button[type=submit]').click();
+    await page.getByTestId("type-form").locator('input[name="name"]').fill(name);
+    await page.getByTestId("type-form-submit").click();
     await page.waitForURL(/settings\/types\?type=/);
-    // The sheet opens on the new type: the selector and the name field carry it.
-    await expect(
-      page
-        .locator('form#lifecycle ~ * input[name="name"], input[form="lifecycle"][name="name"]')
-        .first(),
-    ).toHaveValue(name);
-    await expect(page.getByTestId("type-switcher").locator("option:checked")).toContainText(name);
-    // Its statuses are the base's: the status list carries the same active statuses.
-    await expect(
-      page.getByTestId("status-row").filter({ hasText: /Surveillance|Monitoring|Beobachtung/ }),
-    ).toHaveCount(1);
+    // The switcher shows the new type, selected; its statuses are the base's.
+    await expect(page.getByTestId("type-switcher")).toContainText(name);
+    await expect(page.getByTestId("phase-active")).toContainText(
+      /Surveillance|Monitoring|Beobachtung/,
+    );
     await page.goto("/app/incidents/new");
     await expect(page.locator('select[name="typeId"] option', { hasText: name })).toHaveCount(1);
+    await signOut(page);
+  });
+
+  test("the old severities address lands on its own screen", async ({ page }) => {
+    await signIn(page, MEMBERS.owner);
+    await page.goto("/app/settings/types?seg=severities");
+    await expect(page).toHaveURL(/\/app\/settings\/severities$/);
     await signOut(page);
   });
 });

@@ -69,7 +69,7 @@ export function TemplateEditor({
               <button
                 type="submit"
                 form={form}
-                name="reset"
+                name="resetTemplate"
                 value="1"
                 className="oi-hover"
                 style={{ ...icon, width: "auto", padding: "0 10px", height: 30, fontWeight: 600 }}
