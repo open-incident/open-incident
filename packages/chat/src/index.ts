@@ -14,3 +14,4 @@ export * from "./all";
 export * from "./slack/manifest";
 export * from "./teams/manifest";
 export * from "./package-files";
+export * from "./atlas";

@@ -1,0 +1,1 @@
+ALTER TABLE "app"."alert_routes" ADD COLUMN "atlas_directive" text;

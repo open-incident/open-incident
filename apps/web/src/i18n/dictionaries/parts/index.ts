@@ -24,6 +24,17 @@ import { settingsPart } from "./settings";
 import { bellPart } from "./bell";
 import { syntheticPart } from "./synthetic";
 import { servicesPart } from "./services";
+import { shellHomePart } from "./shell-home";
+import { incidentsV2Part } from "./incidents-v2";
+import { alertsStatusPart } from "./alerts-status";
+import { telemetryMonitorsPart } from "./telemetry-monitors";
+import { oncallV2Part } from "./oncall-v2";
+import { servicesInsightsPart } from "./services-insights";
+import { settingsV2Part } from "./settings-v2";
+import { chatV2Part } from "./chat-v2";
+import { migratePart } from "./migrate";
+import { atlasCorePart } from "./atlas-core";
+import { atlasUiPart } from "./atlas-ui";
 
 export const partsEn = {
   ...incidentsPart.en,
@@ -34,6 +45,17 @@ export const partsEn = {
   ...bellPart.en,
   ...syntheticPart.en,
   ...servicesPart.en,
+  ...shellHomePart.en,
+  ...incidentsV2Part.en,
+  ...alertsStatusPart.en,
+  ...telemetryMonitorsPart.en,
+  ...oncallV2Part.en,
+  ...servicesInsightsPart.en,
+  ...settingsV2Part.en,
+  ...chatV2Part.en,
+  ...migratePart.en,
+  ...atlasCorePart.en,
+  ...atlasUiPart.en,
 } as const;
 
 export const partsFr = {
@@ -45,6 +67,17 @@ export const partsFr = {
   ...bellPart.fr,
   ...syntheticPart.fr,
   ...servicesPart.fr,
+  ...shellHomePart.fr,
+  ...incidentsV2Part.fr,
+  ...alertsStatusPart.fr,
+  ...telemetryMonitorsPart.fr,
+  ...oncallV2Part.fr,
+  ...servicesInsightsPart.fr,
+  ...settingsV2Part.fr,
+  ...chatV2Part.fr,
+  ...migratePart.fr,
+  ...atlasCorePart.fr,
+  ...atlasUiPart.fr,
 };
 
 export const partsDe = {
@@ -56,4 +89,15 @@ export const partsDe = {
   ...bellPart.de,
   ...syntheticPart.de,
   ...servicesPart.de,
+  ...shellHomePart.de,
+  ...incidentsV2Part.de,
+  ...alertsStatusPart.de,
+  ...telemetryMonitorsPart.de,
+  ...oncallV2Part.de,
+  ...servicesInsightsPart.de,
+  ...settingsV2Part.de,
+  ...chatV2Part.de,
+  ...migratePart.de,
+  ...atlasCorePart.de,
+  ...atlasUiPart.de,
 };

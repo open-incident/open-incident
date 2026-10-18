@@ -511,7 +511,16 @@ export type IncidentEventKind =
   | "visibility_changed"
   | "renamed"
   | "announcement_published"
-  | "investigation";
+  | "investigation"
+  /**
+   * Atlas's journal, mirrored on the timeline (spec delta §4.1). Written by the
+   * engine with actorKind "ai" and actorName "Atlas"; payload
+   * { actionId, title, detail?, autonomous, reversible, level }. An undo or a
+   * redo writes its own event, by the member who did it: { actionId, title }.
+   */
+  | "atlas_action"
+  | "atlas_undo"
+  | "atlas_redo";
 
 /**
  * The timeline — append-only, and the ONE source of the live views (SSE reads
@@ -1368,6 +1377,12 @@ export const alertRoutes = app.table(
     }),
     deferMinutes: integer("defer_minutes").notNull().default(0),
     resolveClosesEscalation: boolean("resolve_closes_escalation").notNull().default(true),
+    /**
+     * "✦ Let Atlas handle it" / "✦ Never let Atlas act" (spec delta §12.3).
+     * Null: the service's level decides. "never" wins over every level; "handle"
+     * never raises a level, it only lets Atlas try first within its level.
+     */
+    atlasDirective: text("atlas_directive").$type<"handle" | "never" | null>(),
     position: integer("position").notNull().default(0),
     alertCount: integer("alert_count").notNull().default(0),
     createdAt: createdAt(),
@@ -2311,6 +2326,14 @@ export const investigations = app.table(
       onDelete: "set null",
     }),
     gradedAt: timestamp("graded_at", { withTimezone: true }),
+    /** The service's effective autonomy level when the run started (see atlas.ts). */
+    levelAtStart: integer("level_at_start"),
+    /** Resolved end to end with nobody paged — the "by Atlas alone" line. */
+    resolvedAlone: boolean("resolved_alone").notNull().default(false),
+    costEur: doublePrecision("cost_eur").notNull().default(0),
+    tokensTotal: integer("tokens_total").notNull().default(0),
+    /** The review queue: pending until a person reads an autonomous resolution. */
+    reviewState: text("review_state").$type<"pending" | "ok" | "miss" | "reopened" | null>(),
     /** The last assessment's error, if it failed; earlier results stay. */
     error: text("error"),
     startedAt: timestamp("started_at", { withTimezone: true }),

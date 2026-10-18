@@ -358,6 +358,20 @@
       "when": 1790033029691,
       "tag": "0050_update_corrections",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1792314847723,
+      "tag": "0051_atlas_autonomy_and_opsgenie_migration",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1792315264646,
+      "tag": "0052_rule_atlas_directive",
+      "breakpoints": true
     }
   ]
 }

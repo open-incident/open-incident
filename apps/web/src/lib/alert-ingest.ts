@@ -163,6 +163,7 @@ const NEUTRAL: Omit<RouteRow, "id" | "tenantId" | "name" | "createdAt" | "update
   incidentTypeId: null,
   deferMinutes: 0,
   resolveClosesEscalation: true,
+  atlasDirective: null,
   position: 0,
   alertCount: 0,
   testMode: false,

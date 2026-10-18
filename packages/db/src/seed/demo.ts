@@ -82,6 +82,7 @@ import { encryptSecret } from "@openincident/crypto";
 import { apiKeyLookup } from "../schema/directory";
 import { installDemoHistory } from "./history";
 import { seedTelemetry } from "./telemetry";
+import { seedV2 } from "./v2";
 
 type Tx = Parameters<Parameters<ReturnType<typeof adminClient>["db"]["transaction"]>[0]>[0];
 
@@ -141,6 +142,7 @@ try {
     await ensureStatusPage(tx, ctx);
     await ensureAiAndChanges(tx, ctx);
     await installDemoHistory(tx, tenantId, ctx);
+    await seedV2(tx, tenantId);
   });
   // Outside the transaction: ClickHouse is a different store, and a failure
   // there must not roll back a workspace that is otherwise complete.

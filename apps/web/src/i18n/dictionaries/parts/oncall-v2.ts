@@ -1,0 +1,15 @@
+/**
+ * Labels added by the V2 design pass — oncall-v2. English is the source; French and
+ * German carry exactly the same keys (a gap does not compile). No `as const`.
+ */
+import type { Message } from "../../dictionary";
+
+const en = {};
+
+type Part = Record<keyof typeof en, Message>;
+
+export const oncallV2Part = {
+  en,
+  fr: {},
+  de: {},
+} satisfies { en: Part; fr: Part; de: Part };
