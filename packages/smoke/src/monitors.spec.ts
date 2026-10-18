@@ -2,13 +2,14 @@ import { expect, test } from "@playwright/test";
 import { MEMBERS, signIn, signOut } from "./helpers";
 
 /**
- * The checks the product runs itself.
+ * The checks the product runs itself (design: V2Monitors).
  *
  * Read-only on purpose, with one exception. A monitor is a thing that pages
  * people: creating one here, or resuming one of the demo's, would have the
  * worker reach out to a host that does not exist and wake whoever the demo put
- * on call. So this replays what a reader does — the list, a monitor's own page,
- * its journey — and writes exactly one thing, the criteria, which it puts back.
+ * on call. So this replays what a reader does — the list, a monitor's page and
+ * its tabs, the charts and the full-screen view — and writes exactly one
+ * thing, the criteria, which it puts back.
  */
 test.describe("Monitors", () => {
   test.beforeEach(async ({ page }) => {
@@ -18,37 +19,54 @@ test.describe("Monitors", () => {
     await signOut(page);
   });
 
+  const firstMonitor = async (page: import("@playwright/test").Page, kind?: RegExp) => {
+    await page.goto("/app/monitors");
+    const rows = page.locator(
+      "[data-testid=monitor-row][href^='/app/monitors/']:not([href*=heartbeats])",
+    );
+    const pick = kind ? rows.filter({ hasText: kind }) : rows;
+    if ((await pick.count()) === 0) return false;
+    await pick.first().click();
+    await page.waitForURL(/\/app\/monitors\/[0-9a-f-]+/);
+    return true;
+  };
+
   test("the list shows every monitor with its history", async ({ page }) => {
     await page.goto("/app/monitors");
-    const rows = page.locator("a[href^='/app/monitors/']:not([role='tab'])");
-    const count = await rows.count();
-    test.skip(count === 0, "no monitor in this workspace");
-    // Every row says what it is and how it is; a row with neither is a row
-    // nobody can act on.
+    await expect(page.getByTestId("monitors-checked-from")).toBeVisible();
+    const rows = page.getByTestId("monitor-row");
+    test.skip((await rows.count()) === 0, "no monitor in this workspace");
     const first = await rows.first().innerText();
-    expect(first).toMatch(/HTTP|API|PORT|DNS|SSL|DOMAIN|PING|SYNTHETIC|TRACES|LOGS|METRICS/);
+    expect(first).toMatch(/HTTP|API|PORT|DNS|SSL|DOM|PING|SYN|IN|MAN|TRC|LOG|MET|EXC/);
     expect(first).toMatch(
       /Online|Degraded|Offline|Paused|Waiting|En ligne|Dégradé|Hors ligne|En pause|attente/,
     );
   });
 
-  test("a monitor's page carries its rules, its chart and its journey", async ({ page }) => {
-    await page.goto("/app/monitors");
-    const journey = page
-      .locator("a[href^='/app/monitors/']:not([role='tab'])")
-      .filter({ hasText: /SYNTHETIC/ });
-    const any = page.locator("a[href^='/app/monitors/']:not([role='tab'])");
-    test.skip((await any.count()) === 0, "no monitor in this workspace");
-    const target = (await journey.count()) ? journey : any;
-    await target.first().click();
-    await page.waitForURL(/\/app\/monitors\/[0-9a-f-]+/);
-
-    // The three choices are read back from the rule, not from the monitor row.
+  test("a monitor's page: charts that zoom together, tabs, full screen", async ({ page }) => {
+    test.skip(!(await firstMonitor(page, /HTTP|API/)), "no web monitor");
     await expect(page.getByText(/WHEN IT GOES OFFLINE|QUAND IL PASSE HORS LIGNE/i)).toBeVisible();
-    if (await journey.count()) {
-      // A journey with steps draws one row per step, with what it did.
-      await expect(page.getByTestId("journey-row-0")).toBeVisible();
-    }
+    await expect(page.getByTestId("monitor-kpis")).toBeVisible();
+    await page.getByTestId("monitor-range-30d").click();
+    await expect(page).toHaveURL(/range=30d/);
+    const charts = page.getByTestId("monitor-chart-0");
+    await expect(charts).toBeVisible();
+    // Full screen: six figures, the countdown, Esc to leave.
+    await page.getByTestId("monitor-fullscreen").click();
+    await expect(page.getByTestId("monitor-fs")).toBeVisible();
+    await expect(page.getByTestId("monitor-fs-kpis").locator(":scope > div")).toHaveCount(6);
+    await expect(page.getByTestId("monitor-fs-live")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("monitor-fs")).toHaveCount(0);
+    // The SLO tab is a deep link.
+    await page.getByTestId("monitor-tab-slo").click();
+    await expect(page).toHaveURL(/tab=slo/);
+    await expect(page.getByTestId("monitor-define-slo")).toBeVisible();
+  });
+
+  test("a journey's steps are drawn on its overview", async ({ page }) => {
+    test.skip(!(await firstMonitor(page, /SYN/)), "no synthetic monitor");
+    await expect(page.getByTestId("journey-row-0")).toBeVisible();
   });
 
   /**
@@ -57,25 +75,11 @@ test.describe("Monitors", () => {
    * rows it shows is one typo away from silently dropping the ones it does not.
    */
   test("the rules of a monitor can be rewritten, and survive the round trip", async ({ page }) => {
-    await page.goto("/app/monitors");
-    const rows = page
-      .locator("a[href^='/app/monitors/']:not([role='tab'])")
-      .filter({ hasText: /HTTP|API/ });
-    test.skip((await rows.count()) === 0, "no reachability monitor in this workspace");
-    await rows.first().click();
-    await page.waitForURL(/\/app\/monitors\/[0-9a-f-]+/);
+    test.skip(!(await firstMonitor(page, /HTTP|API/)), "no reachability monitor in this workspace");
+    await page.getByTestId("monitor-tab-criteria").click();
+    await page.waitForURL(/tab=criteria/);
     const url = page.url();
-
-    // `<details>` toggles, so clicking twice closes it.
-    const open = async () => {
-      const details = page.getByTestId("criteria-edit");
-      if (!(await details.evaluate((el) => (el as HTMLDetailsElement).open))) {
-        await details.locator("summary").click();
-      }
-      return page.getByTestId("criterion-row");
-    };
-    let criteria = await open();
-    // One blank row is always drawn at the end: that is how a rule is added.
+    let criteria = page.getByTestId("criterion-row");
     const before = (await criteria.count()) - 1;
     const blank = criteria.last();
     await blank.locator("select[name=on]").selectOption("response_time_ms");
@@ -84,27 +88,27 @@ test.describe("Monitors", () => {
     await blank.locator("select[name=then]").selectOption("degraded");
     await page.getByTestId("criteria-save").click();
     await page.waitForURL(/saved=criteria/);
-    const card = page.getByTestId("criteria-edit").locator("..");
-    await expect(card.getByText("4242").first()).toBeVisible();
-    expect(await (await open()).count()).toBe(before + 2);
-
-    // Put it back: clearing a value is how a rule is dropped. Every match, not
-    // the first — a rerun of this test would otherwise leave one behind.
-    criteria = await open();
+    criteria = page.getByTestId("criterion-row");
+    await expect(criteria).toHaveCount(before + 2);
     for (const field of await criteria.locator('input[name=value][value="4242"]').all()) {
       await field.fill("");
     }
     await page.getByTestId("criteria-save").click();
     await page.waitForURL(/saved=criteria/);
-    // Scoped to the card: a latency elsewhere on the page that happens to carry
-    // the same digits is not the rule this test wrote. Reloaded in the loop
-    // because the first paint after a redirect can still be the cached one.
     await expect(async () => {
       await page.goto(url, { waitUntil: "networkidle" });
-      await expect(page.getByTestId("criteria-edit").locator("..").getByText("4242")).toHaveCount(
-        0,
-        { timeout: 2_000 },
-      );
+      await expect(page.locator('input[name=value][value="4242"]')).toHaveCount(0, {
+        timeout: 2_000,
+      });
     }).toPass({ timeout: 20_000 });
+  });
+
+  test("new monitor: ten types and the design's second step", async ({ page }) => {
+    await page.goto("/app/monitors");
+    await page.getByTestId("monitor-new").click();
+    await expect(page.getByTestId("monitor-type-http")).toBeVisible();
+    await page.getByTestId("monitor-type-http").click();
+    await expect(page.getByTestId("monitor-form").locator("input[name=target]")).toBeVisible();
+    await expect(page.getByTestId("monitor-form").locator("input[name=name]")).toHaveCount(0);
   });
 });

@@ -1,12 +1,17 @@
 import Link from "next/link";
-import { Suspense } from "react";
-import { SegmentTabs } from "@/components/shell/segment-tabs";
-import { withTenant } from "@openincident/db";
+import { isTelemetryMonitor, withTenant } from "@openincident/db";
 import { getT } from "@/i18n/server";
-import { canRespond, requireMember } from "@/lib/session";
-import { listMonitors, monitorCapabilities } from "@/lib/monitors";
+import { canRespond, isManager, requireMember } from "@/lib/session";
+import {
+  listHeartbeatRows,
+  listMonitors,
+  monitorCapabilities,
+  probeSummary,
+  type BarState,
+} from "@/lib/monitors";
 import { listServices } from "@/lib/services";
 import { NewMonitor } from "./new-monitor";
+import { ago, everyLabel, monitorTypeKey } from "./format";
 
 const STATE_TONE: Record<string, [string, string]> = {
   online: ["var(--ok-t)", "var(--ok)"],
@@ -16,20 +21,23 @@ const STATE_TONE: Record<string, [string, string]> = {
   waiting: ["var(--sunk)", "var(--ink-2)"],
 };
 
-const BAR: Record<string, string> = {
+const BAR: Record<BarState, string> = {
   online: "rgba(14,122,88,.55)",
   degraded: "var(--wait)",
   offline: "var(--dang)",
   none: "var(--line)",
 };
 
+const GRID = "minmax(0,1fr) 110px 200px 90px 110px 120px";
+
 /**
- * Monitors — what the product watches itself.
+ * Monitors — what the product watches itself (design: V2Monitors, "Monitors").
  *
- * The row is the whole story: what it is, how it is, thirty days of bars, its
- * uptime, when it last answered and which service it belongs to. A monitor
- * that has never run says "waiting for first check" rather than pretending to
- * be online.
+ * The row is the whole story: what it is, how it is, ninety days of bars, its
+ * uptime, its last answer and how long ago, and which service it belongs to.
+ * A monitor that has never run says "waiting for first check" rather than
+ * pretending to be online. Heartbeats — the dead-man's switch, an `IN` row —
+ * sit in the same list and open their own card.
  */
 export default async function MonitorsPage({
   searchParams,
@@ -48,20 +56,78 @@ export default async function MonitorsPage({
 
   const data = await withTenant(tenant.id, async (tx) => ({
     monitors: await listMonitors(tx, tenant.id),
+    heartbeats: await listHeartbeatRows(tx, tenant.id),
     services: await listServices(tx, tenant.id),
+    probes: await probeSummary(tx),
   }));
-  const capabilities = await monitorCapabilities();
+  const capabilities = {
+    ...(await monitorCapabilities()),
+    // "Incoming request" creates a heartbeat, which is a manager's to create.
+    incoming: isManager(member) ? { ok: true } : { ok: false, why: "manager" },
+  };
+  const now = Date.now();
 
+  type Row = {
+    key: string;
+    href: string;
+    name: string;
+    type: string;
+    target: string;
+    state: string;
+    bars: BarState[];
+    up: string;
+    last: string;
+    svc: string;
+  };
+  const rows: Row[] = [
+    ...data.monitors.map((m) => ({
+      key: m.id,
+      href: `/app/monitors/${m.id}`,
+      name: m.name,
+      type: monitorTypeKey(m.type),
+      target: m.target.replace(/^https?:\/\//, "") || "—",
+      state: m.state,
+      bars: m.state === "waiting" ? (Array(30).fill("none") as BarState[]) : m.bars90,
+      up: m.uptime90 === null ? "—" : `${+m.uptime90.toFixed(2)} %`,
+      last: m.lastCheckAt
+        ? m.lastLatencyMs !== null && !isTelemetryMonitor(m.type)
+          ? `${m.lastLatencyMs >= 1000 ? `${(m.lastLatencyMs / 1000).toFixed(1)} s` : `${m.lastLatencyMs} ms`} · ${ago(m.lastCheckAt, now)}`
+          : ago(m.lastCheckAt, now)
+        : "—",
+      svc: m.serviceKey ?? "—",
+    })),
+    ...data.heartbeats.map((h) => ({
+      key: `hb-${h.id}`,
+      href: `/app/monitors/heartbeats#hb-${h.id}`,
+      name: h.name,
+      type: "IN",
+      target: t("mon2.inTarget", { every: everyLabel(h.intervalSeconds) }),
+      state: h.state,
+      // A heartbeat keeps its last ping, not a history: its bars stay grey
+      // rather than drawing ninety days of a green nobody measured.
+      bars: Array(30).fill("none") as BarState[],
+      up: "—",
+      last: h.lastPingAt
+        ? new Date(h.lastPingAt).toDateString() === new Date(now).toDateString()
+          ? t("mon2.today", { time: t.fmt.time(h.lastPingAt, t.timeZone) })
+          : t.fmt.relative(h.lastPingAt)
+        : "—",
+      svc: h.serviceKey ?? "—",
+    })),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+
+  const count = (s: string) => rows.filter((r) => r.state === s).length;
   const counts = {
-    online: data.monitors.filter((m) => m.state === "online").length,
-    degraded: data.monitors.filter((m) => m.state === "degraded").length,
-    offline: data.monitors.filter((m) => m.state === "offline").length,
-    waiting: data.monitors.filter((m) => m.state === "waiting").length,
+    online: count("online"),
+    degraded: count("degraded"),
+    offline: count("offline"),
+    waiting: count("waiting"),
     // Counted like the rest: a list of seven monitors whose header said
     // nothing because all seven were paused is a header that lies by omission.
-    paused: data.monitors.filter((m) => m.state === "paused").length,
+    paused: count("paused"),
   };
   const mayEdit = canRespond(member);
+  const where = data.probes.regions.join(", ");
 
   return (
     <div
@@ -73,16 +139,8 @@ export default async function MonitorsPage({
         flexDirection: "column",
         gap: 14,
       }}
+      data-screen-label="Monitors"
     >
-      <Suspense fallback={<div style={{ height: 34 }} />}>
-        <SegmentTabs
-          label={t("nav.monitors")}
-          tabs={[
-            { href: "/app/monitors", label: t("nav.monitors") },
-            { href: "/app/monitors/heartbeats", label: t("heartbeats.title") },
-          ]}
-        />
-      </Suspense>
       <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <h1
           style={{
@@ -95,7 +153,7 @@ export default async function MonitorsPage({
         >
           {t("nav.monitors")}
         </h1>
-        <span style={{ display: "flex", gap: 10, fontSize: 12.5 }}>
+        <span style={{ display: "flex", gap: 10, fontSize: 12.5 }} data-testid="monitor-counts">
           {counts.online > 0 && (
             <span style={{ color: "var(--ok)", fontWeight: 600 }}>
               {t("monitors.nOnline", { count: counts.online })}
@@ -123,13 +181,41 @@ export default async function MonitorsPage({
           )}
         </span>
         <span style={{ flex: 1 }} />
+        {/*
+          Where the checks come from. No probe is registered on most instances
+          — the worker checks from wherever it runs — and the button says that
+          rather than a region nobody configured.
+        */}
+        <Link
+          href="/app/settings/probes"
+          className="oi-hover"
+          data-testid="monitors-checked-from"
+          style={{
+            height: 32,
+            padding: "0 13px",
+            border: "1px solid var(--line)",
+            borderRadius: 9,
+            background: "var(--panel)",
+            display: "flex",
+            alignItems: "center",
+            fontSize: 12.5,
+            fontWeight: 600,
+            cursor: "pointer",
+            color: "inherit",
+            textDecoration: "none",
+          }}
+        >
+          {data.probes.count > 0
+            ? t("mon2.checkedFrom", { where, count: data.probes.count })
+            : t("mon2.checkedFromInstance")}
+        </Link>
         {mayEdit && (
           <NewMonitor
-            services={data.services.map((s) => s.key)}
             capabilities={capabilities}
             initialOpen={!!openNew || !!type}
             initialType={type}
             initialQuery={q}
+            services={data.services.map((s) => s.key)}
           />
         )}
       </div>
@@ -161,7 +247,7 @@ export default async function MonitorsPage({
         </div>
       )}
 
-      {data.monitors.length === 0 ? (
+      {rows.length === 0 ? (
         <div
           style={{
             border: "1px dashed var(--line)",
@@ -192,7 +278,7 @@ export default async function MonitorsPage({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "minmax(0,1fr) 110px 200px 90px 110px 120px",
+              gridTemplateColumns: GRID,
               gap: 12,
               padding: "8px 16px",
               borderBottom: "1px solid var(--line)",
@@ -205,27 +291,29 @@ export default async function MonitorsPage({
           >
             <span>{t("monitors.colMonitor")}</span>
             <span>{t("monitors.colStatus")}</span>
-            <span>{t("monitors.colLast30")}</span>
+            <span>{t("mon2.colLast90")}</span>
             <span>{t("monitors.colUptime")}</span>
             <span>{t("monitors.colLastCheck")}</span>
             <span>{t("monitors.colService")}</span>
           </div>
-          {data.monitors.map((m) => {
+          {rows.map((m) => {
             const tone = STATE_TONE[m.state] ?? STATE_TONE.waiting!;
             return (
               <Link
-                key={m.id}
-                href={`/app/monitors/${m.id}`}
+                key={m.key}
+                href={m.href}
                 className="oi-hover"
+                data-testid="monitor-row"
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "minmax(0,1fr) 110px 200px 90px 110px 120px",
+                  gridTemplateColumns: GRID,
                   gap: 12,
                   alignItems: "center",
                   padding: "10px 16px",
                   borderBottom: "1px solid var(--line-2)",
                   textDecoration: "none",
                   color: "inherit",
+                  cursor: "pointer",
                 }}
               >
                 <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
@@ -250,7 +338,7 @@ export default async function MonitorsPage({
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {m.type.toUpperCase()} · {m.target || "—"}
+                    {m.type} · {m.target}
                   </span>
                 </span>
                 <span
@@ -268,19 +356,13 @@ export default async function MonitorsPage({
                   }}
                 >
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: tone[1] }} />
-                  {t(`monitors.state.${m.state}` as const)}
+                  {t(`monitors.state.${m.state}` as "monitors.state.online")}
                 </span>
                 <span style={{ display: "flex", gap: 1.5, alignItems: "flex-end" }}>
-                  {m.days.map((d) => (
+                  {m.bars.map((b, i) => (
                     <span
-                      key={d.day}
-                      title={d.day}
-                      style={{
-                        flex: 1,
-                        height: 14,
-                        borderRadius: 1.5,
-                        background: BAR[d.state],
-                      }}
+                      key={i}
+                      style={{ flex: 1, height: 14, borderRadius: 1.5, background: BAR[b] }}
                     />
                   ))}
                 </span>
@@ -289,13 +371,13 @@ export default async function MonitorsPage({
                     fontFamily: "var(--mono)",
                     fontSize: 12,
                     fontWeight: 600,
-                    color: m.uptime90 === null ? "var(--ink-3)" : "var(--ok)",
+                    color: m.up === "—" ? "var(--ink-3)" : "var(--ok)",
                   }}
                 >
-                  {m.uptime90 === null ? "—" : `${m.uptime90.toFixed(2)} %`}
+                  {m.up}
                 </span>
                 <span style={{ fontSize: 12, color: "var(--ink-2)", fontFamily: "var(--mono)" }}>
-                  {m.lastCheckAt ? t.fmt.relative(m.lastCheckAt) : "—"}
+                  {m.last}
                 </span>
                 <span
                   style={{
@@ -307,7 +389,7 @@ export default async function MonitorsPage({
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {m.serviceKey ?? "—"}
+                  {m.svc}
                 </span>
               </Link>
             );

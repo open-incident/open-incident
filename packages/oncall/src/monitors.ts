@@ -36,6 +36,7 @@ import {
 import { decryptSecret, encryptSecret } from "@openincident/crypto";
 import { getTenantById, registerApiKeyLookup } from "@openincident/db";
 import { tenantOrigin } from "./notify";
+import { timedHttp } from "./http-timing";
 import {
   enqueueSyntheticRun,
   syntheticConfigOf,
@@ -87,6 +88,8 @@ export type CheckSample = {
   /** Ping: share of echo requests that came back unanswered, 0–100. */
   packetLossPct?: number;
   detail: string;
+  /** Kept on the check row: an HTTP check's phases and certificate. */
+  result?: Record<string, unknown>;
 };
 
 /* ---------- Performing one check ---------- */
@@ -98,25 +101,23 @@ async function checkHttp(
 ): Promise<CheckSample> {
   const started = Date.now();
   try {
-    const res = await fetch(target, {
+    // Timed phase by phase (see http-timing.ts); the body is still read up to
+    // what a criterion could look at, never a 200 MB response every minute.
+    const res = await timedHttp(target, {
       method: String(config.method ?? "GET"),
       headers: (config.headers as Record<string, string>) ?? undefined,
       body: (config.body as string) ?? undefined,
-      redirect: config.followRedirects === false ? "manual" : "follow",
-      signal: AbortSignal.timeout(timeoutMs),
+      followRedirects: config.followRedirects !== false,
+      timeoutMs,
     });
-    // Read at most what a criterion could look at: a monitor must not pull a
-    // 200 MB response into the worker's memory every minute.
-    const body = (await res.text()).slice(0, 20_000);
-    const headers: Record<string, string> = {};
-    res.headers.forEach((v, k) => (headers[k.toLowerCase()] = v));
     return {
       reachable: true,
-      statusCode: res.status,
-      latencyMs: Date.now() - started,
-      body,
-      headers,
-      detail: `${res.status} ${res.statusText}`.trim(),
+      statusCode: res.statusCode,
+      latencyMs: res.latencyMs,
+      body: res.body,
+      headers: res.headers,
+      detail: `${res.statusCode} ${res.statusText}`.trim(),
+      result: { kind: "http", phases: res.phases, ...(res.tls ? { tls: res.tls } : {}) },
     };
   } catch (err) {
     return {
@@ -247,11 +248,21 @@ async function checkSsl(target: string, timeoutMs: number): Promise<CheckSample>
         return;
       }
       const days = Math.floor((Date.parse(cert.valid_to) - Date.now()) / 86_400_000);
+      // The certificate itself, in the shape the HTTP check keeps: Home's
+      // certificates card reads its issuer and expiry off the last check.
+      const issuer = cert.issuer?.O ?? cert.issuer?.CN ?? null;
       done({
         reachable: true,
         latencyMs: Date.now() - started,
         daysToExpiry: days,
         detail: `expires in ${days} days`,
+        result: {
+          kind: "ssl",
+          tls: {
+            validTo: new Date(cert.valid_to).toISOString(),
+            issuer: Array.isArray(issuer) ? (issuer[0] ?? null) : issuer,
+          },
+        },
       });
     });
     socket.once("timeout", () => {
@@ -719,7 +730,7 @@ export async function applyCheckResult(
       state,
       latencyMs: sample.latencyMs ?? null,
       detail: why.slice(0, 500),
-      result: opts.result ?? null,
+      result: opts.result ?? sample.result ?? null,
     });
     await rollUp(tx, tenantId, monitorId, state, m.intervalSeconds, now);
     const changed = state !== m.state;

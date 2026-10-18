@@ -231,3 +231,24 @@ export async function attachTraceToIncident(form: FormData): Promise<void> {
       : `/app/telemetry?tab=traces&trace=${traceId}`,
   );
 }
+
+/**
+ * Rotate the workspace token (design: Setup › "Rotate token").
+ *
+ * Every key still active is revoked and one new key is issued, so what the
+ * collectors hold stops working the moment the new one exists — that is what
+ * rotating means. The new key is returned to the caller, shown once, and
+ * never placed in an address: a token in a URL ends up in history, logs and
+ * referrers.
+ */
+export async function rotateWorkspaceKey(): Promise<{ key: string } | { error: string }> {
+  const { tenant, member } = await requireMember();
+  if (!isManager(member)) return { error: "manager" };
+  const { listKeys } = await import("@/lib/telemetry");
+  for (const k of await listKeys(tenant.id)) {
+    if (!k.revokedAt) await revokeKey(tenant.id, k.id);
+  }
+  const key = await issueKey(tenant.id, "workspace");
+  revalidatePath("/app/telemetry");
+  return { key };
+}

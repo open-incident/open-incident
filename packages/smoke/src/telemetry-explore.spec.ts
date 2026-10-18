@@ -2,151 +2,103 @@ import { expect, test } from "@playwright/test";
 import { MEMBERS, signIn, telemetryInstalled } from "./helpers";
 
 /**
- * Telemetry, as one row of views rather than eleven tabs.
- *
- * What is guarded here is the two things the grouping is for. The signal
- * selector has to carry the window and the filter with it — that is the whole
- * point of one Explorer instead of seven tabs, and it is one line of state
- * away from silently not happening. And every one of the eleven old addresses
- * has to still land where its content went: they are in runbooks, in
- * bookmarks and in alert bodies the product has already sent.
+ * Telemetry, as the V2 design draws it: five tabs, a window menu, the
+ * services table, traces with their waterfall, logs as a terminal, the
+ * metrics board, and the setup. Read-only, and tolerant of an empty window —
+ * the throwaway workspace may have no span in the last hour.
  */
-test.describe.configure({ mode: "serial" });
+test.describe("Telemetry", () => {
+  test.beforeEach(async ({ page }) => {
+    await signIn(page, MEMBERS.owner);
+    test.skip(!(await telemetryInstalled(page)), "telemetry module not installed");
+  });
 
-test.beforeEach(async ({ page }) => {
-  await signIn(page, MEMBERS.owner);
-  test.skip(!(await telemetryInstalled(page)), "no telemetry module on this instance");
-});
+  test("five tabs, and the window menu everywhere but Metrics", async ({ page }) => {
+    await page.goto("/app/telemetry");
+    for (const tab of ["services", "traces", "logs", "metrics", "setup"]) {
+      await expect(page.getByTestId(`telemetry-tab-${tab}`)).toBeVisible();
+    }
+    await expect(page.getByTestId("telemetry-window")).toBeVisible();
+    await page.getByTestId("telemetry-window").click();
+    await page.getByTestId("telemetry-range-6h").click();
+    await expect(page).toHaveURL(/range=6h/);
+    await page.goto("/app/telemetry?tab=metrics");
+    await expect(page.getByTestId("telemetry-window")).toHaveCount(0);
+    await expect(page.locator("text=Application error")).toHaveCount(0);
+  });
 
-test("one row of navigation carries every view, and the rail no longer carries dashboards", async ({
-  page,
-}) => {
-  await page.goto("/app/telemetry");
-  for (const tab of ["overview", "dashboards", "slos", "setup"]) {
-    await expect(page.getByTestId(`telemetry-tab-${tab}`)).toBeVisible();
-  }
-  for (const signal of ["logs", "traces", "metrics", "exceptions", "profiles", "rum", "sql"]) {
-    await expect(page.getByTestId(`telemetry-signal-${signal}`)).toBeVisible();
-  }
-  // Dashboards moved in here, so the rail entry is gone — and its old address
-  // still arrives.
-  await expect(page.locator('aside a[href="/app/dashboards"]')).toHaveCount(0);
-  await page.goto("/app/dashboards");
-  await expect(page).toHaveURL(/tab=dashboards/);
-  await expect(page.getByTestId("dashboards-tab")).toBeVisible();
-});
+  test("the old addresses still land somewhere that exists", async ({ page }) => {
+    for (const q of [
+      "tab=overview",
+      "tab=explore&signal=logs",
+      "tab=exceptions",
+      "tab=connect",
+      "tab=map",
+    ]) {
+      await page.goto(`/app/telemetry?${q}`);
+      await expect(page.locator("text=Application error")).toHaveCount(0);
+      await expect(page.getByTestId("telemetry-tab-services")).toBeVisible();
+    }
+  });
 
-test("the window and the filter survive a change of signal", async ({ page }) => {
-  const filter = "service_name = 'checkout-api'";
-  await page.goto(
-    `/app/telemetry?tab=explore&signal=logs&range=6h&q=${encodeURIComponent(filter)}`,
-  );
-  await expect(page.getByTestId("telemetry-signal-logs")).toBeVisible();
+  test("a service row opens its metrics", async ({ page }) => {
+    await page.goto("/app/telemetry?range=7d");
+    const rows = page.getByTestId("telemetry-service-row");
+    test.skip((await rows.count()) === 0, "no span in the window");
+    await rows.first().click();
+    await expect(page).toHaveURL(/tab=metrics&service=/);
+    await expect(page.getByTestId("metrics-chart").first()).toBeVisible();
+  });
 
-  await page.getByTestId("telemetry-signal-traces").click();
-  await page.waitForURL(/signal=traces/);
-  const url = new URL(page.url());
-  expect(url.searchParams.get("range")).toBe("6h");
-  expect(url.searchParams.get("q")).toBe(filter);
+  test("metrics: compare, zoom by dragging, reset", async ({ page }) => {
+    await page.goto("/app/telemetry?tab=metrics&range=7d");
+    const chart = page.getByTestId("metrics-chart").first();
+    test.skip((await chart.count()) === 0, "no service has reported");
+    await page.getByTestId("metrics-compare").click();
+    await expect(page).toHaveURL(/cmp=1/);
+    await expect(page.locator("[data-chart-legend*='24 h']").first()).toBeVisible();
+    const plot = page.locator("[data-chart-plot]").first();
+    const box = (await plot.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.4, box.y + box.height / 2);
+    await expect(page.locator("[data-chart-tooltip]").first()).toBeVisible();
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.7, box.y + box.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await expect(page).toHaveURL(/from=\d+&to=\d+/);
+    await expect(page.getByTestId("metrics-zoom")).toBeVisible();
+    await page.locator("[data-chart-fullscreen]").first().click();
+    await expect(page.locator("[data-chart-stats]")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-chart-stats]")).toHaveCount(0);
+  });
 
-  // And the window is a link like any other: changing it keeps the signal.
-  await page.getByTestId("telemetry-range-24h").click();
-  await page.waitForURL(/range=24h/);
-  expect(new URL(page.url()).searchParams.get("signal")).toBe("traces");
-});
+  test("traces: the list, the waterfall, a span's detail and its logs", async ({ page }) => {
+    await page.goto("/app/telemetry?tab=traces&range=7d");
+    await expect(page.getByTestId("trace-filters")).toBeVisible();
+    test.skip((await page.getByTestId("trace-row").count()) === 0, "no trace in the window");
+    await expect(page.getByTestId("trace-waterfall")).toBeVisible();
+    await page.getByTestId("trace-span").first().click();
+    await expect(page.getByTestId("span-detail")).toBeVisible();
+    await page.getByTestId("trace-add-filter").click();
+    await page.getByRole("menuitem", { name: "status:error" }).click();
+    await expect(page).toHaveURL(/status=error/);
+    await expect(page.getByTestId("trace-chip-status")).toBeVisible();
+  });
 
-test("every old address lands where its content went", async ({ page }) => {
-  const moved: Array<[string, string]> = [
-    ["logs", "telemetry-signal-logs"],
-    ["traces", "telemetry-signal-traces"],
-    ["metrics", "telemetry-signal-metrics"],
-    ["exceptions", "telemetry-signal-exceptions"],
-    ["profiles", "telemetry-signal-profiles"],
-    ["rum", "telemetry-signal-rum"],
-    ["sql", "telemetry-signal-sql"],
-    ["services", "services-tab"],
-    ["map", "services-tab"],
-    ["connect", "collector-seen"],
-    ["slos", "slo-tab"],
-  ];
-  for (const [tab, marker] of moved) {
-    await page.goto(`/app/telemetry?tab=${tab}`);
-    await expect(page.locator("text=Application error"), tab).toHaveCount(0);
-    await expect(page.getByTestId(marker).first(), tab).toBeVisible();
-  }
-});
+  test("logs: the query box filters, live tail pauses", async ({ page }) => {
+    await page.goto("/app/telemetry?tab=logs&range=7d");
+    await page.getByTestId("logs-query").fill("level:error");
+    await page.getByTestId("logs-query").press("Enter");
+    await expect(page).toHaveURL(/q=level%3Aerror/);
+    await page.getByTestId("logs-live").click();
+    await expect(page).toHaveURL(/live=0/);
+    await expect(page.getByTestId("log-foot")).toContainText(/paused|en pause|pausiert/);
+  });
 
-/*
- * The explorers read like Sumo Logic's: a log line opens in place and every
- * field in it narrows or excludes in one click; a trace list has its two
- * standing questions as toggles, and a trace opens on its own page with a way
- * back. Each gesture writes the filter, never a state of its own — the filter
- * stays the one description of what is on screen.
- */
-test("a field of an opened log line becomes a term, kept or excluded", async ({ page }) => {
-  await page.goto("/app/telemetry?tab=explore&signal=logs&range=24h");
-  const row = page.getByTestId("log-row").first();
-  test.skip((await row.count()) === 0, "no log lines in this workspace");
-  await row.locator("summary").click();
-  const service = row.getByTestId("field-row").filter({ hasText: "service_name" });
-  await expect(service).toBeVisible();
-
-  await service.getByTestId("field-exclude").click();
-  await page.waitForURL(/q=/);
-  expect(new URL(page.url()).searchParams.get("q")).toMatch(/^NOT service_name = '/);
-
-  await page.goto("/app/telemetry?tab=explore&signal=logs&range=24h");
-  await page.getByTestId("log-row").first().locator("summary").click();
-  await page
-    .getByTestId("log-row")
-    .first()
-    .getByTestId("field-row")
-    .filter({ hasText: "service_name" })
-    .getByTestId("field-keep")
-    .click();
-  await page.waitForURL(/q=/);
-  const kept = new URL(page.url()).searchParams.get("q") ?? "";
-  expect(kept).toMatch(/^service_name = '/);
-  // Every line left is that service's.
-  const value = kept.match(/'(.*)'/)![1]!;
-  const services = await page.getByTestId("log-row").locator("summary").allInnerTexts();
-  expect(services.length).toBeGreaterThan(0);
-  for (const text of services) expect(text).toContain(value);
-});
-
-test("the trace list's quick filters, and a trace on its own page", async ({ page }) => {
-  await page.goto("/app/telemetry?tab=explore&signal=traces&range=24h");
-  test.skip((await page.getByTestId("trace-row").count()) === 0, "no traces in this workspace");
-
-  const errors = page.getByTestId("traces-quick-errors");
-  await expect(errors).toHaveAttribute("aria-pressed", "false");
-  await errors.click();
-  await page.waitForURL(/q=/);
-  expect(new URL(page.url()).searchParams.get("q")).toBe("status_code = 'error'");
-  await expect(page.getByTestId("traces-quick-errors")).toHaveAttribute("aria-pressed", "true");
-  // A second click takes the term back out.
-  await page.getByTestId("traces-quick-errors").click();
-  await page.waitForURL((u) => !u.searchParams.has("q"));
-
-  await page.getByTestId("trace-row").first().click();
-  await page.waitForURL(/trace=/);
-  await expect(page.getByTestId("trace-view")).toBeVisible();
-  // The list steps aside for the waterfall, and comes back with the window intact.
-  await expect(page.getByTestId("trace-row")).toHaveCount(0);
-  await page.getByTestId("trace-back").click();
-  await page.waitForURL((u) => !u.searchParams.has("trace"));
-  expect(new URL(page.url()).searchParams.get("range")).toBe("24h");
-  await expect(page.getByTestId("trace-row").first()).toBeVisible();
-});
-
-test("an empty window says where the data is, and goes there", async ({ page }) => {
-  // A window a year back, where nothing was ever sent.
-  const from = Date.now() - 400 * 86_400_000;
-  await page.goto(`/app/telemetry?tab=explore&signal=logs&from=${from}&to=${from + 3_600_000}`);
-  await expect(page.getByTestId("explorer-empty")).toBeVisible();
-  const go = page.getByTestId("explorer-show-latest");
-  test.skip((await go.count()) === 0, "no log line at all in this workspace");
-  await go.click();
-  await page.waitForURL((u) => Number(u.searchParams.get("from")) > from);
-  await expect(page.getByTestId("log-row").first()).toBeVisible();
+  test("setup shows the endpoint and the collectors", async ({ page }) => {
+    await page.goto("/app/telemetry?tab=setup");
+    await expect(page.getByTestId("otlp-endpoint")).toBeVisible();
+    await expect(page.getByTestId("collectors")).toBeVisible();
+    await expect(page.getByTestId("rotate-token")).toBeVisible();
+  });
 });

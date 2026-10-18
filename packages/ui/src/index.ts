@@ -15,3 +15,4 @@ export function cn(...classes: Array<string | false | null | undefined>): string
 export { Button, type ButtonProps } from "./button";
 export { Field, Input, Select, Textarea, type FieldProps } from "./field";
 export { Chip, type ChipTone } from "./chip";
+export * from "./chart";

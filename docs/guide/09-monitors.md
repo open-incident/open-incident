@@ -13,7 +13,7 @@ The rule that makes them fit the rest of the product is worth stating before any
 
 ## The list
 
-**Monitors** shows one row per check: its name, its type and target in monospace, its state, **thirty days of bars**, the **uptime over ninety days**, when it was last checked and which service it belongs to. The coloured counts beside the title say how many are online, degraded, offline, waiting or paused.
+**Monitors** shows one row per check: its name, its type and target in monospace, its state, **ninety days of bars** (thirty bars of three days, each as bad as its worst day), the **uptime over ninety days**, its last answer and how long ago (`212 ms · 40 s`), and which service it belongs to. Heartbeats sit in the same list as `IN` rows. The coloured counts beside the title say how many are online, degraded, offline, waiting or paused. **Checked from this instance** says where the checks come from: the instance's own worker, until probes are registered.
 
 Five states, and the fifth is the one that matters:
 
@@ -29,7 +29,7 @@ Five states, and the fifth is the one that matters:
 
 ## Creating one
 
-**+ New monitor** asks two questions, in two steps. The first is **what should we watch?** — a grid of fourteen types. The second is the monitor itself.
+**+ New monitor** asks two questions, in two steps. The first is **what should we watch?** — a grid of fourteen types. The second is the monitor itself: the address and how often to check it, the default rules as a sentence, the service, and the three choices. The name starts as the address and is changed under **Advanced**.
 
 ![Choosing a type](img/monitor-new.png "The fourteen types. A type this instance cannot run is greyed, with the reason and the variable to set.")
 
@@ -43,7 +43,7 @@ Five states, and the fifth is the one that matters:
 | **Domain**              | Registration expiry                              |
 | **Ping**                | ICMP reachability                                |
 | **Synthetic (browser)** | A scripted user flow in a real browser           |
-| **Incoming request**    | A webhook that must arrive — a dead-man's switch |
+| **Incoming request**    | Creates a heartbeat — a dead-man's switch        |
 | **Manual**              | You set the status yourself; nothing is checked  |
 | **Logs**                | Fires on what a service writes                   |
 | **Traces**              | Fires on how long a span takes, or how many fail |
@@ -74,15 +74,24 @@ Leave them alone and nothing extra is created; the alert takes the workspace's o
 
 ## The monitor's own page
 
-![A monitor](img/monitor-detail.png "Uptime, the latency chart, recent checks, the rules, and what happens when it goes offline.")
+![A monitor](img/monitor-detail.png "Uptime, the charts, recent checks, the rules, and what happens when it goes offline.")
 
-One screen, no tabs. Across the top: **uptime over 90 days**, the **latest latency**, how many checks are kept, and the **downtime over 90 days**. Then the **response time** chart over the last forty-eight checks, and the **recent checks** with their state, their detail line and their latency.
+Four tabs, each a link (`?tab=`): **Overview**, **SLO**, **Criteria** and **Advanced**.
 
-The buttons are **Pause**, **Check now** and **Delete**. **Check now** really runs the check, in-process, and shows you the answer — a monitor you cannot try is a monitor you do not trust. **Delete** takes effect immediately and takes the monitor's rule and its screenshots with it.
+**Overview** carries four figures — **uptime over 90 days**, the **latest latency**, the **incidents** this monitor's alerts opened in 90 days, and the **downtime over 90 days** — then the charts over **1h · 24h · 7d · 30d**:
 
-The sidebar carries the **Criteria** (with the editor), **When it goes offline** (the three choices, read back from the rule) and the **Service**.
+- **Response time**, one line per location the checks came from, with the degraded threshold of the rules as a dashed line, deploys and declared incidents as markers, and the slow or failed spells as shaded bands;
+- **Request phases** for HTTP monitors: DNS, connect, TLS and first byte, as the check measured them on its own connection.
 
-Raw checks are kept for **thirty days**; the per-day rollup behind the bars and the uptime figures is kept longer, which is why a monitor shows ninety days of uptime and thirty days of bars.
+Hover one chart and both show the same instant; drag across one to zoom both (the window goes into the address, and the server reads the checks again at a finer resolution); double-click or **Reset** to come back. Each chart has its own full screen (⤢) with min, average, p95, max and last per series.
+
+**Full screen** turns the page into a supervision view for a wall screen: six figures (status, response now, uptime over 24 hours and 90 days, checks in 24 hours, the certificate's expiry), a live **next check in N s** countdown that reads the page again when the check is due, the two charts and **Failed checks**, the state per location and the latest checks. **Esc** or **Exit** leaves it; `?fs=1` opens it directly.
+
+The side column reads the **Criteria** back as sentences, **When it goes offline**, the status page components that **show** this monitor, and its incidents. A paused monitor's charts end at its last check.
+
+**Criteria** edits the rules; **Advanced** renames the monitor, changes its address, cadence and service, edits a journey and its credentials, and deletes the monitor. **Check now** really runs the check and records it.
+
+Raw checks are kept for **thirty days**; the per-day rollup behind the bars and the uptime figures is kept longer.
 
 ## Browser journeys
 
@@ -116,7 +125,7 @@ The fastest way to create one is not this form at all: narrow the [explorer](tel
 
 ## Dead-man's switches: use heartbeats
 
-A cron that stops running emits nothing, and nothing is exactly what no check can see. **Monitors → Heartbeats** is the feature for it: each heartbeat has a URL, your job calls it when it finishes (any method, no body), and silence for longer than the interval plus the grace raises an alert through the workspace's **Heartbeats** source — same routes, same priorities, same escalation. The next ping resolves it, and nothing is alerted before the first ping ever arrives.
+A cron that stops running emits nothing, and nothing is exactly what no check can see. A heartbeat is the feature for it (an `IN` row in **Monitors**, or **+ New monitor → Incoming request**): each heartbeat has a URL, your job calls it when it finishes (any method, no body), and silence for longer than the interval plus the grace raises an alert through the workspace's **Heartbeats** source — same routes, same priorities, same escalation. The next ping resolves it, and nothing is alerted before the first ping ever arrives.
 
 Making one work takes three steps, and the row walks you through them:
 
@@ -126,7 +135,7 @@ Making one work takes three steps, and the row walks you through them:
 
 Nothing alerts before the first ping — a heartbeat created on Monday for a job that first runs on Friday pages nobody in between. The URL carries the token, so each row shows it on request and opens it on its own while the heartbeat is still waiting and right after its token is rotated. Rotating the token issues a new URL and stops the old one working at once.
 
-> The **Incoming request** monitor type describes the same idea and is not finished: it has no URL to call. Use a heartbeat.
+Choosing **Incoming request** in **+ New monitor** creates a heartbeat.
 
 ## On a status page
 

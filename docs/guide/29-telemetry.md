@@ -289,161 +289,39 @@ meanwhile. Answering 500 there loses them.
    next; shortening it does not retroactively rewrite what is already stored,
    and lengthening it cannot bring back what is gone. The screen says so.
 
-## One row of views, and a window
+## Five tabs, and a window
 
-Telemetry is one screen with one row of navigation across the top: **Services**,
-then the seven signals — **Logs**, **Traces**, **Metrics**, **Exceptions**,
-**Profiles**, **Real users**, **SQL** — and, set apart at the end, the three
-things that are configured rather than read: **Dashboards**, **Objectives** and
-**Setup**. Every view is one click away, and none is nested inside another.
+Telemetry has five tabs: **Services**, **Traces**, **Logs**, **Metrics** and **Setup**. At the right of the title, **receiving · N spans/s** says whether anything is arriving (or when the last span did), and **Last 1 hour ▾** sets the window every tab but Metrics reads — fifteen minutes to seven days. A zoom from Metrics carries over as an explicit window.
 
-Under it, at the right, sits the **time window** — fifteen minutes, an hour,
-six hours, a day, a week — and it is the same window for every view: moving
-from Logs to Traces keeps the window, the filter and the service you picked.
-A range you zoomed into shows as a chip beside it, with a cross to drop it.
+The other views the module has — **Exceptions**, **Profiles**, **Real users**, **SQL**, the **service map**, **Dashboards**, **Objectives** and the long **connection** page with labelled keys, rejections and packs — keep their addresses (`?tab=exceptions`, `?tab=map`, `?tab=connect`…), so the links other screens and alert bodies carry still land on them.
 
-**Services** is what you open first: the services sorted by traffic, with their
-rate, their error share, their p99 and how many incidents they have had, and
-the **service map** under them. A service appears the first time it sends a
-span; nothing is declared in advance.
+![Services](img/telemetry-overview.png "Every service that sent a span, with its traffic, error share, p99, latency over the window and the incident that concerns it.")
 
-![Services](img/telemetry-overview.png "Services by traffic, with their rate, their error share, their p99 and their incidents — and the map under them.")
+### Services
 
-> The addresses the old layout used still work: a link to
-> `/app/telemetry?tab=logs` lands on Logs, and a bookmark to the dashboards or
-> the SLOs lands on their view.
+One row per service that sent a span in the window, busiest first: requests per second, the share that failed, the p99, thirty bars of latency (red where a bucket's failures passed 5 %), and the open incident that concerns it — its own, or `INC-n (upstream)` when it is a service it calls. A service with no owning team says **no owner**. A row opens the service's **Metrics**. When an investigation established something from telemetry about an open incident, Atlas's finding sits above the table with the evidence it cites; otherwise nothing does.
 
-## The explorer
+### Metrics
 
-Logs and traces are laid out the same way, top to bottom: the **search bar**
-across the whole width, the **drawing** of the window, then two columns — the
-**field browser** on the left and the **results** on the right. Exceptions
-share the search bar and the field browser.
+One service at a time — the chips at the top, the most troubled first — over **15m · 1h · 6h · 24h · 7d**:
 
-The search bar holds the filter, and the filter is the one description of what
-is on screen: every click described below writes a term into it rather than
-keeping a selection of its own. Beside it are the **saved searches**, **Save**,
-**Watch this** — which turns the filter into a monitor — and **Syntax**, the
-fields and operators the filter understands.
+- **Golden signals**: latency p50 / p95 / p99 from the service's entry spans (with the degraded threshold of a monitor on that service, when there is one), throughput by status class, error rate, and the database connection pool when the service reports `db.client.connections.*`;
+- **Runtime**: CPU per pod (`process.cpu.utilization`), memory (`process.memory.rss`, with the container's limit), event loop lag and GC pause for Node services;
+- **Dependencies**: the database (query p95, and the wait for a pooled connection), each external peer (`peer.service`), the internal services it calls, and its queue's consumer lag.
 
-### The field browser
+A series the service does not send is an empty chart that names the missing metric. Deploys and declarations are markers; open incidents are shaded. Every chart shares the crosshair; **drag across any chart to zoom all of them** — the window goes into the address and the points are read again at a finer resolution — and the banner offers the traces and the logs of that range. **Compare with 24 h ago** reads the same window a day earlier and draws it dashed. ⤢ opens one chart full screen with min, average, p95, max and last; **Esc** leaves. **Endpoints**, at the bottom, lists the routes slowest p99 first.
 
-The field browser counts what is actually in the window: every field, its distinct
-values, and the share of rows each one holds. `service_name · 6 · storefront
-28 % · orders-db 24 % …`. Clicking a value adds it to the filter; clicking it
-again takes it out. Under the fields it lists the **attributes present** — the
-keys your own services send, which no fixed list could know.
+### Traces
 
-It is a field browser and not a list of saved filters because the question it answers
-is the one nobody can ask in a query language: _what is in here?_ A filter
-narrows what you already suspect; the browser tells you what you did not.
+Filters are chips — `service:…`, `status:error`, `duration > 2s` — added with **+ filter** and removed with a click; the count beside them says how many traces match and at what sampling. The list shows each trace's time, status, route, services and duration; the selected one opens below as a **waterfall** with its **critical path** (the spans the request actually waited on), and clicking a span shows its detail: start, duration, share of the trace, error, events, attributes, **Logs of this span**, and **Attach to INC-n** when an incident is open on one of its services. Under it, **What happened, in order** is read from the spans — no model involved — and **Time by service** counts self time only.
 
-![Logs, with the field browser](img/telemetry-logs.png "The search bar, the histogram by severity, the field browser and the messages.")
+### Logs
 
-Counting is not free, so the browser scans at most **six hours** whatever the
-window, and says so — `963 844 rows counted over the last six hours` — rather
-than quietly sampling. A percentage from a stated slice is usable; one from an
-unstated one is not.
+The query box takes `service:…`, `level:error|warn|info`, `trace:…` and plain words searched in the body. **Live tail** reads the window again every five seconds; **Paused** keeps the list and says how much of the window it shows. A line with a trace opens it.
 
-### The drawings
+### Setup
 
-Each signal opens on a picture of the window, and every picture is a **zoom**:
-clicking a bar, a bucket or a band puts an explicit range in the address, which
-is what makes a spike into a link you can paste into an incident.
-
-**Logs** draw a histogram by severity, with the counts per level as chips above
-it. Clicking `ERROR` filters; clicking a bar narrows the window to that bar.
-
-**Traces** draw one of two shapes, and which one depends on the window. Up to
-six hours you get the **scatter**: one dot per trace, positioned by time and
-duration, with the window's real p50, p95 and p99 drawn across it — so the
-outlier is a dot you can click. Beyond six hours you get the **bands**:
-requests as bars, p50/p95/p99 as lines, and the failures in a lane of their
-own along the floor.
-
-That switch is arithmetic, not taste. A dot is a trace, so a cloud costs the
-window: on twenty-two million spans, a day of dots took five seconds and a week
-took twenty-two, while the same week read from a per-minute rollup is ten
-thousand rows and a fifth of a second. The dots stay where clicking one is
-worth its price.
-
-![Traces over an hour](img/telemetry-traces.png "One dot per trace, the window's real quantiles drawn across them, and the list under it.")
-
-> A rolled-up p99 is a real p99. The rollup keeps quantile _states_ and merges
-> them, so a seven-day p99 is the p99 of the seven days — not the average of
-> seven daily p99s, which is always lower, lower by an amount nobody can
-> estimate, and the most common way a latency chart lies.
-
-**Metrics** list the series a workspace keeps, and opening one draws **one
-chart with every series on it** — same box, same scale, split by whichever
-label you pick, reduced by average, sum or maximum, both stated above the
-drawing. A gauge averaged and a counter summed are different questions, and a
-chart that picks silently is a chart whose numbers nobody can reproduce.
-
-![One metric, split by a label of its own](img/telemetry-metrics.png "Every series in one box and on one scale; the split and the reduction are stated above the chart.")
-
-**Exceptions** show one row per bug rather than one per occurrence: the
-grouping key is a fingerprint computed at ingestion from the type, the message
-with its variable parts removed, and the first three frames of your own code —
-so the same failure at ten thousand occurrences is one line with a count and a
-first-seen, and two callers of the same library failure are two lines.
-
-### Reading a log line
-
-The logs are a table — time, level, service, message — and a line opens in
-place. Opened, it shows its whole body, then every field it carries: the
-service, the environment, the severity, the instrumentation scope, the trace
-and span it belongs to, and the attributes your code attached. Each field has
-two buttons: **+** keeps only the lines with that value, **−** excludes them.
-Both write the term into the filter — `service_name = 'storefront'`, or
-`NOT service_name = 'storefront'` — so what you clicked stays readable.
-
-![A log line, opened](img/telemetry-log-line.png "The body, every field, and two buttons per field to keep or exclude its value.")
-
-Three buttons sit above the fields. **Open the trace** goes to the request the
-line was written in. **Logs of this trace** narrows the list to that request.
-**Context ±1 min** shows the same service a minute either side, which is how
-you read what happened just before an error.
-
-The **Patterns** tab beside **Messages** folds the window's lines into their
-shapes; see _Log patterns_ below.
-
-### The trace list, and a trace
-
-The traces are a table too: start, root service, operation with the services
-the request crossed as a strip of colours, duration with a bar scaled to the
-slowest on the page, span count, errors and the HTTP status. Two **quick
-filters** above the drawing ask the two standing questions of a trace list —
-**Errors** and **Slow (> 1 s)** — and are toggles over the same filter.
-
-Opening a trace gives it the whole page: its operation and status, a strip of
-figures — start, duration, spans, services, errors — the **waterfall**, the
-time spent per service, and the logs written during the request. **All traces**
-goes back to the list, with the window and the filter as they were.
-
-![A trace](img/telemetry-trace.png "The trace on its own page: figures, waterfall, time per service, and its logs.")
-
-### An empty window
-
-When the window holds nothing, the explorer says when the last data arrived
-and offers to go there in one click — the hour that ends with that data. A
-window a week too early is the commonest reason for an empty screen, and a
-blank table does not say so.
-
-### Traces at millions of rows
-
-The trace list is read from the **root spans** of the window, not from the
-index of everything: a root span is one row per request, which is the unit the
-list is about, and it is two orders of magnitude fewer rows. Then the details —
-span count, services touched, whether anything failed — are fetched for the
-hundred traces actually on the page and for no others.
-
-The window is a partition boundary, so narrowing it is not a filter, it is less
-data read. Measured on the same dataset: the same list with no window read 1.8
-million rows and 373 MiB; with a day it read 48 000 rows and 21 MiB.
-
-Paging is by **cursor** and not by offset, because page 400 of an offset query
-costs four hundred pages of work to skip them.
+The OTLP endpoint, **Rotate token** (revokes every active key and shows a new one once — never in an address), the collectors seen (one per ingestion key, with when it last sent), and the retention of each signal.
 
 ## When a bug is news
 

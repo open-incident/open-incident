@@ -132,7 +132,14 @@ export async function createMonitor(formData: FormData) {
   const current = await requireResponder();
   const parsed = createSchema.safeParse({
     type: formData.get("type"),
-    name: formData.get("name"),
+    // The design asks for the address alone; the name is the address without
+    // its scheme until somebody renames it under Advanced.
+    name:
+      String(formData.get("name") ?? "").trim() ||
+      String(formData.get("target") ?? "")
+        .trim()
+        .replace(/^[a-z]+:\/\//i, "")
+        .replace(/\/$/, ""),
     // Empty, not absent: a manual, incoming or synthetic monitor's form has no
     // target field at all, and `z.string()` on a null refused every one of
     // them with a bare "invalid".
@@ -389,6 +396,7 @@ export async function checkNow(formData: FormData) {
       state,
       latencyMs: sample.latencyMs ?? null,
       detail: why.slice(0, 500),
+      result: sample.result ?? null,
     });
     await tx
       .update(monitors)
@@ -564,7 +572,7 @@ export async function saveMonitorCriteria(formData: FormData) {
     });
     if (parsed.success) criteria.push(parsed.data);
   }
-  if (criteria.length > 12) redirect(`/app/monitors/${id}?error=criteria`);
+  if (criteria.length > 12) redirect(`/app/monitors/${id}?tab=criteria&error=criteria`);
 
   await withTenant(current.tenant.id, async (tx) => {
     const [row] = await tx
@@ -581,5 +589,62 @@ export async function saveMonitorCriteria(formData: FormData) {
     });
   });
   revalidatePath(`/app/monitors/${id}`);
-  redirect(`/app/monitors/${id}?saved=criteria`);
+  redirect(`/app/monitors/${id}?tab=criteria&saved=criteria`);
+}
+
+/**
+ * Name, address, cadence and service — what the creation dialog no longer
+ * asks for (the design asks for the address alone) and Advanced edits.
+ *
+ * The service is observed exactly as at creation: naming one that does not
+ * exist yet is how a service starts to exist.
+ */
+export async function updateMonitorBasics(formData: FormData) {
+  const current = await requireResponder();
+  const parsed = z
+    .object({
+      id: z.string().uuid(),
+      name: z.string().trim().min(1).max(120),
+      target: z.string().trim().max(500).optional(),
+      intervalSeconds: z.coerce.number().int().min(30).max(86_400),
+      service: z.string().trim().max(120).optional(),
+    })
+    .safeParse({
+      id: formData.get("id"),
+      name: formData.get("name"),
+      target: formData.get("target") ?? undefined,
+      intervalSeconds: formData.get("intervalSeconds"),
+      service: formData.get("service") ?? undefined,
+    });
+  if (!parsed.success)
+    redirect(`/app/monitors/${String(formData.get("id"))}?tab=advanced&error=invalid`);
+  const v = parsed.data;
+  await withTenant(current.tenant.id, async (tx) => {
+    const [row] = await tx
+      .select({ type: monitors.type })
+      .from(monitors)
+      .where(and(eq(monitors.tenantId, current.tenant.id), eq(monitors.id, v.id)));
+    if (!row) return;
+    const serviceId = v.service
+      ? await observeService(tx, current.tenant.id, v.service, "monitor")
+      : null;
+    const interval =
+      row.type === "synthetic"
+        ? Math.max(SYNTHETIC_MIN_INTERVAL_SECONDS, v.intervalSeconds)
+        : v.intervalSeconds;
+    await tx
+      .update(monitors)
+      .set({
+        name: v.name,
+        ...(v.target !== undefined ? { target: v.target } : {}),
+        intervalSeconds: interval,
+        serviceId,
+        updatedAt: new Date(),
+      })
+      .where(eq(monitors.id, v.id));
+    await recordAudit(tx, current, "config", "monitor.updated", { name: v.name });
+  });
+  revalidatePath(`/app/monitors/${v.id}`);
+  revalidatePath("/app/monitors");
+  redirect(`/app/monitors/${v.id}?tab=advanced&saved=basics`);
 }

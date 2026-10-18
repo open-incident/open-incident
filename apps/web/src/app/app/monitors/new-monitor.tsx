@@ -16,6 +16,7 @@
 import { useState } from "react";
 import { useT } from "@/i18n/client";
 import { createMonitor } from "./actions";
+import { createHeartbeat } from "./heartbeats/actions";
 import { JourneyEditor, SecretsEditor } from "./journey-editor";
 import { TelemetryEditor } from "./telemetry-editor";
 import type { MessageKey } from "@/i18n/dictionaries/en";
@@ -36,6 +37,13 @@ const KINDS: Kind[] = [
     name: "monitors.typeApi",
     hint: "monitors.typeApiHint",
     placeholder: "https://api.example.com/v1/ping",
+  },
+  {
+    id: "ping",
+    key: "PING",
+    name: "monitors.typePing",
+    hint: "monitors.typePingHint",
+    placeholder: "edge.example.com",
   },
   {
     id: "port",
@@ -64,13 +72,6 @@ const KINDS: Kind[] = [
     name: "monitors.typeDomain",
     hint: "monitors.typeDomainHint",
     placeholder: "example.com",
-  },
-  {
-    id: "ping",
-    key: "PING",
-    name: "monitors.typePing",
-    hint: "monitors.typePingHint",
-    placeholder: "edge.example.com",
   },
   {
     id: "synthetic",
@@ -186,6 +187,12 @@ export function NewMonitor({
   const telemetry = !!kind && TELEMETRY.has(kind.id);
   /** Kinds whose address is not typed: it is derived, or there is none. */
   const targetless = kind?.id === "manual" || kind?.id === "incoming" || synthetic || telemetry;
+  /*
+   * "Incoming request" is the dead-man's switch, and the heartbeat is the one
+   * that hands out a ping URL: choosing it here creates a heartbeat, which
+   * then shows its URL and opens from the list like any other row.
+   */
+  const incoming = kind?.id === "incoming";
 
   return (
     <>
@@ -289,7 +296,7 @@ export function NewMonitor({
                 style={{
                   padding: "18px 22px",
                   display: "grid",
-                  gridTemplateColumns: "repeat(4, 1fr)",
+                  gridTemplateColumns: "repeat(5, 1fr)",
                   gap: 8,
                   overflowY: "auto",
                   minHeight: 0,
@@ -343,10 +350,12 @@ export function NewMonitor({
               </div>
             ) : (
               <form
-                action={createMonitor}
+                action={incoming ? createHeartbeat : createMonitor}
                 style={{ display: "flex", flexDirection: "column", minHeight: 0 }}
               >
                 <input type="hidden" name="type" value={kind.id} />
+                {/* A heartbeat waits five minutes past its cadence before it calls a ping missed. */}
+                {incoming && <input type="hidden" name="graceSeconds" value="300" />}
                 {/*
                   Three kinds have no target to type: a manual monitor is set by
                   hand, an incoming one is a URL the product hands out, and a
@@ -367,12 +376,18 @@ export function NewMonitor({
                   >
                     <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                       <span style={LABEL}>
-                        {targetless ? t("monitors.fieldName") : t("monitors.fieldTarget")}
+                        {targetless
+                          ? t("monitors.fieldName")
+                          : kind.id === "http" || kind.id === "api"
+                            ? t("mon2.fieldUrl")
+                            : t("monitors.fieldTarget")}
                       </span>
                       <input
                         name={targetless ? "name" : "target"}
                         required
-                        placeholder={kind.placeholder}
+                        placeholder={
+                          kind.id === "http" || kind.id === "api" ? "https://" : kind.placeholder
+                        }
                         className="oi-field"
                         style={{ ...CONTROL, fontFamily: "var(--mono)" }}
                       />
@@ -381,9 +396,10 @@ export function NewMonitor({
                       <span style={LABEL}>{t("monitors.fieldEvery")}</span>
                       <select
                         name="intervalSeconds"
-                        defaultValue={synthetic ? "300" : "60"}
+                        defaultValue={synthetic ? "300" : incoming ? "86400" : "60"}
                         style={CONTROL}
                       >
+                        {incoming && <option value="86400">{t("mon2.every24h")}</option>}
                         {/*
                           A browser run costs a few hundred megabytes and
                           several seconds of CPU. Five minutes is the floor, so
@@ -391,19 +407,15 @@ export function NewMonitor({
                           refuses it too, for a request that skips this form.
                         */}
                         {!synthetic && <option value="60">{t("monitors.every1m")}</option>}
+                        {!synthetic && !incoming && (
+                          <option value="30">{t("mon2.every30s")}</option>
+                        )}
                         <option value="300">{t("monitors.every5m")}</option>
                         <option value="900">{t("monitors.every15m")}</option>
                         <option value="3600">{t("monitors.every1h")}</option>
                       </select>
                     </label>
                   </div>
-
-                  {!targetless && (
-                    <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      <span style={LABEL}>{t("monitors.fieldName")}</span>
-                      <input name="name" required className="oi-field" style={CONTROL} />
-                    </label>
-                  )}
 
                   {synthetic && (
                     <>
@@ -414,21 +426,23 @@ export function NewMonitor({
 
                   {telemetry && <TelemetryEditor kind={kind.id} initialQuery={initialQuery} />}
 
-                  <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    <span style={LABEL}>{t("monitors.fieldService")}</span>
-                    <input
-                      name="service"
-                      list="monitor-services"
-                      placeholder={t("monitors.serviceHint")}
-                      className="oi-field"
-                      style={{ ...CONTROL, fontFamily: "var(--mono)" }}
-                    />
-                    <datalist id="monitor-services">
-                      {services.map((s) => (
-                        <option key={s} value={s} />
-                      ))}
-                    </datalist>
-                  </label>
+                  {!incoming && (
+                    <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      <span style={LABEL}>{t("monitors.fieldService")}</span>
+                      <input
+                        name="service"
+                        list="monitor-services"
+                        placeholder={t("monitors.serviceHint")}
+                        className="oi-field"
+                        style={{ ...CONTROL, fontFamily: "var(--mono)" }}
+                      />
+                      <datalist id="monitor-services">
+                        {services.map((s) => (
+                          <option key={s} value={s} />
+                        ))}
+                      </datalist>
+                    </label>
+                  )}
 
                   {/*
                     A telemetry monitor has no criteria panel: the sentence
@@ -459,36 +473,49 @@ export function NewMonitor({
                     </div>
                   )}
 
-                  <Choice
-                    label={t("monitors.whoToPage")}
-                    hint={t("monitors.whoToPageHint")}
-                    name="page"
-                    options={[
-                      { v: "owner", l: t("monitors.pageOwner") },
-                      { v: "me", l: t("monitors.pageMe") },
-                      { v: "nobody", l: t("monitors.pageNobody") },
-                    ]}
-                  />
-                  <Choice
-                    label={t("monitors.openIncident")}
-                    hint={t("monitors.openIncidentHint")}
-                    name="incident"
-                    options={[
-                      { v: "triage", l: t("monitors.incidentTriage") },
-                      { v: "urgent", l: t("monitors.incidentUrgent") },
-                      { v: "never", l: t("monitors.incidentNever") },
-                    ]}
-                    defaultValue="urgent"
-                  />
-                  <Choice
-                    label={t("monitors.autoResolve")}
-                    hint={t("monitors.autoResolveHint")}
-                    name="autoResolve"
-                    options={[
-                      { v: "on", l: t("common.on") },
-                      { v: "off", l: t("common.off") },
-                    ]}
-                  />
+                  {incoming ? (
+                    <div style={{ fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
+                      {t("mon2.newHeartbeatNote")}
+                    </div>
+                  ) : (
+                    <>
+                      <Choice
+                        label={t("monitors.whoToPage")}
+                        hint={t("monitors.whoToPageHint")}
+                        name="page"
+                        options={[
+                          { v: "owner", l: t("monitors.pageOwner") },
+                          { v: "me", l: t("monitors.pageMe") },
+                          { v: "nobody", l: t("monitors.pageNobody") },
+                        ]}
+                      />
+                      <Choice
+                        label={t("monitors.openIncident")}
+                        hint={t("monitors.openIncidentHint")}
+                        name="incident"
+                        options={[
+                          { v: "triage", l: t("monitors.incidentTriage") },
+                          { v: "urgent", l: t("monitors.incidentUrgent") },
+                          { v: "never", l: t("monitors.incidentNever") },
+                        ]}
+                        defaultValue="urgent"
+                      />
+                      <Choice
+                        label={t("monitors.autoResolve")}
+                        hint={t("monitors.autoResolveHint")}
+                        name="autoResolve"
+                        options={[
+                          { v: "on", l: t("common.on") },
+                          { v: "off", l: t("common.off") },
+                        ]}
+                      />
+                    </>
+                  )}
+                  {!targetless && (
+                    <div style={{ fontSize: 12, color: "var(--ink-3)" }}>
+                      {t("mon2.newCheckedFrom")}
+                    </div>
+                  )}
                 </div>
                 <div
                   style={{

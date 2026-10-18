@@ -62,6 +62,21 @@ export {
 export { evalPromql, type EvalOptions, type Sample, type Series } from "./promql/eval";
 export { servicesOverview, type ServiceRow } from "./services";
 export {
+  receiving,
+  serviceDependencies,
+  serviceEndpoints,
+  serviceGolden,
+  serviceMetrics,
+  serviceRuntime,
+  servicesTable,
+  serviceTraceCount,
+  type DependencyBucket,
+  type EndpointRow,
+  type GoldenBucket,
+  type MetricBucket,
+  type ServiceTableRow,
+} from "./service-board";
+export {
   logHistogram,
   traceScatter,
   latencyBands,
