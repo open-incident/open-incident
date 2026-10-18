@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition, type CSSProperties } from "react";
+import { useEffect, useState, useTransition, type CSSProperties, useRef } from "react";
 import { useT } from "@/i18n/client";
 import { Chip, itemButtonStyle, type Tone } from "@/components/settings/template";
 import { flash } from "@/components/settings/controls";
@@ -52,7 +52,14 @@ export function RulesList({
 }) {
   const t = useT();
   const [order, setOrder] = useState(items);
-  const [dragging, setDragging] = useState<string | null>(null);
+  const [dragging, setDraggingState] = useState<string | null>(null);
+  // Read synchronously by dragover/drop: the state above re-renders too late
+  // when a drag starts and ends within the same frame.
+  const draggingRef = useRef<string | null>(null);
+  const setDragging = (id: string | null) => {
+    draggingRef.current = id;
+    setDraggingState(id);
+  };
   const [over, setOver] = useState<number | null>(null);
   const [pending, start] = useTransition();
   // The server's order wins whenever it arrives.
@@ -87,14 +94,14 @@ export function RulesList({
             e.dataTransfer.setData("text/plain", r.id);
           }}
           onDragOver={(e) => {
-            if (!dragging) return;
+            if (!draggingRef.current) return;
             e.preventDefault();
             setOver(i);
           }}
           onDragLeave={() => setOver((o) => (o === i ? null : o))}
           onDrop={(e) => {
             e.preventDefault();
-            const id = dragging ?? e.dataTransfer.getData("text/plain");
+            const id = draggingRef.current ?? e.dataTransfer.getData("text/plain");
             setDragging(null);
             setOver(null);
             if (id) move(id, i);

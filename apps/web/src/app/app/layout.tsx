@@ -9,6 +9,7 @@ import { getT } from "@/i18n/server";
 import { AppFrame } from "@/components/shell/app-frame";
 import type { SidebarSection } from "@/components/shell/sidebar";
 import { ThemeSync } from "@/components/theme-sync";
+import { AtlasToaster } from "@/components/atlas/toast";
 import { initials } from "@/lib/avatar";
 import { countViews } from "@/lib/incidents";
 import { alertCounts } from "@/lib/alerts";
@@ -161,6 +162,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <I18nProvider locale={t.locale} dict={t.dict} timeZone={t.timeZone}>
       <ThemeSync theme={member.theme ?? null} />
+      <AtlasToaster />
       <AppFrame
         workspace={{
           name: workspace?.name ?? tenant.slug,

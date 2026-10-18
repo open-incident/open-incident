@@ -141,7 +141,7 @@ export async function createWebhook(
   const current = await requireManager();
   const t = await getT();
   const url = String(formData.get("url") ?? "").trim();
-  if (!isEndpointUrl(url, process.env.NODE_ENV !== "production"))
+  if (!isEndpointUrl(url, loopbackHttpAllowed()))
     return { ok: false, error: t("settingsV2.api.errorUrl") };
   const choice = EVENT_CHOICES.find((c) => c.key === String(formData.get("events") ?? ""));
   if (!choice) return { ok: false, error: t("settingsV2.error.invalid") };
@@ -303,4 +303,13 @@ export async function resendWebhookFailures(id: string): Promise<RowResult> {
   const n = await resendFailedDeliveries(current.tenant.id, endpointId);
   revalidatePath(PAGE);
   return { ok: true, message: t("settingsV2.api.resent", { count: n }) };
+}
+
+/**
+ * A webhook may point at plain http on this machine only in development, or
+ * when the instance says so — the smoke suite's receiver lives on 127.0.0.1
+ * and runs against a production build. Anywhere else it is an SSRF door.
+ */
+function loopbackHttpAllowed(): boolean {
+  return process.env.NODE_ENV !== "production" || process.env.WEBHOOK_ALLOW_LOOPBACK_HTTP === "1";
 }

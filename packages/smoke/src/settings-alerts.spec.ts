@@ -56,7 +56,7 @@ test.describe("Settings › Alerts", () => {
     await page.reload();
     await expect(mine.getByTestId("rule-handle")).toHaveText(String(before));
     if (before > 1) {
-      await mine.dragTo(rows.first());
+      await mine.getByTestId("rule-handle").dragTo(rows.first().getByTestId("rule-handle"));
       await expect(page.getByTestId("settings-toast")).toBeVisible();
       await page.reload();
       await expect(mine.getByTestId("rule-handle")).toHaveText("1");

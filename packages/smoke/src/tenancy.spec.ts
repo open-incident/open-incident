@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { HOST } from "../playwright.config";
+import { HOST, SCHEME } from "../playwright.config";
 import { expectStatus } from "./helpers";
 
 /**
@@ -9,7 +9,7 @@ import { expectStatus } from "./helpers";
  */
 test.describe("Workspace resolution", () => {
   test("an invented workspace answers 404 everywhere", async ({ page }) => {
-    const ghost = `http://secure-paypal-login.${HOST}`;
+    const ghost = `${SCHEME}://secure-paypal-login.${HOST}`;
     for (const path of [
       "/",
       "/login",
@@ -27,7 +27,7 @@ test.describe("Workspace resolution", () => {
   });
 
   test("a reserved subdomain answers 404", async ({ page }) => {
-    const res = await page.request.get(`http://www.${HOST}/login`, {
+    const res = await page.request.get(`${SCHEME}://www.${HOST}/login`, {
       maxRedirects: 0,
       failOnStatusCode: false,
     });

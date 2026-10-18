@@ -33,7 +33,7 @@ export const TENANT = process.env.SMOKE_TENANT;
 
 /** The app is served by subdomain: the workspace is part of the address. */
 /** "https" when the instance sits behind TLS — the local stack does (oi.localhost). */
-const SCHEME = process.env.SMOKE_SCHEME ?? "http";
+export const SCHEME = process.env.SMOKE_SCHEME ?? "http";
 const STATUS_HOST =
   process.env.SMOKE_STATUS_HOST ?? `status.localhost:${process.env.SMOKE_STATUS_PORT ?? "3107"}`;
 export const BASE_URL = process.env.SMOKE_BASE_URL ?? `${SCHEME}://${TENANT}.${HOST}`;
