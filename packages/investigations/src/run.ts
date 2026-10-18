@@ -4,8 +4,10 @@
  * the channel updated in place — and the trigger that arrived meanwhile served
  * right after. Failures are written down; earlier results are never erased.
  */
-import { eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import {
+  alertSources,
+  alerts,
   incidentEvents,
   investigations,
   withTenant,
@@ -16,6 +18,11 @@ import { aiProviderLabel, capabilityAllowed, runCapability, type Actor } from "@
 import { postInvestigationAll, type InvestigationView } from "@openincident/chat";
 import { gatherEvidence } from "./evidence";
 import { analyse, applyChallenge, challenge, composeSummary, normaliseAnalysis } from "./engine";
+import { runAtlasStep } from "./atlas/engine";
+import { httpHost, type AtlasHost } from "./atlas/host";
+import { recordStepTx } from "./atlas/journal";
+import { costOf, effectiveLevel, pricesFromEnv } from "./atlas/rules";
+import { autonomyOfTx, budgetStateTx, incidentFactsTx, readSettingsTx } from "./atlas/state";
 
 export const INVESTIGATION_QUEUE = "investigation";
 
@@ -130,8 +137,107 @@ async function postToChat(
   }
 }
 
-/** Runs one assessment for the incident; safe to call from the worker or inline. */
-export async function runInvestigation(job: InvestigationJob): Promise<void> {
+/**
+ * The Atlas gates before a run starts: at the monthly budget, the runs in
+ * progress finish and no new one starts; at the cap per run, this incident's
+ * run stops re-assessing. Nothing is paged by surprise either way.
+ */
+async function budgetGate(
+  tenantId: string,
+  row: Row,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  return withTenant(tenantId, async (tx) => {
+    const settings = await readSettingsTx(tx, tenantId);
+    if (settings.capPerRunEur != null && row.costEur >= settings.capPerRunEur)
+      return { ok: false, reason: "cap_per_run" };
+    const budget = await budgetStateTx(tx, tenantId, settings);
+    if (budget.exhausted && row.runs === 0) return { ok: false, reason: "budget" };
+    return { ok: true };
+  });
+}
+
+/** The journal's first lines of a run, its cost, and the level it started at. */
+async function journalAssessment(
+  tenantId: string,
+  saved: Row,
+  trigger: InvestigationTrigger,
+  checksDone: number,
+  cost: number,
+  tokens: number,
+): Promise<void> {
+  await withTenant(tenantId, async (tx) => {
+    const facts = await incidentFactsTx(tx, tenantId, saved.incidentId);
+    if (!facts) return;
+    const auto = await autonomyOfTx(tx, tenantId, facts.serviceId);
+    const level = effectiveLevel(auto.level, auto.cap);
+    if (saved.levelAtStart === null)
+      await tx
+        .update(investigations)
+        .set({ levelAtStart: level })
+        .where(eq(investigations.id, saved.id));
+    const common = {
+      tenantId,
+      incidentId: saved.incidentId,
+      investigationId: saved.id,
+      serviceId: facts.serviceId,
+      level,
+      autonomous: true,
+    };
+    if (saved.runs === 1) {
+      const [src] = await tx
+        .select({ name: alertSources.name })
+        .from(alerts)
+        .innerJoin(alertSources, eq(alertSources.id, alerts.sourceId))
+        .where(and(eq(alerts.tenantId, tenantId), eq(alerts.incidentId, saved.incidentId)))
+        .orderBy(asc(alerts.firstAt))
+        .limit(1);
+      await recordStepTx(tx, {
+        ...common,
+        kind: "read",
+        title: src ? `Started on the ${src.name} alert` : "Started on the incident",
+        text: src
+          ? { key: "atlas.j.startedAlert", params: { source: src.name } }
+          : { key: "atlas.j.started" },
+        detail: saved.summary?.whatsGoingOn ?? null,
+        at: saved.startedAt ?? new Date(),
+        costEur: cost * 0.15,
+        tokens: Math.round(tokens * 0.15),
+      });
+      await recordStepTx(tx, {
+        ...common,
+        kind: "read",
+        title: `Ran ${checksDone} checks in parallel`,
+        text: { key: "atlas.j.checks", params: { n: checksDone } },
+        detail: saved.checks
+          .filter((c) => c.status === "done")
+          .map((c) => c.kind)
+          .join(", "),
+        costEur: cost * 0.85,
+        tokens: tokens - Math.round(tokens * 0.15),
+      });
+    } else
+      await recordStepTx(tx, {
+        ...common,
+        kind: "read",
+        title: "Re-assessed",
+        text: { key: "atlas.j.reassessed", params: { trigger } },
+        detail: saved.summary?.whatCaused ?? null,
+        costEur: cost,
+        tokens,
+      });
+  });
+}
+
+/**
+ * Runs one assessment for the incident; safe to call from the worker or
+ * inline. `host` is how the Atlas step reaches the product's write paths —
+ * the web app passes its own; the worker's default goes through the signed
+ * internal route.
+ */
+export async function runInvestigation(
+  job: InvestigationJob,
+  opts: { host?: AtlasHost } = {},
+): Promise<void> {
   const { tenantId, incidentId } = job;
   const actor = job.actor ?? SYSTEM;
   const row = await withTenant(tenantId, async (tx) => {
@@ -160,6 +266,11 @@ export async function runInvestigation(job: InvestigationJob): Promise<void> {
     await fail(tenantId, row, allowance.reason);
     return;
   }
+  const gate = await budgetGate(tenantId, row);
+  if (!gate.ok) {
+    await fail(tenantId, row, gate.reason);
+    return;
+  }
   await withTenant(tenantId, (tx) =>
     tx
       .update(investigations)
@@ -178,8 +289,16 @@ export async function runInvestigation(job: InvestigationJob): Promise<void> {
     if (!evidence) throw new Error("incident_not_found");
     const known = new Set(evidence.items.map((i) => i.id));
 
+    const prices = pricesFromEnv();
+    let spentTokens = 0;
+    let spentEur = 0;
+    const count = (inT: number, outT: number) => {
+      spentTokens += inT + outT;
+      spentEur += costOf(inT, outT, prices);
+    };
     const first = await runCapability(tenantId, "investigate", actor, incidentId, async () => {
       const { raw, completion } = await analyse(evidence.text);
+      count(completion.inputTokens, completion.outputTokens);
       return {
         result: { analysis: normaliseAnalysis(raw, known), model: completion.model },
         model: completion.model,
@@ -192,6 +311,7 @@ export async function runInvestigation(job: InvestigationJob): Promise<void> {
       const before = hyps;
       hyps = await runCapability(tenantId, "investigate", actor, incidentId, async () => {
         const { raw, completion } = await challenge(evidence.text, first.analysis.findings, before);
+        count(completion.inputTokens, completion.outputTokens);
         return {
           result: applyChallenge(before, raw, known),
           model: completion.model,
@@ -240,10 +360,34 @@ export async function runInvestigation(job: InvestigationJob): Promise<void> {
       confidence: top?.confidence ?? null,
       headline: top?.whatBroke ?? null,
     });
-    if (evidence.incident.mode !== "test")
+    await journalAssessment(
+      tenantId,
+      saved!,
+      job.trigger,
+      evidence.checks.filter((c) => c.status === "done").length,
+      spentEur,
+      spentTokens,
+    ).catch((err) => console.error("[atlas] journal failed:", err));
+    // L0 "Observe" says nothing unless asked: an automatic run stays off the channel.
+    const level = await withTenant(tenantId, async (tx) => {
+      const a = await autonomyOfTx(tx, tenantId, evidence.incident.serviceId);
+      return effectiveLevel(a.level, a.cap);
+    }).catch(() => 1);
+    const asked = job.trigger === "manual" || job.trigger === "note" || job.trigger === "api";
+    if (evidence.incident.mode !== "test" && (level > 0 || asked))
       await postToChat(tenantId, saved!, evidence.incident.number, job.origin).catch((err) =>
         console.error("[investigation] chat post failed:", err),
       );
+    // Then the Atlas step: a fix among the allowed actions, within the service's level.
+    if (evidence.incident.mode === "live")
+      await runAtlasStep({
+        tenantId,
+        incidentId,
+        evidenceText: evidence.text,
+        known,
+        actor: { kind: "system", memberId: null, name: "Atlas" },
+        host: opts.host ?? httpHost(),
+      }).catch((err) => console.error("[atlas] step failed:", err));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[investigation] assessment failed:", message);
@@ -268,5 +412,5 @@ export async function runInvestigation(job: InvestigationJob): Promise<void> {
       .where(eq(investigations.id, row.id));
     return r.pendingTrigger;
   });
-  if (pending) await runInvestigation({ ...job, trigger: pending, actor: undefined });
+  if (pending) await runInvestigation({ ...job, trigger: pending, actor: undefined }, opts);
 }

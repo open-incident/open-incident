@@ -23,3 +23,4 @@ export {
   type InvestigationJob,
 } from "./run";
 export { enqueueInvestigation, startInvestigation } from "./queue";
+export * as atlas from "./atlas";

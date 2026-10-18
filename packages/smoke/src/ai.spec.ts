@@ -67,23 +67,10 @@ test.describe("Reports & AI", () => {
     page,
   }) => {
     await signIn(page, MEMBERS.owner);
-    // The summary, the citations and the changes around the incident live on
-    // the Atlas tab now; the timeline no longer carries them.
-    await page.goto("/app/incidents/221?tab=atlas");
-    await page.getByTestId("ai-summary-generate").click();
-    await expect(page.getByTestId("ai-summary")).toContainText("Mock summary of the timeline");
+    // The changes around the incident are one of the Context tab's sources
+    // (V2: the Atlas tab is the run itself — journal, hypotheses, grade, cost).
+    await page.goto("/app/incidents/221?tab=context");
     await expect(page.getByTestId("ai-changes")).toBeVisible();
-
-    // Suggesting follow-ups is an Atlas action, in that tab's right column.
-    await page.goto("/app/incidents/221?tab=atlas");
-    await page.getByTestId("ai-suggest-follow-ups").click();
-    const suggestion = page.getByTestId("ai-suggestion").first();
-    await expect(suggestion).toContainText("Mock follow-up");
-    await suggestion.getByRole("button").click();
-    await expect(suggestion.getByRole("button")).toHaveCount(0);
-    await expect(
-      page.getByText("Mock follow-up: add alerting on connection pool saturation").first(),
-    ).toBeVisible();
 
     // INC-216 is resolved with a post-incident flow and no post-mortem yet.
     await page.goto("/app/incidents/216?tab=post-incident");
@@ -108,8 +95,7 @@ test.describe("Reports & AI", () => {
     await page.goto("/app/insights?tab=incidents&days=90");
     await expect(page.getByTestId("insights-stat")).toHaveCount(4);
     await expect(page.getByTestId("insights-stat").first()).not.toContainText("—");
-    // The "alerts" tab became "uptime", which reads three figures rather than
-    // four. Counted per tab rather than loosened to "at least one": a tab that
+    // Counted per tab rather than loosened to "at least one": a tab that
     // silently stops computing a figure is exactly what this catches.
     for (const [tab, stats] of [
       ["pager", 4],
@@ -134,10 +120,12 @@ test.describe("Reports & AI", () => {
     await signIn(page, MEMBERS.owner);
     await page.goto("/app/settings/api");
     await page.getByTestId("key-open").click();
-    await page.locator('form[data-testid="key-form"] input[name="name"]').fill("Smoke changes key");
-    await page.locator('form[data-testid="key-form"] input[value="write"]').check();
-    await page.locator('form[data-testid="key-form"] button[type=submit]').click();
-    const key = (await page.getByTestId("secret-value").textContent())?.trim() ?? "";
+    const keyDialog = page.getByTestId("key-dialog");
+    await keyDialog.locator('input[name="name"]').fill("Smoke changes key");
+    await keyDialog.locator('input[value="write"]').check({ force: true });
+    await keyDialog.locator('select[name="scope"]').selectOption("all");
+    await page.getByTestId("key-dialog-submit").click();
+    const key = (await page.getByTestId("settings-secret").textContent())?.trim() ?? "";
     expect(key).toMatch(/^oi_live_/);
     await page.keyboard.press("Escape");
     const api = await request.newContext({
@@ -166,8 +154,8 @@ test.describe("Reports & AI", () => {
       ((await list.json()) as { data: Array<{ title: string }> }).data.map((d) => d.title),
     ).toContain(title);
     // INC-221 (web-storefront, open) lists it under the changes around the
-    // incident, which the Atlas tab now carries.
-    await page.goto("/app/incidents/221?tab=atlas");
+    // incident, on the Context tab.
+    await page.goto("/app/incidents/221?tab=context");
     await expect(page.getByTestId("ai-changes")).toContainText(title);
     await api.dispose();
   });

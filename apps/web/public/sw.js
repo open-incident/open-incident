@@ -10,16 +10,28 @@ self.addEventListener("push", (event) => {
   const title = data.title || "Open Incident";
   const options = {
     body: data.body || "",
-    data: { url: data.url || "/", ackUrl: data.ackUrl || null },
-    requireInteraction: true,
-    tag: data.url || "open-incident",
-    actions: data.ackUrl ? [{ action: "ack", title: "Acknowledge" }] : [],
+    // Atlas's notices carry their own one-tap actions, each a signed link.
+    data: {
+      url: data.url || "/",
+      ackUrl: data.ackUrl || null,
+      links: Object.fromEntries((data.actions || []).map((a) => [a.action, a.url])),
+    },
+    requireInteraction: !data.silent,
+    silent: Boolean(data.silent),
+    tag: data.tag || data.url || "open-incident",
+    actions: data.actions
+      ? data.actions.map((a) => ({ action: a.action, title: a.title }))
+      : data.ackUrl
+        ? [{ action: "ack", title: "Acknowledge" }]
+        : [],
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = event.action === "ack" && event.notification.data.ackUrl ? event.notification.data.ackUrl : event.notification.data.url;
+  const d = event.notification.data;
+  const link = event.action && d.links ? d.links[event.action] : null;
+  const target = link || (event.action === "ack" && d.ackUrl ? d.ackUrl : d.url);
   event.waitUntil(clients.openWindow(target));
 });

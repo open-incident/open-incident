@@ -18,3 +18,4 @@ export * from "./service-map";
 export * from "./pack-dashboards";
 export * from "./exception-regressions";
 export * from "./slos";
+export * from "./atlas-notify";

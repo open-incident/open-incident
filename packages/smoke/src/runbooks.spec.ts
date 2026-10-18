@@ -32,8 +32,9 @@ test.describe("Runbooks", () => {
     await page.waitForURL(/saved=1/);
 
     await page.goto("/app/services");
-    await page.getByRole("link", { name: "checkout-api" }).first().click();
+    await page.getByTestId("service-row").filter({ hasText: "checkout-api" }).click();
     await page.waitForURL(/\/app\/services\/[0-9a-f-]+/);
+    await page.getByTestId("runbook-open").click();
     const form = page.getByTestId("runbook-form");
     await form.locator('input[name="title"]').fill("Checkout latency runbook");
     await form
@@ -43,21 +44,20 @@ test.describe("Runbooks", () => {
     await page.waitForURL(/\/app\/services\/[0-9a-f-]+/);
     const row = page.getByTestId("runbook-row").filter({ hasText: "Checkout latency runbook" });
     await expect(row).toBeVisible();
-    await expect(row).toContainText(/fetched|récupéré|abgerufen/i);
+    await row.getByRole("button").click();
+    await expect(page.getByTestId("runbook-detail")).toContainText(/fetched|récupéré|abgerufen/i);
+    await page.keyboard.press("Escape");
 
     // INC-217 is on checkout-api: the Context tab lists the runbook, with the
     // host it came from and when it was fetched.
     await page.goto("/app/incidents/217?tab=context");
     await expect(page.getByTestId("ai-runbooks")).toContainText("Checkout latency runbook");
-    // The assistant's dossier quotes it. The summary is an Atlas action.
+    // The assistant's dossier quotes it: an update drafted with Atlas reads it.
     ai.reset();
-    await page.goto("/app/incidents/217?tab=atlas");
-    await page.getByTestId("ai-summary-generate").click();
-    await expect(page.getByTestId("ai-summary")).toContainText("Mock summary");
-    // The summary lands in the page as soon as the action returns, and the
-    // mock records the call a moment before that — but an incident that
-    // already carries a summary shows the old one straight away, so the text
-    // assertion above can pass before anything was asked. Poll the mock.
+    await page.goto("/app/incidents/217");
+    await page.getByTestId("update-open").click();
+    await page.getByTestId("ai-draft-update").click();
+    // Poll the mock: the call is what proves the dossier was read.
     await expect
       .poll(() => ai.calls.filter((c) => c.path === "/v1/chat/completions").length)
       .toBeGreaterThan(0);
@@ -71,7 +71,7 @@ test.describe("Runbooks", () => {
     // ambiguous. A suite pointed at a workspace it keeps has to leave it as it
     // found it.
     await page.goto("/app/services");
-    await page.getByRole("link", { name: "checkout-api" }).first().click();
+    await page.getByTestId("service-row").filter({ hasText: "checkout-api" }).click();
     await page.waitForURL(/\/app\/services\/[0-9a-f-]+/);
     const created = page.getByTestId("runbook-row").filter({ hasText: "Checkout latency runbook" });
     // Re-counted every turn: the click reloads the page, so a count taken
@@ -79,7 +79,8 @@ test.describe("Runbooks", () => {
     for (let guard = 0; guard < 5; guard++) {
       const left = await created.count();
       if (left === 0) break;
-      await created.first().getByTestId("runbook-delete").click();
+      await created.first().getByRole("button").click();
+      await page.getByTestId("runbook-detail").getByTestId("runbook-delete").click();
       await expect(created).toHaveCount(left - 1);
     }
     await expect(created).toHaveCount(0);

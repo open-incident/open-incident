@@ -103,6 +103,31 @@ export function startAiMock(
               { key: "actions", title: "Actions", body: "- Add pool saturation alert" },
             ],
           });
+        else if (/TASK: atlas_act_challenge/.test(prompt))
+          // Atlas's adversarial pass on a fix: holds, unless the material asks otherwise.
+          content = JSON.stringify(
+            /MOCK_CHALLENGE_DOUBT/.test(prompt)
+              ? { verdict: "weakened", note: "Mock challenger: a doubt remains.", citations: [] }
+              : { verdict: "holds", note: "Mock challenger: nothing argues against it.", citations: [] },
+          );
+        else if (/TASK: atlas_act\b/.test(prompt)) {
+          // The first allowed action listed, on a plain target.
+          const key = /## ALLOWED ACTIONS[^\n]*\n- ([a-z0-9_]+):/.exec(prompt)?.[1] ?? null;
+          content = JSON.stringify(
+            key && !/MOCK_NO_ACTION/.test(prompt)
+              ? {
+                  action: key,
+                  target: "smoke-v2.30",
+                  todo: "Mock: roll back to smoke-v2.30",
+                  done: "Mock: rolled back to smoke-v2.30",
+                  rationale: "Mock: the deploy precedes the symptom (F1).",
+                  citations: ["F1"],
+                  verify: "Mock: error rate back under 1 %",
+                }
+              : { action: null },
+          );
+        } else if (/TASK: atlas_backtest_grade/.test(prompt))
+          content = JSON.stringify({ grade: "on_target", note: "Mock grader: same component." });
         else if (/TASK: investigate_challenge/.test(prompt)) {
           const ids = [
             ...new Set(prompt.match(/^\[([A-Z]\d+)\]/gm)?.map((x) => x.slice(1, -1)) ?? []),
