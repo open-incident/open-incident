@@ -8,7 +8,7 @@
 #   synthetic : the browser runner, on Microsoft's Playwright image
 # Build context: the repository root (see compose.yaml).
 
-FROM node:22-alpine AS build
+FROM node:22.23.4-alpine AS build
 RUN npm install -g pnpm@11.21.0
 WORKDIR /repo
 COPY . .
@@ -17,7 +17,7 @@ RUN NEXT_OUTPUT=standalone pnpm --filter @openincident/web build
 RUN NEXT_OUTPUT=standalone pnpm --filter @openincident/status build
 
 # ---------- web: standalone server ----------
-FROM node:22-alpine AS web
+FROM node:22.23.4-alpine AS web
 ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000
 WORKDIR /app
 COPY --from=build /repo/apps/web/.next/standalone ./
@@ -31,7 +31,7 @@ EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
 
 # ---------- status: the public status pages, isolated ----------
-FROM node:22-alpine AS status
+FROM node:22.23.4-alpine AS status
 ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3001
 WORKDIR /app
 COPY --from=build /repo/apps/status/.next/standalone ./
